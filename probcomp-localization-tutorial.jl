@@ -21,6 +21,10 @@
 #
 # * Correct understanding of initial pose.
 
+# %%
+# Fix for Jay's Jupytext setup
+if occursin("sharlaon", pwd()); cd("/Users/sharlaon/dev/probcomp-localization-tutorial") end
+
 # %% [markdown]
 # # ProbComp Localization Tutorial
 #
@@ -1091,6 +1095,8 @@ end
 # # Alternatively, using library calls: `particle_filter_rejuv_library` from the black box above!
 
 # %%
+using Dates
+
 drift_step_factor = 1/3.
 
 N_samples = 6
@@ -1236,6 +1242,8 @@ function grid_mh(tr, n_steps, step_sizes)
 end;
 
 # %%
+get_trajectory(tr) = [ tr[prefix_address(i, :pose)] for i in 1:(get_args(tr)[1] + 1) ]
+
 function particle_filter_grid_rejuv_with_checkpoints(model, N_steps, args, observations, N_particles, MH_arg_schedule)
     constraints = [constraint_from_sensor_reading(choicemap(), i, sensor_reading) for (i, sensor_reading) in enumerate(observations)]
 
