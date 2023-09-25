@@ -19,7 +19,9 @@
 #
 # # TO DO
 #
+# Rif comments:
 # * Correct understanding of initial pose.
+# * Plotting code repetition.
 
 # %%
 # Fix for Jay's Jupytext setup
@@ -63,20 +65,16 @@ end
 Segment(p1 :: Vector{Float64}, p2 :: Vector{Float64}) = Segment(p1, p2, p2-p1)
 Segment(t :: Tuple) = Segment(t...)
 
-euclidean_norm_squared(v :: Vector{Float64}) :: Float64 = sum(v.^2)
-euclidean_norm(v :: Vector{Float64}) :: Float64 = sqrt(euclidean_norm_squared(v))
-normalize_vec(v :: Vector{Float64}) :: Vector{Float64} = v ./ euclidean_norm(v)
-heading(v :: Vector{Float64}) :: Float64 = atan(v[2], v[1])
-unit_vec(hd :: Float64) :: Vector{Float64} = [cos(hd), sin(hd)]
 normalize_hd(hd :: Float64) :: Float64 = rem2pi(hd, RoundNearest)
+unit_vec(hd :: Float64) :: Vector{Float64} = [cos(hd), sin(hd)]
 struct Pose
     p  :: Vector{Float64}
-    dp :: Vector{Float64}
     hd :: Float64
+    dp :: Vector{Float64}
+    Pose(p :: Vector{Float64}, hd :: Float64) = new(p, normalize_hd(hd), unit_vec(hd))
 end
-Pose(p :: Vector{Float64}, dp :: Vector{Float64}) = Pose(p, normalize_vec(dp), heading(dp))
-Pose(p :: Vector{Float64}, hd :: Float64)         = Pose(p, unit_vec(hd),      normalize_hd(hd))
 Pose(t :: Tuple) = Pose(t...)
+Base.show(io :: IO, p :: Pose) = print(io, "Pose($(p.p), $(p.hd))")
 rotate_pose(p :: Pose, a :: Float64) :: Pose = Pose(p.p, p.hd + a)
 step_along_pose(p :: Pose, s :: Float64) :: Vector{Float64} = p.p + s * p.dp
 rotated_step(p :: Pose, a :: Float64, s :: Float64) :: Vector{Float64} = step_along_pose(rotate_pose(p, a), s)
@@ -291,7 +289,7 @@ start_actual = pose_prior_model(robot_inputs.start_guess, motion_settings_synthe
 # path_actual = integrate_controls_noisy(start_actual, robot_inputs.controls, motion_settings_synthetic)
 # Here, we will use a hard-coded one we generated earlier that we selected to more clearly illustrate
 # the main ideas in the notebook.
-path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], [0.9961585498286585, 0.08756793707324662], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], [0.8633014887184045, -0.5046885570097528], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], [0.8980515289921271, -0.43989027185754254], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], [0.99845918642813, 0.05549101762696935], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], [0.8363232690150653, -0.5482366183537496], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], [0.2521075891995255, -0.9676992112573014], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], [0.05501800824083462, -0.9984853623209563], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], [0.2456140106090608, -0.969367710310454], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], [0.3739637734262752, -0.9274433115639907], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], [0.9275958219077916, -0.3735853198122333], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], [0.9508305427779065, -0.3097116060477422], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], [0.9963450945375095, -0.085419275289838], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], [0.9986687779943542, -0.05158170081786178], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], [0.9996790651628544, -0.025333114201008457], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], [0.9793928820239052, 0.201964310314741], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], [0.16598399110654527, 0.986128447361875], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], [0.18547803922451203, 0.9826484096386817], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], [0.5450826121568682, 0.8383823387478085], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], [0.5213854020187978, 0.8533213126142442], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], [0.5252050048783927, 0.8509757357590683], 1.017840325933929)]
+path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], 1.017840325933929)]
 
 the_plot = start_plot(world, "Actual motion deviates from ideal", label_world=false)
 plot!(path_integrated;
@@ -443,7 +441,7 @@ gif(ani, "imgs/discrepancy.gif", fps=1)
 # %% [markdown]
 # ### Sensor model
 #
-# Suppose we do not know the details of the sensor, for example its tolerance behavior.  We simply model the readings as approximately correct, but noisy, in a way that does not render any value as impossible.
+# Suppose we do not know the details of the sensor, for example its tolerance behavior.  We simply model the readings as approximately correct, using Gaussian noise.
 
 # %%
 @gen function sensor_model_1(p :: Pose, walls :: Vector{Segment}, settings :: NamedTuple) :: Vector{Float64}
@@ -559,7 +557,7 @@ end;
 @load_generated_functions()
 
 # %% [markdown]
-# We work with the `Unfold`-variant, but the user can check that the explicit loop works just fine.
+# We work with the `Unfold`-variant, because the static DSL can harness it for efficient evaluation in `Gen.update`.  The user can check that the explicit produces identical outputs.
 
 # %%
 # Handle asymmetry in trace addresses.
@@ -620,7 +618,7 @@ get_selected(get_choices(trace), select(
 #
 # In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In other words, *generative functions induce distributions on traces*, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
 #
-# There is no free lunch in this game: generic inference recipies are inefficient.  Rather, efficiency becomes possible as we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entrypoints to enact this exploitation.
+# There is no free lunch in this game: generic inference recipies are inefficient.  Rather, efficiency becomes possible as we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
 #
 # To picture this, here are the paths produced by the model in aggregate, to get an approximate sense of the prior as a distribution.  Next to it is a similar picture of what the posterior, our goal, looks like.  (The inference process is a *black box* for this moment, and will be approached through the rest of this notebook.)
 
@@ -750,6 +748,8 @@ the_plot
 #
 # ### Deeper functionality of GFs
 #
+# Rif: maybe these discussions are too simplified?
+#
 # Traced execution of generative functions, via `Gen.simulate` as seen above, is a straightforward alternative semantic interpretation.  A more refined operation, `Gen.generate`, allows two deeper features.
 #
 # 1. It proposes traces satisfying optional *constraints*.  
@@ -825,6 +825,10 @@ end
 
 # This is a generic algorithm, so there is a library version.
 # We will the library version use going forward, because it includes a constant-memory optimization.
+# (It is not necessary to store all particles and categorically select one at the end.  Mathematically
+# it amounts to the same instead to store just one candidate selection, and stochastically replace it
+# with each newly generated particle with odds the latter's weight relative to the sum of the
+# preceding weights.)
 # To obtain the above from the library version, one would define:
 
 basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(model, args, observations, N_SIR);
@@ -887,6 +891,9 @@ gif(ani, "imgs/discrepancy_short.gif", fps=1)
 
 # %% [markdown]
 # For such a shorter path, SIR can find a somewhat noisy fit without too much effort.
+#
+# Rif asks
+# > In `traces = ...` below, are you running SIR `N_SAMPLES` times and getting one sample each time? Why not run it once and get `N_SAMPLES`? Talk about this?
 
 # %%
 full_model_args_short = (robot_inputs_short, world.walls, full_settings)
@@ -904,9 +911,9 @@ the_plot
 # %% [markdown]
 # ### Rejection sampling
 #
-# Suppose we have target distribution, and a stochastic program that generates samples plus weights that measure the *ratio* of their generated frequency to the target frequency.
+# Suppose we have a target distribution, and a stochastic program that generates samples plus weights that measure the *ratio* of their generated frequency to the target frequency.
 #
-# We may convert our program into a sampler for the target distribution via the metaprogram that draws samples and weights, stochastically accepts them with probability according to the reported ratio, and otherwise rejects them and tries again.  This metaprogram is called *rejection sampling*.
+# We may convert our program into a sampler for the target distribution via the metaprogram that draws samples and weights, stochastically accepts them with frequency equal to the reported ratio, and otherwise rejects them and tries again.  This metaprogram is called *rejection sampling*.
 #
 # Suppose that our stochastic program only reports *unnormalized* ratios of their generated frequency to the target frequency.  That is, there exists some constant $Z$ such that $Z$ times the correct ratio is reported.  If we knew $Z$, we could just correct the reported ratios by $Z$.  But suppose $Z$ itself is unavailable, and we only know a bound $C$ for $Z$, that is $Z < C$.  Then we can correct the ratios by $C$, obtaining an algorithm that is correct but inefficient by a factor of drawing $C/Z$ too many samples on average.  This metaprogram is called *approximate rejection sampling*.
 #
@@ -1017,6 +1024,11 @@ the_plot = frame_from_traces(world, traces, N_steps, "SIR (original path)";
                              show_clutters=false, path_actual=path_actual)
 savefig("imgs/SIR")
 the_plot
+
+# %% [markdown]
+# ## TODO below:
+#
+# PF without any embellishments.
 
 # %% [markdown]
 # # Particle filter with MCMC Rejuvenation
