@@ -16,7 +16,6 @@
 # ---
 
 # %% [markdown]
-#
 # # TO DO
 #
 # Rif comments:
@@ -205,8 +204,10 @@ using Gen;
     p ~ mvnormal(start_guess.p, settings.p_noise * [1 0 ; 0 1])
     hd ~ normal(start_guess.hd, settings.hd_noise)
     return Pose(p, hd)
-end;
-@load_generated_functions()
+end
+
+# This call is required by Gen's static DSL in order to invoke `pose_prior_model(...)` below.
+load_generated_functions()
 
 # %% [markdown]
 # We can just call `pose_prior_model` like a normal function and it will just run stochastically.
@@ -240,6 +241,7 @@ get_choices(trace)
     hd ~ normal(start.hd + c.dhd, settings.hd_noise)
     return Pose(p,hd)
 end
+
 @load_generated_functions()
 
 function integrate_controls_noisy(start :: Pose, controls :: Vector{Control}, settings) :: Vector{Pose}
@@ -528,31 +530,28 @@ end;
 # The second recognizes the model as a Markov chain, and accordingly invokes the `Unfold` combinator to capture this structure.
 
 # %%
-@gen (static) function model_1_kernel(t :: Int, state :: Tuple{Pose, Vector{Float64}},
-    robot_inputs :: NamedTuple, walls :: Vector{Segment}, settings :: NamedTuple) :: Tuple{Pose, Vector{Float64}}
-    pose ~ motion_model(state[1], robot_inputs.controls[t], settings.motion_settings)
-    sensor ~ sensor_model_1(pose, walls, settings.sensor_settings)
-    return (pose, sensor)
-end
+# The staging of `full_model_1` into these subfunctions is required for Gen's static DSL.
 
-model_1_chain = Unfold(model_1_kernel)
-
-@gen (static) function init(robot_inputs :: NamedTuple, walls :: Vector{Segment}, settings :: NamedTuple)
+@gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, settings :: NamedTuple)
     pose ~ pose_prior_model(robot_inputs.start_guess, settings.motion_settings)
     sensor ~ sensor_model_1(pose, walls, settings.sensor_settings)
     return (pose, sensor)
 end
-extract_sensor_readings(initial_sensor, steps) = [initial_sensor, last.(steps)...]
-@gen (static) function full_model_1(T :: Int, robot_inputs :: NamedTuple, walls :: Vector{Segment}, settings :: NamedTuple) :: Vector{Vector{Float64}}
-    initial ~ init(robot_inputs, walls, settings)
-    (initial_pose, initial_sensor) = initial
-    # initial_pose = {:initial => :pose} ~ pose_prior_model(robot_inputs.start_guess, settings.motion_settings)
-    # initial_sensor = {:initial => :sensor} ~ sensor_model_1(initial_pose, walls, settings.sensor_settings)
 
+@gen (static) function model_1_kernel(t :: Int, state :: Tuple{Pose, Vector{Float64}}, robot_inputs :: NamedTuple,
+                                      walls :: Vector{Segment}, settings :: NamedTuple) :: Tuple{Pose, Vector{Float64}}
+    pose ~ motion_model(state[1], robot_inputs.controls[t], settings.motion_settings)
+    sensor ~ sensor_model_1(pose, walls, settings.sensor_settings)
+    return (pose, sensor)
+end
+model_1_chain = Unfold(model_1_kernel)
+
+combine_sensors(initial_sensor, steps) = [initial_sensor, last.(steps)...]
+@gen (static) function full_model_1(T :: Int, robot_inputs :: NamedTuple, walls :: Vector{Segment}, settings :: NamedTuple) :: Vector{Vector{Float64}}
+    (initial_pose, initial_sensor) = {:initial} ~ model_1_initial(robot_inputs, walls, settings)
     steps ~ model_1_chain(T, (initial_pose, initial_sensor), robot_inputs, walls, settings)
-    
-    return extract_sensor_readings(initial_sensor, steps)
-end;
+    return combine_sensors(initial_sensor, steps)
+end
 
 @load_generated_functions()
 
