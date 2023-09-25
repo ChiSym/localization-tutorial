@@ -16,13 +16,15 @@
 # ---
 
 # %% [markdown]
-# # ProbComp Localization Tutorial
-#
-# Some introductory text.
 #
 # # TO DO
 #
 # * Correct understanding of initial pose.
+
+# %% [markdown]
+# # ProbComp Localization Tutorial
+#
+# Some introductory text.
 
 # %% [markdown]
 # ## The "real world"
