@@ -571,15 +571,12 @@ gif(ani, "imgs/full_1.gif", fps=5)
 
 # %%
 full_model_args = (robot_inputs, world.walls, full_settings)
-;
 
-#
 trace = simulate(full_model_1, (N_steps, full_model_args...))
 get_selected(get_choices(trace), select(
     :initial => :pose, (:initial => :sensor => i for i=1:5)...,
     (:steps => t => :pose for t=1:6)...,
-    (:steps => t => :sensor => i for t=1:6, i=1:5)...
-))
+    (:steps => t => :sensor => i for t=1:6, i=1:5)...))
 
 # %% [markdown]
 # ## Inference: main idea
@@ -873,14 +870,10 @@ the_plot
 # Earlier samples may occur with too high absolute frequency, but over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
 
 # %%
-N_steps_RS = 9;
-
-# %%
 function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_ITERS)
     C = (N_burn_in > 0) ? maximum(generate(full_model_1, (N_steps, full_model_args...), constraints)[2] for _ in 1:N_burn_in) : -Inf
     println("C set to $C")
 
-  
     n_iters = 0
 
     particles = []
@@ -911,6 +904,9 @@ function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_
 
     return particles
 end;
+
+# %%
+N_steps_RS = 9;
 
 # %%
 N_burn_in = 0 # omit burn-in to illustrate early behavior
@@ -1059,6 +1055,7 @@ end
 
 # %%
 using Dates
+dv = Dates.value
 
 drift_step_factor = 1/3.
 
@@ -1069,9 +1066,7 @@ t1 = Dates.now()
 traces = [particle_filter_rejuv(full_model_1, N_steps, full_model_args, observations, N_particles,
                                 N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
 t2 = Dates.now()
-t_ellapsed = t2 - t1
-dv = Dates.value
-println("Time ellapsed per run: $(dv(t_ellapsed) / N_samples) ms. (Total: $(dv(t_ellapsed)) ms.)")
+println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
 the_plot = frame_from_traces(world, traces, N_steps, "PF+Drift Rejuv";
                              path_actual=path_actual)
@@ -1133,7 +1128,6 @@ function vector_grid(v0::Vector{Float64}, k::Vector{Int}, r::Vector{Float64})
     return (vs=vs, linear_indices=ls)
 end
 
-
 function grid_index(x, v0, k, r; linear=false)
     I = quantize(x, r, zero=get_offset(v0, k, r));
     if linear
@@ -1169,15 +1163,12 @@ end;
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
-    chmap_grid = [
-        choicemap(
-            (prefix_address(t, :pose => :p), [x, y]),
-            (prefix_address(t, :pose => :hd), h)
-        ) for (x, y, h) in pose_grid
-    ]
+    chmap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]),
+                            (prefix_address(t, :pose => :hd), h))
+                  for (x, y, h) in pose_grid]
     
     # Get the score under the model for each grid point
-    pose_scores = [ Gen.update(tr, ch)[2] for ch in chmap_grid ]
+    pose_scores = [Gen.update(tr, ch)[2] for ch in chmap_grid]
         
     pose_probs = exp.(pose_scores .- logsumexp(pose_scores))
     j ~ categorical(pose_probs)
@@ -1306,22 +1297,18 @@ end;
 # %%
 nsteps = [3, 3, 3]
 sizes1 = [.7, .7, π/10]
-grid_schedule = [
-    (nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3
-]
+grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 N_samples = 6
 N_particles = 10
 
 t1 = Dates.now()
 checkpointss =
-    [ particle_filter_grid_rejuv_with_checkpoints(
-        #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule)
-    for _=1:N_samples
-    ]
-;
-t2 = Dates.now()
+    [particle_filter_grid_rejuv_with_checkpoints(
+       #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
+       full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule)
+     for _=1:N_samples]
+t2 = Dates.now();
 
 # %%
 merged_traj_list = []
@@ -1356,15 +1343,12 @@ frame_from_weighted_trajectories(world, merged_traj_list, merged_weight_list, N_
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
-    chmap_grid = [
-        choicemap(
-            (prefix_address(t, :pose => :p), [x, y]),
-            (prefix_address(t, :pose => :hd), h)
-        ) for (x, y, h) in pose_grid
-    ]
+    chmap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]),
+                            (prefix_address(t, :pose => :hd), h))
+                  for (x, y, h) in pose_grid]
     
     # Get the score under the model for each grid point
-    pose_scores = [ Gen.update(tr, ch)[2] for ch in chmap_grid ]
+    pose_scores = [Gen.update(tr, ch)[2] for ch in chmap_grid]
         
     pose_probs = exp.(pose_scores .- logsumexp(pose_scores))
     j ~ categorical(pose_probs)
@@ -1390,9 +1374,7 @@ end
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
-    chmap_grid = [
-        choicemap( (:p, [x, y]), (:hd, h) ) for (x, y, h) in pose_grid
-    ]
+    chmap_grid = [choicemap((:p, [x, y]), (:hd, h)) for (x, y, h) in pose_grid]
     
     # Get the score under the model for each grid point
     _, robot_inputs, _, settings = get_args(updated_tr)
@@ -1401,17 +1383,15 @@ end
         prev_hd = updated_tr[prefix_address(t - 1, :pose => :hd)]
         pose_scores = [
             Gen.assess(motion_model,
-                (Pose(prev_p, prev_hd), robot_inputs.controls[t - 1], settings.motion_settings),
-            ch)[1]
-            for ch in chmap_grid
-        ]
+                       (Pose(prev_p, prev_hd), robot_inputs.controls[t - 1], settings.motion_settings),
+                       ch)[1]
+            for ch in chmap_grid]
     else
         pose_scores = [
             Gen.assess(pose_prior_model,
-                (robot_inputs.start_guess, settings.motion_settings),
-            ch)[1]
-            for ch in chmap_grid
-        ]
+                       (robot_inputs.start_guess, settings.motion_settings),
+                       ch)[1]
+            for ch in chmap_grid]
     end
         
     pose_probs = exp.(pose_scores .- logsumexp(pose_scores))
@@ -1434,8 +1414,7 @@ function grid_smcp3(tr, n_steps, step_sizes)
     (bwd_proposal_logprob, (reinv_j, _, j2)) = Gen.assess(
         grid_proposal_smcp3_bwd,
         (new_tr, n_steps, step_sizes),
-        choicemap((:j, inv_j))
-    )
+        choicemap((:j, inv_j)))
     
     @assert j2 == j # Quick reversibility check
     @assert reinv_j == inv_j
@@ -1497,21 +1476,17 @@ end;
 # %%
 nsteps = [3, 3, 3]
 sizes1 = [.7, .7, π/10]
-grid_schedule = [
-    (nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3
-]
+grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 N_samples = 6
 N_particles = 10
 
 t1 = Dates.now()
 checkpointss2 =
-    [ particle_filter_grid_smcp3_with_checkpoints(
-        #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule)
-    for _=1:N_samples
-    ]
-;
+    [particle_filter_grid_smcp3_with_checkpoints(
+       #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
+       full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule)
+     for _=1:N_samples]
 t2 = Dates.now()
 
 merged_traj_list2 = []
@@ -1549,8 +1524,7 @@ observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in pa
 # %%
 full_model_args_v2 = (robot_inputs, world.walls, (
     motion_settings = motion_settings_lownoise,
-    sensor_settings = sensor_settings_noisy
-));
+    sensor_settings = sensor_settings_noisy));
 
 # %%
 ani = Animation()
@@ -1569,12 +1543,10 @@ N_particles = 10
 
 t1 = Dates.now()
 checkpointss4 =
-    [ particle_filter_grid_smcp3_with_checkpoints(
-        #model,      N_steps,   args,         observations, N_particles, grid)
-        full_model_1, N_steps, full_model_args_v2, observations2, N_particles, [])
-    for _=1:N_samples
-    ]
-;
+    [particle_filter_grid_smcp3_with_checkpoints(
+       #model,      N_steps,   args,         observations, N_particles, grid)
+       full_model_1, N_steps, full_model_args_v2, observations2, N_particles, [])
+     for _=1:N_samples]
 t2 = Dates.now()
 
 merged_traj_list4 = []
@@ -1623,12 +1595,10 @@ N_particles = 10
 
 t1 = Dates.now()
 checkpointss5 =
-    [ particle_filter_grid_smcp3_with_checkpoints(
-        #model,      N_steps,   args,         observations, N_particles, grid)
-        full_model_1, N_steps, full_model_args_v2, observations3, N_particles, [])
-    for _=1:N_samples
-    ]
-;
+    [particle_filter_grid_smcp3_with_checkpoints(
+       #model,      N_steps,   args,         observations, N_particles, grid)
+       full_model_1, N_steps, full_model_args_v2, observations3, N_particles, [])
+     for _=1:N_samples]
 t2 = Dates.now()
 
 merged_traj_list5 = []
@@ -1653,12 +1623,10 @@ N_particles = 10
 
 t1 = Dates.now()
 checkpointss6 =
-    [ particle_filter_grid_smcp3_with_checkpoints(
-        #model,      N_steps,   args,         observations, N_particles, grid)
-        full_model_1, N_steps, full_model_args, observations3, N_particles, [])
-    for _=1:N_samples
-    ]
-;
+    [particle_filter_grid_smcp3_with_checkpoints(
+       #model,      N_steps,   args,         observations, N_particles, grid)
+       full_model_1, N_steps, full_model_args, observations3, N_particles, [])
+     for _=1:N_samples]
 t2 = Dates.now()
 
 merged_traj_list6 = []
@@ -1684,18 +1652,14 @@ N_samples = 6
 N_particles = 10
 nsteps = [3, 3, 3]
 sizes1 = [.7, .7, π/10]
-grid_schedule = [
-    (nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3
-]
+grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 t1 = Dates.now()
 checkpointss7 =
-    [ particle_filter_grid_smcp3_with_checkpoints(
-        #model,      N_steps,   args,         observations, N_particles, grid)
-        full_model_1, N_steps, full_model_args, observations3, N_particles, grid_schedule)
-    for _=1:N_samples
-    ]
-;
+    [particle_filter_grid_smcp3_with_checkpoints(
+       #model,      N_steps,   args,         observations, N_particles, grid)
+       full_model_1, N_steps, full_model_args, observations3, N_particles, grid_schedule)
+     for _=1:N_samples]
 t2 = Dates.now()
 
 merged_traj_list7 = []
@@ -1801,8 +1765,7 @@ function controlled_particle_filter_with_checkpoints(model, N_steps, args, obser
 
     @info "Rejuvenated $n_rejuv of $N_steps steps."
     return checkpoints
-end
-;
+end;
 
 # %%
 function controlled_particle_filter_with_checkpoints_v2(model, N_steps, args, observations, N_particles::Int, og_arg_schedule)
@@ -1888,9 +1851,9 @@ function controlled_particle_filter_with_checkpoints_v2(model, N_steps, args, ob
             nsteps, sizes = arg_schedule[1]
             # increase the range and resolution of the grid search
             if nr % 1 == 0
-                arg_schedule = [ (nsteps, sizes .* 0.75) for (nsteps, sizes) in arg_schedule ]
+                arg_schedule = [(nsteps, sizes .* 0.75) for (nsteps, sizes) in arg_schedule]
             else
-                arg_schedule = [ (nsteps + 2, sizes) for (nsteps, sizes) in arg_schedule ]
+                arg_schedule = [(nsteps + 2, sizes) for (nsteps, sizes) in arg_schedule]
             end
         end
         if nr > 0
@@ -1909,8 +1872,7 @@ function controlled_particle_filter_with_checkpoints_v2(model, N_steps, args, ob
 
     @info "Rejuvenated $n_rejuv of $N_steps steps."
     return checkpoints
-end
-;
+end;
 
 # %% [markdown]
 # On the main trajectory we have been experimenting with, this controller visually achieves better results than SMCP3, at a comparable runtime.  The controller spends more computation at some steps (where it is needed), and makes up for it by spending less computation at other steps.
@@ -1918,9 +1880,7 @@ end
 # %%
 nsteps = [3, 3, 3]
 sizes1 = [.7, .7, π/6]
-grid_schedule = [
-    (nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3
-]
+grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 N_samples = 6
 N_particles = 10
@@ -1929,10 +1889,8 @@ t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
         #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule)
-    )
+        full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule))
 end
-;
 t2 = Dates.now();
 
 # %%
@@ -1970,9 +1928,7 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 # let
 #     nsteps = [3, 3, 3]
 #     sizes1 = [.7, .7, π/6]
-#     grid_schedule = [
-#         (nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3
-#     ]
+#     grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
     
 #     N_samples = 6
 #     N_particles = 10
@@ -1981,10 +1937,8 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 #     for _=1:N_samples
 #         push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
 #             #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-#             full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule)
-#         )
+#             full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule))
 #     end
-#     ;
 #     t2 = Dates.now();
     
 #     merged_traj_list3 = []
@@ -2007,9 +1961,7 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 # %%
 nsteps = [3, 3, 3]
 sizes1 = [.7, .7, π/6]
-grid_schedule = [
-    (nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3
-]
+grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 N_samples = 6
 N_particles = 10
@@ -2018,10 +1970,8 @@ t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss9, controlled_particle_filter_with_checkpoints_v2(
         #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, N_steps, full_model_args_v2, observations2, N_particles, grid_schedule)
-    )
+        full_model_1, N_steps, full_model_args_v2, observations2, N_particles, grid_schedule))
 end
-;
 t2 = Dates.now();
 
 # %%
@@ -2044,9 +1994,7 @@ frame_from_weighted_trajectories(world, merged_traj_list9, merged_weight_list9, 
 # %%
 nsteps = [3, 3, 3]
 sizes1 = [.7, .7, π/6]
-grid_schedule = [
-    (nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3
-]
+grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 N_samples = 6
 N_particles = 10
@@ -2055,10 +2003,8 @@ t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss10, controlled_particle_filter_with_checkpoints_v2(
         #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, N_steps, full_model_args, observations3, N_particles, grid_schedule)
-    )
+        full_model_1, N_steps, full_model_args, observations3, N_particles, grid_schedule))
 end
-;
 t2 = Dates.now();
 
 # %%
