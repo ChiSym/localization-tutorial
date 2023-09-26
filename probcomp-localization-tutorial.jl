@@ -558,25 +558,7 @@ end
 
 # %%
 # Handle asymmetry in trace addresses.
-prefix_address(i :: Int, rest) :: Pair = (i == 1) ? (:initial => rest) : (:steps => (i-1) => rest)
-
-function frames_from_trace(world, trace, N_steps, sensor_settings, ani, title; show_clutters=true, path_actual=nothing)
-    poses = [trace[prefix_address(i, :pose)] for i in 1:(N_steps+1)]
-    projected_sensors =
-        [project_readings(trace[prefix_address(i, :pose)], trace[prefix_address(i, :sensor)], sensor_settings) for i in 1:(N_steps+1)]
-    for (p, sensed_points) in zip(poses, projected_sensors)
-        frame_plot = start_plot(world, title; show_clutters=show_clutters)
-        if path_actual != nothing; plot!(path_actual; label="actual path", color=:brown) end
-        plot!(poses; label="trace", color=:green)
-        plot!([p.p[1]], [p.p[2]];
-              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0)
-        plot!(first.(sensed_points), last.(sensed_points);
-              label=nothing, color=:blue, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
-        plot!([Segment(p.p, pr) for pr in sensed_points];
-              label=nothing, color=:blue, alpha=0.25)
-        frame(ani, frame_plot)
-    end
-end;
+prefix_address(i :: Int, rest) :: Pair = (i == 1) ? (:initial => rest) : (:steps => (i-1) => rest);
 
 # %%
 full_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
@@ -588,8 +570,21 @@ ani = Animation()
 for n in 1:N_samples
     scale = (2.)^(2+(n-N_samples))
     trace = simulate(full_model_1, (N_steps, robot_inputs, world.walls, scaled_full_settings(full_settings, scale)))
-    frames_from_trace(world, trace, N_steps, sensor_settings, ani, "Full model (samples)\nnoise factor $(round(scale, digits=3))";
-                      show_clutters=false)
+    poses = [trace[prefix_address(i, :pose)] for i in 1:(N_steps+1)]
+    projected_sensors =
+        [project_readings(trace[prefix_address(i, :pose)], trace[prefix_address(i, :sensor)], sensor_settings) for i in 1:(N_steps+1)]
+    for (p, sensed_points) in zip(poses, projected_sensors)
+        frame_plot = start_plot(world, "Full model (samples)\nnoise factor $(round(scale, digits=3))"; show_clutters=false)
+        if path_actual != nothing; plot!(path_actual; label="actual path", color=:brown) end
+        plot!(poses; label="trace", color=:green)
+        plot!([p.p[1]], [p.p[2]];
+              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0)
+        plot!(first.(sensed_points), last.(sensed_points);
+              label=nothing, color=:blue, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
+        plot!([Segment(p.p, pr) for pr in sensed_points];
+              label=nothing, color=:blue, alpha=0.25)
+        frame(ani, frame_plot)
+    end
 end
 gif(ani, "imgs/full_1.gif", fps=5)
 
