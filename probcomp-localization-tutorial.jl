@@ -64,19 +64,17 @@ end
 Segment(p1 :: Vector{Float64}, p2 :: Vector{Float64}) = Segment(p1, p2, p2-p1)
 Segment(t :: Tuple) = Segment(t...)
 
-normalize_hd(hd :: Float64) :: Float64 = rem2pi(hd, RoundNearest)
-unit_vec(hd :: Float64) :: Vector{Float64} = [cos(hd), sin(hd)]
 struct Pose
     p  :: Vector{Float64}
     hd :: Float64
     dp :: Vector{Float64}
-    Pose(p :: Vector{Float64}, hd :: Float64) = new(p, normalize_hd(hd), unit_vec(hd))
+    Pose(p :: Vector{Float64}, hd :: Float64) = new(p, rem2pi(hd, RoundNearest), [cos(hd), sin(hd)])
 end
 Pose(t :: Tuple) = Pose(t...)
 Base.show(io :: IO, p :: Pose) = print(io, "Pose($(p.p), $(p.hd))")
-rotate_pose(p :: Pose, a :: Float64) :: Pose = Pose(p.p, p.hd + a)
+
 step_along_pose(p :: Pose, s :: Float64) :: Vector{Float64} = p.p + s * p.dp
-rotated_step(p :: Pose, a :: Float64, s :: Float64) :: Vector{Float64} = step_along_pose(rotate_pose(p, a), s)
+rotate_pose(p :: Pose, a :: Float64) :: Pose = Pose(p.p, p.hd + a)
 
 Segment(p1 :: Pose, p2 :: Pose) = Segment(p1.p, p2.p)
 
@@ -156,7 +154,7 @@ Plots.plot!(seg :: Segment; args...) = plot!([seg.p1[1], seg.p2[1]], [seg.p1[2],
 Plots.plot!(segs :: Vector{Segment}; args...) = plot_list(segs; args...)
 Plots.plot!(seg_groups :: Vector{Vector{Segment}}; args...) = plot_list(seg_groups; args...)
 
-Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, p.p + r*unit_vec(p.hd)); arrow=true, args...)
+Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, step_along_pose(p, r)); arrow=true, args...)
 Plots.plot!(ps :: Vector{Pose}; args...) = plot_list(ps; args...)
 
 function start_plot(world, title; label_world=false, show_clutters=true)
@@ -350,7 +348,7 @@ function ideal_sensor(p :: Pose, walls :: Vector{Segment}, settings :: NamedTupl
 end
 
 project_readings(p :: Pose, readings :: Vector{Float64}, settings :: NamedTuple) :: Vector{Vector{Float64}} =
-    [rotated_step(p, sensor_angle(settings, j), s) for (j, s) in enumerate(readings)];
+    [step_along_pose(rotate_pose(p, sensor_angle(settings, j)), s) for (j, s) in enumerate(readings)];
 
 # %%
 sensor_settings = (fov = 2π*(2/3), num_angles = 20, box_size = world.box_size)
