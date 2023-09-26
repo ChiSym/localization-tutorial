@@ -316,10 +316,10 @@ end
 
 function distance(p :: Pose, seg :: Segment) :: Float64
     s,t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
-    # Solving failed (including, by fiat, if pose is parallel to segment) iff s == nothing.
+    # Solving failed (including, by fiat, if pose is parallel to segment) iff isnothing(s).
     # Pose is oriented away from segment iff s < 0.
     # Point of intersection lies on segment (not just the line) iff 0 <= t <= 1.
-    return (s == nothing || s < 0 || !(0 <= t <= 1)) ? Inf : s
+    return (isnothing(s) || s < 0 || !(0 <= t <= 1)) ? Inf : s
 end
 
 # Capping to a finite value avoids issues below.
@@ -575,7 +575,7 @@ for n in 1:N_samples
         [project_readings(trace[prefix_address(i, :pose)], trace[prefix_address(i, :sensor)], sensor_settings) for i in 1:(N_steps+1)]
     for (p, sensed_points) in zip(poses, projected_sensors)
         frame_plot = start_plot(world, "Full model (samples)\nnoise factor $(round(scale, digits=3))"; show_clutters=false)
-        if path_actual != nothing; plot!(path_actual; label="actual path", color=:brown) end
+        if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
         plot!(poses; label="trace", color=:green)
         plot!([p.p[1]], [p.p[2]];
               label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0)
@@ -619,7 +619,7 @@ poses_to_coords(poses :: Vector{Pose}) :: Vector{Vector{Float64}} = [[p.p[1] for
 
 function frame_from_traces(world, traces, N_steps, title; show_clutters=true, path_actual=nothing)
     the_plot = start_plot(world, title; show_clutters=show_clutters)
-    if path_actual != nothing; plot!(path_actual; label="actual path", color=:brown) end
+    if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
     for trace in traces
         poses = [trace[prefix_address(i, :pose)] for i in 1:(N_steps+1)]
         plot!(poses_to_coords(poses)...;
@@ -1314,8 +1314,8 @@ end;
 # %%
 function frame_from_weighted_trajectories(world, trajectories, weights, N_steps, title; show_clutters=false, path_actual=nothing, minalpha=.01, readings=nothing)
     the_plot = start_plot(world, title; show_clutters=show_clutters)
-    if path_actual != nothing; plot!(path_actual; label="actual path", color=:brown) end
     if !isnothing(path_actual)
+        plot!(path_actual; label="actual path", color=:brown)
         plot!(path_actual[length(first(trajectories))], color=:black)
     end
 
