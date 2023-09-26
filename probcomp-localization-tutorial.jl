@@ -20,7 +20,6 @@
 #
 # Rif comments:
 # * Correct understanding of initial pose.
-# * Plotting code repetition.
 
 # %%
 # Fix for Jay's Jupytext setup
@@ -712,7 +711,7 @@ the_plot
 #
 # ### Deeper functionality of GFs
 #
-# Rif: maybe these discussions are too simplified?
+# Rif asks: maybe these discussions are too simplified?
 #
 # Traced execution of generative functions, via `Gen.simulate` as seen above, is a straightforward alternative semantic interpretation.  A more refined operation, `Gen.generate`, allows two deeper features.
 #
