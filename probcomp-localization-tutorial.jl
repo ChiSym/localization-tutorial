@@ -973,7 +973,7 @@ end
 gif(ani, "imgs/RS.gif", fps=1)
 
 # %%
-N_burn_in = 100 # omit burn-in to illustrate early behavior
+N_burn_in = 100
 N_particles = 20
 compute_bound = 5_000
 traces = rejection_sample(full_model_1, (N_steps_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
@@ -987,7 +987,7 @@ end
 gif(ani, "imgs/RS.gif", fps=1)
 
 # %%
-N_burn_in = 1_000 # omit burn-in to illustrate early behavior
+N_burn_in = 1_000
 N_particles = 20
 compute_bound = 5_000
 traces = rejection_sample(full_model_1, (N_steps_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
