@@ -59,9 +59,10 @@ struct Segment
     p1 :: Vector{Float64}
     p2 :: Vector{Float64}
     dp :: Vector{Float64}
+    Segment(p1 :: Vector{Float64}, p2 :: Vector{Float64}) = new(p1, p2, p2-p1)
 end
-Segment(p1 :: Vector{Float64}, p2 :: Vector{Float64}) = Segment(p1, p2, p2-p1)
 Segment(t :: Tuple) = Segment(t...)
+Base.show(io :: IO, s :: Segment) = print(io, "Segment($(s.p1), $(s.p2))")
 
 struct Pose
     p  :: Vector{Float64}
