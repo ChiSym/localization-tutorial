@@ -126,12 +126,12 @@ world, robot_inputs, N_steps = load_world("example_20_program.json");
 
 # %%
 function integrate_controls(start :: Pose, controls :: Vector{Control}) :: Vector{Pose}
-    poses = Vector{Pose}(undef, length(controls) + 1)
-    poses[1] = p = start
-    for (i, control) in enumerate(controls)
-        poses[i+1] = p = p + control
+    path = Vector{Pose}(undef, length(controls)+1)
+    path[1] = start
+    for i in 1:length(controls)
+        path[i+1] = path[i] + controls[i]
     end
-    return poses
+    return path
 end;
 
 # %%
@@ -241,7 +241,7 @@ end
 
 @load_generated_functions()
 
-function integrate_controls_noisy(start :: Pose, controls :: Vector{Control}, settings) :: Vector{Pose}
+function integrate_controls_noisy(start :: Pose, controls :: Vector{Control}, settings :: NamedTuple) :: Vector{Pose}
     path = Vector{Pose}(undef, length(controls)+1)
     path[1] = start
     for i in 1:length(controls)
