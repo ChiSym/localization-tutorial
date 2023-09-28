@@ -246,9 +246,9 @@ savefig("imgs/given_data")
 the_plot
 
 # %% [markdown]
-# ## Modeling motion
+# ## Modeling motion in Gen
 #
-# Now we specify a model in Gen.
+# Now we specify a model.
 #
 # Each piece of the model is declared as a *generative function*, prefaced by the `@gen` construct.
 
@@ -271,7 +271,7 @@ Assumes
     return Pose(p, hd)
 end
 
-# This call is required by Gen's static DSL in order to invoke `pose_prior_model(...)` below.
+# This call is required by Gen's static DSL in order to invoke `pose_prior_model` below.
 load_generated_functions()
 
 # %% [markdown]
