@@ -55,6 +55,8 @@ if occursin("sharlaon", pwd()); cd("/Users/sharlaon/dev/probcomp-localization-tu
 
 import JSON
 
+norm(v :: Vector{Float64}) = sqrt(sum(v.^2))
+
 struct Segment
     p1 :: Vector{Float64}
     p2 :: Vector{Float64}
@@ -134,45 +136,46 @@ function integrate_controls_unphysical(start :: Pose, controls :: Vector{Control
 end;
 
 # %% [markdown]
-# This code has the problem that it is unphysical: the walls in no way constrain the robot motion.
+# This code has the problem that it is **unphysical**: the walls in no way constrain the robot motion.
 #
 # We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance in the normal direction to the point of contact.
 
 # %%
-# Return unique s,t such that p + s*u == q + t*v.
+# Return unique s, t such that p + s*u == q + t*v.
 function solve_lines(p :: Vector{Float64}, u :: Vector{Float64}, q :: Vector{Float64}, v :: Vector{Float64}; PARALLEL_TOL=1.0e-10)
-    det = u[1]*v[2] - u[2]*v[1]
-    if abs(det) < PARALLEL_TOL; return nothing,nothing end
-    s = (v[1]*(p[2]-q[2]) - v[2]*(p[1]-q[1]))/det
-    t = (u[2]*(q[1]-p[1]) - u[1]*(q[2]-p[2]))/det
-    return s,t
+    det = u[1] * v[2] - u[2] * v[1]
+    if abs(det) < PARALLEL_TOL
+        return nothing, nothing
+    else
+        s = (v[1] * (p[2]-q[2]) - v[2] * (p[1]-q[1])) / det
+        t = (u[2] * (q[1]-p[1]) - u[1] * (q[2]-p[2])) / det
+        return s, t
+    end
 end
 
 function distance(p :: Pose, seg :: Segment) :: Float64
-    s,t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
+    s, t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
     # Solving failed (including, by fiat, if pose is parallel to segment) iff isnothing(s).
     # Pose is oriented away from segment iff s < 0.
-    # Point of intersection lies on segment (not just the line) iff 0 <= t <= 1.
+    # Point of intersection lies on segment (as opposed to the infinite line) iff 0 <= t <= 1.
     return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
 end
-
-norm(v :: Vector{Float64}) = sqrt(sum(v.^2))
-rotate_left(v :: Vector{Float64}) = [-v[2], v[1]]
 
 """
 Assumes
 * `world_inputs` contains fields: `walls`, `bounce`
 """
 function physical_step(p1 :: Vector{Float64}, p2 :: Vector{Float64}, hd :: Float64, world_inputs :: NamedTuple) :: Pose
-    step_pose = Pose(p1, p2-p1)
+    step_pose = Pose(p1, p2 - p1)
     (s, i) = findmin(w -> distance(step_pose, w), world_inputs.walls)
-    if s > norm(p2-p1)
-        # Step succeeds without contact.
+    if s > norm(p2 - p1)
+        # Step succeeds without contact with walls.
         return Pose(p2, hd)
     else
         contact_point = p1 + s * step_pose.dp
-        unit_normal = rotate_left(world_inputs.walls[i].dp/norm(world_inputs.walls[i].dp))
-        # Sign of 2D cross product determines sign of angle of incidence.
+        unit_tangent = world_inputs.walls[i].dp / norm(world_inputs.walls[i].dp)
+        unit_normal = [-unit_tangent[2], unit_tangent[1]]
+        # Sign of 2D cross product determines orientation of bounce.
         if step_pose.dp[1] * world_inputs.walls[i].dp[2] - step_pose.dp[2] * world_inputs.walls[i].dp[1] < 0.
             unit_normal = -unit_normal
         end
@@ -386,9 +389,9 @@ the_plot
 # Starting now, and for a while, we *suppress* the effects of clutter, which the robot is unaware of anyway, and assume the robot is in the environment ideally described by the map.
 
 # %%
-# Capping to a finite value avoids issues below.
 function sensor_distance(p :: Pose, walls :: Vector{Segment}, box_size :: Float64) :: Float64
     d = minimum(distance(p, s) for s in walls)
+    # Capping to a finite value avoids issues below.
     return isinf(d) ? 2. * box_size : d
 end;
 
