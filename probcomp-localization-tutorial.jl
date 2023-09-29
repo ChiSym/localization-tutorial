@@ -105,9 +105,9 @@ function load_world(file_name)
     walls = create_segments(walls_vec)
     clutters_vec = Vector{Vector{Vector{Float64}}}(data["clutter_vert_groups"])
     clutters = create_segments.(clutters_vec)
-    start_guess = Pose(Vector{Float64}(data["start_pose_guess"]["p"]), Float64(data["start_pose_guess"]["hd"]))
+    start = Pose(Vector{Float64}(data["start_pose"]["p"]), Float64(data["start_pose"]["hd"]))
     controls = Vector{Control}([Control(control["ds"], control["dhd"]) for control in data["program_controls"]])
-    all_points = [walls_vec ; clutters_vec... ; [start_guess.p]]
+    all_points = [walls_vec ; clutters_vec... ; [start.p]]
     x_min = minimum(p[1] for p in all_points)
     x_max = maximum(p[1] for p in all_points)
     y_min = minimum(p[2] for p in all_points)
@@ -116,7 +116,7 @@ function load_world(file_name)
     box_size = max(x_max - x_min, y_max - y_min)
     T = length(controls)
     return ((walls=walls, clutters=clutters, bounding_box=bounding_box, box_size=box_size),
-            (start_guess=start_guess, controls=controls),
+            (start=start, controls=controls),
             T)
 end;
 
@@ -133,11 +133,11 @@ world, robot_inputs, T = load_world("example_20_program.json");
 # %%
 """
 Assumes
-* `robot_inputs` contains fields: `start_guess`, `controls`
+* `robot_inputs` contains fields: `start`, `controls`
 """
 function integrate_controls_unphysical(robot_inputs :: NamedTuple) :: Vector{Pose}
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
-    path[1] = robot_inputs.start_guess
+    path[1] = robot_inputs.start
     for t in 1:length(robot_inputs.controls)
         p = path[t].p + robot_inputs.controls[t].ds * path[t].dp
         hd = path[t].hd + robot_inputs.controls[t].dhd
@@ -196,12 +196,12 @@ end
 
 """
 Assumes
-* `robot_inputs` contains fields: `start_guess`, `controls`
+* `robot_inputs` contains fields: `start`, `controls`
 * `world_inputs` contains fields: `walls`, `bounce`
 """
 function integrate_controls(robot_inputs :: NamedTuple, world_inputs :: NamedTuple)
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
-    path[1] = robot_inputs.start_guess
+    path[1] = robot_inputs.start
     for t in 1:length(robot_inputs.controls)
         p = path[t].p + robot_inputs.controls[t].ds * path[t].dp
         hd = path[t].hd + robot_inputs.controls[t].dhd
@@ -254,7 +254,7 @@ end;
 
 # %%
 the_plot = start_plot(world, "Given data", label_world=true)
-plot!(robot_inputs.start_guess; label="start pose guess", color=:green2)
+plot!(robot_inputs.start; label="ideal start pose", color=:green2)
 plot!([pose.p[1] for pose in path_ideal], [pose.p[2] for pose in path_ideal];
       label="ideal program path", color=:green3, seriestype=:scatter, markersize=3, markerstrokewidth=0)
 savefig("imgs/given_data")
@@ -280,9 +280,9 @@ using Gen;
 Assumes
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
-@gen (static) function pose_prior_model(start_guess :: Pose, motion_settings :: NamedTuple) :: Pose
-    p ~ mvnormal(start_guess.p, motion_settings.p_noise * [1 0 ; 0 1])
-    hd ~ normal(start_guess.hd, motion_settings.hd_noise)
+@gen (static) function pose_prior_model(start :: Pose, motion_settings :: NamedTuple) :: Pose
+    p ~ mvnormal(start.p, motion_settings.p_noise * [1 0 ; 0 1])
+    hd ~ normal(start.hd, motion_settings.hd_noise)
     return Pose(p, hd)
 end
 
@@ -296,7 +296,7 @@ load_generated_functions()
 motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
 
 N_samples = 50
-pose_samples = [pose_prior_model(robot_inputs.start_guess, motion_settings) for _ in 1:N_samples]
+pose_samples = [pose_prior_model(robot_inputs.start, motion_settings) for _ in 1:N_samples]
 
 the_plot = start_plot(world, "Pose prior model (samples)"; show_clutters=false)
 plot!(pose_samples; label=nothing, color=:red)
@@ -307,7 +307,7 @@ the_plot
 # We can also perform *traced execution* using the construct `Gen.simulate`, and inspect the stochastic choices performed with the `~` operator.
 
 # %%
-trace = simulate(pose_prior_model, (robot_inputs.start_guess, motion_settings))
+trace = simulate(pose_prior_model, (robot_inputs.start, motion_settings))
 get_choices(trace)
 
 # %% [markdown]
@@ -331,13 +331,13 @@ end
 
 """
 Assumes
-* `robot_inputs` contains fields: `start_guess`, `controls`
+* `robot_inputs` contains fields: `start`, `controls`
 * `world_inputs` contains fields: `walls`, `bounce`
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
 function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
-    path[1] = robot_inputs.start_guess
+    path[1] = robot_inputs.start
     for t in 1:length(robot_inputs.controls)
         path[t+1] = motion_model(path[t], robot_inputs.controls[t], world_inputs, motion_settings)
     end
@@ -360,7 +360,7 @@ end
 gif(ani, "imgs/motion.gif", fps=1)
 
 # %%
-trace = simulate(motion_model, (robot_inputs.start_guess, robot_inputs.controls[1], world_inputs, motion_settings))
+trace = simulate(motion_model, (robot_inputs.start, robot_inputs.controls[1], world_inputs, motion_settings))
 get_choices(trace)
 
 # %% [markdown]
@@ -373,8 +373,8 @@ get_choices(trace)
 
 motion_settings_synthetic = (p_noise = 0.05, hd_noise = 2π / 360)
 
-start_actual = pose_prior_model(robot_inputs.start_guess, motion_settings_synthetic)
-# path_actual = integrate_controls_noisy((robot_inputs..., start_guess=start_actual), world_inputs, motion_settings_synthetic)
+start_actual = pose_prior_model(robot_inputs.start, motion_settings_synthetic)
+# path_actual = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_synthetic)
 # repr(path_actual) |> clipboard
 # Here, we will use a hard-coded one we generated earlier that we selected to more clearly illustrate
 # the main ideas in the notebook.
@@ -560,7 +560,7 @@ gif(ani, "imgs/sensor_1.gif", fps=1)
 # The trace contains many choices corresponding to directions of sensor reading from the input pose.  To reduce notebook clutter, here we just show a subset of 5 of them:
 
 # %%
-trace = simulate(sensor_model_1, (robot_inputs.start_guess, world.walls, sensor_settings))
+trace = simulate(sensor_model_1, (robot_inputs.start, world.walls, sensor_settings))
 
 get_selected(get_choices(trace), select((1:5)...))
 
@@ -572,7 +572,7 @@ get_selected(get_choices(trace), select((1:5)...))
 # %%
 """
 Assumes
-* `robot_inputs` contains fields: `start_guess`, `controls`
+* `robot_inputs` contains fields: `start`, `controls`
 * `world_inputs` contains fields: `walls`, `bounce`
 * `full_settings` contains fields: `motion_settings`, `sensor_settings`
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
@@ -581,7 +581,7 @@ Assumes
 @gen function full_model_1_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Vector{Float64}
     sensor_readings = Vector{Vector{Float64}}(undef, length(robot_inputs.controls) + 1)
 
-    pose = {:initial => :pose} ~ pose_prior_model(robot_inputs.start_guess, full_settings.motion_settings)
+    pose = {:initial => :pose} ~ pose_prior_model(robot_inputs.start, full_settings.motion_settings)
     sensor_readings[1] = {:initial => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
 
     for t in 1:T
@@ -626,13 +626,13 @@ prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps
 
 """
 Assumes
-* `robot_inputs` contains fields: `start_guess`
+* `robot_inputs` contains fields: `start`
 * `full_settings` contains fields: `motion_settings`, `sensor_settings`
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
 @gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)
-    pose ~ pose_prior_model(robot_inputs.start_guess, full_settings.motion_settings)
+    pose ~ pose_prior_model(robot_inputs.start, full_settings.motion_settings)
     sensor ~ sensor_model_1(pose, walls, full_settings.sensor_settings)
     return (pose, sensor)
 end
@@ -657,7 +657,7 @@ combine_sensors(initial, steps) = [last(initial), last.(steps)...]
 
 """
 Assumes
-* `robot_inputs` contains fields: `start_guess`, `controls`
+* `robot_inputs` contains fields: `start`, `controls`
 * `world_inputs` contains fields: `walls`, `bounce`
 * `full_settings` contains fields: `motion_settings`, `sensor_settings`
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
@@ -931,11 +931,11 @@ basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(mode
 
 # %%
 T_short = 4
-robot_inputs_short = (start_guess = robot_inputs.start_guess, controls = robot_inputs.controls[1:T_short])
+robot_inputs_short = (start = robot_inputs.start, controls = robot_inputs.controls[1:T_short])
 path_ideal_short = integrate_controls(robot_inputs_short, world_inputs)
 
-start_actual_short = pose_prior_model(robot_inputs_short.start_guess, motion_settings_synthetic)
-path_actual_short = integrate_controls_noisy((robot_inputs_short..., start_guess=start_actual_short), world_inputs, motion_settings_synthetic)
+start_actual_short = pose_prior_model(robot_inputs_short.start, motion_settings_synthetic)
+path_actual_short = integrate_controls_noisy((robot_inputs_short..., start=start_actual_short), world_inputs, motion_settings_synthetic)
 
 the_plot = start_plot(world, "Shorter path", label_world=false)
 plot!(path_ideal_short; label="ideal path", color=:green2)
@@ -1513,7 +1513,7 @@ end
     else
         pose_scores = [
             Gen.assess(pose_prior_model,
-                       (robot_inputs.start_guess, settings.motion_settings),
+                       (robot_inputs.start, settings.motion_settings),
                        ch)[1]
             for ch in chmap_grid]
     end
@@ -1642,7 +1642,7 @@ motion_settings_lownoise = (p_noise = 0.005, hd_noise = 1/50 * 2π / 360)
 sensor_settings_noisy = (sensor_settings..., s_noise = 0.15)
 
 tol2 = 0.10
-path_actual_lownoise = integrate_controls_noisy((robot_inputs..., start_guess=start_actual), world_inputs, motion_settings_lownoise)
+path_actual_lownoise = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_lownoise)
 observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in path_actual_lownoise];
 
 # %%
@@ -1697,7 +1697,7 @@ obs_selector = select(:initial => :sensor, (:steps => t => :sensor  for t=1:100)
 motion_settings_highnoise = (p_noise = 0.25, hd_noise = 1.5 * 2π / 360)
 
 tol3 = .03
-path_actual_highnoise = integrate_controls_noisy((robot_inputs..., start_guess=start_actual), world_inputs, motion_settings_highnoise)
+path_actual_highnoise = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_highnoise)
 observations3 = [noisy_sensor(p, world.walls, sensor_settings, tol3) for p in path_actual_highnoise];
 
 ani = Animation()
