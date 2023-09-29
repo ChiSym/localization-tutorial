@@ -412,7 +412,7 @@ Assumes
 """
 function ideal_sensor(p :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
     readings = Vector{Float64}(undef, 2 * sensor_settings.num_angles + 1)
-    for j in 1:(2*sensor_settings.num_angles+1)
+    for j in 1:(2 * sensor_settings.num_angles + 1)
         sensor_pose = rotate_pose(p, sensor_angle(sensor_settings, j))
         readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
     end
@@ -470,7 +470,7 @@ Assumes
 """
 function noisy_sensor(p :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple, tol :: Float64) :: Vector{Float64}
     readings = Vector{Float64}(undef, 2 * sensor_settings.num_angles + 1)
-    for j in 1:(2*sensor_settings.num_angles+1)
+    for j in 1:(2 * sensor_settings.num_angles + 1)
         sensor_pose = rotate_pose(p, sensor_angle(sensor_settings, j))
         # Uniformly choose in the interval [distance - tol, distance + tol].
         readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size) + (2.0*tol*rand() - tol)
@@ -528,7 +528,7 @@ Assumes
 """
 @gen function sensor_model_1(p :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
     readings = Vector{Float64}(undef, 2 * sensor_settings.num_angles + 1)
-    for j in 1:(2*sensor_settings.num_angles+1)
+    for j in 1:(2 * sensor_settings.num_angles + 1)
         sensor_pose = rotate_pose(p, sensor_angle(sensor_settings, j))
         readings[j] = {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
     end
@@ -1313,7 +1313,7 @@ function grid_mh(tr, n_steps, step_sizes)
 end;
 
 # %%
-get_trajectory(tr) = [ tr[prefix_address(i, :pose)] for i in 1:(get_args(tr)[1] + 1) ]
+get_trajectory(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1] + 1)]
 
 function particle_filter_grid_rejuv_with_checkpoints(model, T, args, observations, N_particles, MH_arg_schedule)
     constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
