@@ -113,16 +113,16 @@ function load_world(file_name)
     y_max = maximum(p[2] for p in all_points)
     bounding_box = (x_min, x_max, y_min, y_max)
     box_size = max(x_max - x_min, y_max - y_min)
-    N_steps = length(controls)
+    T = length(controls)
     return ((walls=walls, clutters=clutters, bounding_box=bounding_box, box_size=box_size),
             (start_guess=start_guess, controls=controls),
-            N_steps)
+            T)
 end;
 
 # %%
 # Specific example code here
 
-world, robot_inputs, N_steps = load_world("example_20_program.json");
+world, robot_inputs, T = load_world("example_20_program.json");
 
 # %% [markdown]
 # ### Integrate a path from a starting pose and controls
@@ -133,8 +133,8 @@ world, robot_inputs, N_steps = load_world("example_20_program.json");
 function integrate_controls_unphysical(start :: Pose, controls :: Vector{Control}) :: Vector{Pose}
     path = Vector{Pose}(undef, length(controls)+1)
     path[1] = start
-    for i in 1:length(controls)
-        path[i+1] = Pose(path[i].p + controls[i].ds * path[i].dp, path[i].hd + controls[i].dhd)
+    for t in 1:length(controls)
+        path[t+1] = Pose(path[t].p + controls[t].ds * path[t].dp, path[t].hd + controls[t].dhd)
     end
     return path
 end;
@@ -194,10 +194,10 @@ Assumes
 function integrate_controls(start :: Pose, controls :: Vector{Control}, world_inputs :: NamedTuple)
     path = Vector{Pose}(undef, length(controls)+1)
     path[1] = start
-    for i in 1:length(controls)
-        p = path[i].p + controls[i].ds * path[i].dp
-        hd = path[i].hd + controls[i].dhd
-        path[i+1] = physical_step(path[i].p, p, hd, world_inputs)
+    for t in 1:length(controls)
+        p = path[t].p + controls[t].ds * path[t].dp
+        hd = path[t].hd + controls[t].dhd
+        path[t+1] = physical_step(path[t].p, p, hd, world_inputs)
     end
     return path
 end;
@@ -330,8 +330,8 @@ function integrate_controls_noisy(start :: Pose, controls :: Vector{Control},
                                   world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     path = Vector{Pose}(undef, length(controls)+1)
     path[1] = start
-    for i in 1:length(controls)
-        path[i+1] = motion_model(path[i], controls[i], world_inputs, motion_settings)
+    for t in 1:length(controls)
+        path[t+1] = motion_model(path[t], controls[t], world_inputs, motion_settings)
     end
     return path
 end;
@@ -578,9 +578,9 @@ Assumes
     pose = {:initial => :pose} ~ pose_prior_model(robot_inputs.start_guess, full_settings.motion_settings)
     sensor_readings[1] = {:initial => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
 
-    for i in 1:length(robot_inputs.controls)
-        pose = {:steps => i => :pose} ~ motion_model(pose, robot_inputs.controls[i], world_inputs, full_settings.motion_settings)
-        sensor_readings[i+1] = {:steps => i => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
+    for t in 1:length(robot_inputs.controls)
+        pose = {:steps => t => :pose} ~ motion_model(pose, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
+        sensor_readings[t+1] = {:steps => t => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
     end
 
     return sensor_readings
@@ -667,7 +667,7 @@ end
 
 # %%
 # Handle asymmetry in trace addresses.
-prefix_address(i :: Int, rest) :: Pair = (i == 1) ? (:initial => rest) : (:steps => (i-1) => rest);
+prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest);
 
 # %%
 full_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
@@ -678,12 +678,12 @@ N_samples = 10
 ani = Animation()
 for n in 1:N_samples
     scale = (2.)^(2+(n-N_samples))
-    trace = simulate(full_model_1, (N_steps, robot_inputs, world_inputs, scaled_full_settings(full_settings, scale)))
-    poses = [trace[prefix_address(i, :pose)] for i in 1:(N_steps+1)]
-    for i in 1:(N_steps+1)
+    trace = simulate(full_model_1, (T, robot_inputs, world_inputs, scaled_full_settings(full_settings, scale)))
+    poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+    for t in 1:(T+1)
         frame_plot = plot_sensors(world, "Full model (samples)\nnoise factor $(round(scale, digits=3))",
             [(path_actual, "actual path", :brown, nothing, nothing, nothing),
-             (poses, "trace", :green, poses[i], trace[prefix_address(i, :sensor)], nothing)],
+             (poses, "trace", :green, poses[t], trace[prefix_address(t, :sensor)], nothing)],
             sensor_settings; show_clutters=false)
         frame(ani, frame_plot)
     end
@@ -696,7 +696,7 @@ gif(ani, "imgs/full_1.gif", fps=5)
 # %%
 full_model_args = (robot_inputs, world_inputs, full_settings)
 
-trace = simulate(full_model_1, (N_steps, full_model_args...))
+trace = simulate(full_model_1, (T, full_model_args...))
 selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t, :sensor => j) for t in 1:3, j in 1:5)...)
 get_selected(get_choices(trace), selection)
 
@@ -712,11 +712,11 @@ get_selected(get_choices(trace), selection)
 # %%
 poses_to_coords(poses :: Vector{Pose}) :: Vector{Vector{Float64}} = [[p.p[1] for p in poses], [p.p[2] for p in poses]]
 
-function frame_from_traces(world, traces, N_steps, title; show_clutters=true, path_actual=nothing)
+function frame_from_traces(world, traces, T, title; show_clutters=true, path_actual=nothing)
     the_plot = start_plot(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
     for trace in traces
-        poses = [trace[prefix_address(i, :pose)] for i in 1:(N_steps+1)]
+        poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
         plot!(poses_to_coords(poses)...; label=nothing, color=:green, alpha=0.3)
         plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
               label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
@@ -729,16 +729,16 @@ end;
 
 # Encode constraints into choice map.
 
-function constraint_from_sensor_reading(cm :: ChoiceMap, i :: Int, sensor_reading :: Vector{Float64}) :: ChoiceMap
+function constraint_from_sensor_reading(cm :: ChoiceMap, t :: Int, sensor_reading :: Vector{Float64}) :: ChoiceMap
     for (j, reading) in enumerate(sensor_reading)
-        cm[prefix_address(i, :sensor => j => :distance)] = reading
+        cm[prefix_address(t, :sensor => j => :distance)] = reading
     end
     return cm
 end
 
 function constraints_from_sensor_readings(cm :: ChoiceMap, sensor_readings :: Vector{Vector{Float64}}) :: ChoiceMap
-    for (i, sensor_reading) in enumerate(sensor_readings)
-        constraint_from_sensor_reading(cm, i, sensor_reading)
+    for (t, sensor_reading) in enumerate(sensor_readings)
+        constraint_from_sensor_reading(cm, t, sensor_reading)
     end
     return cm
 end
@@ -762,10 +762,10 @@ end
 
 using GenParticleFilters
 
-function particle_filter_rejuv_library(model, N_steps, args, observations, N_particles, N_MH, MH_proposal, MH_proposal_args)
-    constraints = [constraint_from_sensor_reading(choicemap(), i, sensor_reading) for (i, sensor_reading) in enumerate(observations)]
+function particle_filter_rejuv_library(model, T, args, observations, N_particles, N_MH, MH_proposal, MH_proposal_args)
+    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
     state = pf_initialize(model, (0, args...), constraints[1], N_particles)
-    for t in 1:N_steps
+    for t in 1:T
         pf_resample!(state)
         pf_rejuvenate!(state, mh, (MH_proposal, MH_proposal_args), N_MH)
         pf_update!(state, (t, args...), (UnknownChange(),), constraints[t+1])
@@ -775,9 +775,9 @@ end
 
 # Run PF and return one of its particles.
 
-function sample_from_posterior(model, N_steps, args, observations; N_MH = 10, N_particles = 10)
+function sample_from_posterior(model, T, args, observations; N_MH = 10, N_particles = 10)
     drift_step_factor = 1/3.
-    traces, _ = particle_filter_rejuv_library(model, N_steps, args, observations, N_particles, N_MH, drift_proposal, (drift_step_factor,))
+    traces, _ = particle_filter_rejuv_library(model, T, args, observations, N_particles, N_MH, drift_proposal, (drift_step_factor,))
     return traces[1]
 end;
 
@@ -787,12 +787,12 @@ constraints = constraints_from_sensor_readings(choicemap(), observations);
 # %%
 N_samples = 10
 
-traces = [simulate(full_model_1, (N_steps, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, traces, N_steps, "Prior on robot paths";
+traces = [simulate(full_model_1, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, traces, T, "Prior on robot paths";
                                path_actual=path_actual, show_clutters=false)
 
-traces = [sample_from_posterior(full_model_1, N_steps, full_model_args, observations; N_MH=10, N_particles=10) for _ in 1:N_samples]
-posterior_plot = frame_from_traces(world, traces, N_steps, "Posterior on robot paths";
+traces = [sample_from_posterior(full_model_1, T, full_model_args, observations; N_MH=10, N_particles=10) for _ in 1:N_samples]
+posterior_plot = frame_from_traces(world, traces, T, "Posterior on robot paths";
                                    path_actual=path_actual, show_clutters=false)
 
 the_plot = plot(prior_plot, posterior_plot, size=(1000,500))
@@ -923,8 +923,8 @@ basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(mode
 # Let us first consider a shorter robot path, but, to keep it interesting, allow a higher deviation from the ideal program.
 
 # %%
-N_steps_short = 4
-robot_inputs_short = (start_guess = robot_inputs.start_guess, controls = robot_inputs.controls[1:N_steps_short])
+T_short = 4
+robot_inputs_short = (start_guess = robot_inputs.start_guess, controls = robot_inputs.controls[1:T_short])
 path_integrated_short = integrate_controls(robot_inputs_short.start_guess, robot_inputs_short.controls, world_inputs)
 
 start_actual_short = pose_prior_model(robot_inputs_short.start_guess, motion_settings_synthetic)
@@ -971,9 +971,9 @@ constraints_short = constraints_from_sensor_readings(choicemap(), observations_s
 
 N_samples = 10
 N_SIR = 500
-traces = [basic_SIR_library(full_model_1, (N_steps_short, full_model_args_short...), constraints_short, N_SIR)[1] for _ in 1:N_samples]
+traces = [basic_SIR_library(full_model_1, (T_short, full_model_args_short...), constraints_short, N_SIR)[1] for _ in 1:N_samples]
 
-the_plot = frame_from_traces(world, traces, N_steps_short, "SIR (short path)";
+the_plot = frame_from_traces(world, traces, T_short, "SIR (short path)";
                              show_clutters=false, path_actual=path_actual_short)
 savefig("imgs/SIR_short")
 the_plot
@@ -993,7 +993,7 @@ the_plot
 
 # %%
 function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_ITERS)
-    C = (N_burn_in > 0) ? maximum(generate(full_model_1, (N_steps, full_model_args...), constraints)[2] for _ in 1:N_burn_in) : -Inf
+    C = (N_burn_in > 0) ? maximum(generate(full_model_1, (T, full_model_args...), constraints)[2] for _ in 1:N_burn_in) : -Inf
     println("C set to $C")
 
     n_iters = 0
@@ -1028,18 +1028,18 @@ function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_
 end;
 
 # %%
-N_steps_RS = 9;
+T_RS = 9;
 
 # %%
 N_burn_in = 0 # omit burn-in to illustrate early behavior
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (N_steps_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, traces[1:i], N_steps_RS, "RS (particles 1 to $i)";
-                                   path_actual=path_actual[1:N_steps_RS])
+    frame_plot = frame_from_traces(world, traces[1:i], T_RS, "RS (particles 1 to $i)";
+                                   path_actual=path_actual[1:T_RS])
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS.gif", fps=1)
@@ -1048,12 +1048,12 @@ gif(ani, "imgs/RS.gif", fps=1)
 N_burn_in = 100
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (N_steps_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, traces[1:i], N_steps_RS, "RS (particles 1 to $i)";
-                                   path_actual=path_actual[1:N_steps_RS])
+    frame_plot = frame_from_traces(world, traces[1:i], T_RS, "RS (particles 1 to $i)";
+                                   path_actual=path_actual[1:T_RS])
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS.gif", fps=1)
@@ -1062,12 +1062,12 @@ gif(ani, "imgs/RS.gif", fps=1)
 N_burn_in = 1_000
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (N_steps_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, traces[1:i], N_steps_RS, "RS (particles 1 to $i)";
-                                   path_actual=path_actual[1:N_steps_RS])
+    frame_plot = frame_from_traces(world, traces[1:i], T_RS, "RS (particles 1 to $i)";
+                                   path_actual=path_actual[1:T_RS])
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS.gif", fps=1)
@@ -1087,9 +1087,9 @@ gif(ani, "imgs/RS.gif", fps=1)
 # %%
 N_samples = 10
 N_SIR = 500
-traces = [basic_SIR_library(full_model_1, (N_steps, full_model_args...), constraints, N_SIR)[1] for _ in 1:N_samples]
+traces = [basic_SIR_library(full_model_1, (T, full_model_args...), constraints, N_SIR)[1] for _ in 1:N_samples]
 
-the_plot = frame_from_traces(world, traces, N_steps, "SIR (original path)";
+the_plot = frame_from_traces(world, traces, T, "SIR (original path)";
                              show_clutters=false, path_actual=path_actual)
 savefig("imgs/SIR")
 the_plot
@@ -1129,8 +1129,8 @@ the_plot
 # This adds a step to the particle filter after resampling, which iteratively tweaks the values $\textbf{z}_t^{a^i_t}$ to make them more consistent observations.
 
 # %%
-function particle_filter_rejuv(model, N_steps, args, observations, N_particles, N_MH, MH_proposal, MH_proposal_args)
-    constraints = [constraint_from_sensor_reading(choicemap(), i, sensor_reading) for (i, sensor_reading) in enumerate(observations)]
+function particle_filter_rejuv(model, T, args, observations, N_particles, N_MH, MH_proposal, MH_proposal_args)
+    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
 
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1140,7 +1140,7 @@ function particle_filter_rejuv(model, N_steps, args, observations, N_particles, 
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
     
-    for t in 1:N_steps
+    for t in 1:T
         weights = exp.(log_weights .- maximum(log_weights))
         weights = weights ./ sum(weights)
         for i in 1:N_particles
@@ -1180,12 +1180,12 @@ N_samples = 6
 N_particles = 10
 N_MH = 5
 t1 = Dates.now()
-traces = [particle_filter_rejuv(full_model_1, N_steps, full_model_args, observations, N_particles,
+traces = [particle_filter_rejuv(full_model_1, T, full_model_args, observations, N_particles,
                                 N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
 t2 = Dates.now()
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
-the_plot = frame_from_traces(world, traces, N_steps, "PF+Drift Rejuv";
+the_plot = frame_from_traces(world, traces, T, "PF+Drift Rejuv";
                              path_actual=path_actual)
 savefig("imgs/PF_rejuv")
 the_plot
@@ -1315,8 +1315,8 @@ end;
 # %%
 get_trajectory(tr) = [ tr[prefix_address(i, :pose)] for i in 1:(get_args(tr)[1] + 1) ]
 
-function particle_filter_grid_rejuv_with_checkpoints(model, N_steps, args, observations, N_particles, MH_arg_schedule)
-    constraints = [constraint_from_sensor_reading(choicemap(), i, sensor_reading) for (i, sensor_reading) in enumerate(observations)]
+function particle_filter_grid_rejuv_with_checkpoints(model, T, args, observations, N_particles, MH_arg_schedule)
+    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
 
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1330,7 +1330,7 @@ function particle_filter_grid_rejuv_with_checkpoints(model, N_steps, args, obser
 
     push!(checkpoints, (get_trajectory.(traces), copy(log_weights)))
 
-    # for t in 1:N_steps
+    # for t in 1:T
         
     #     for i in 1:N_particles
     #         resample_traces[i] = traces[categorical(weights)]
@@ -1348,7 +1348,7 @@ function particle_filter_grid_rejuv_with_checkpoints(model, N_steps, args, obser
     #     end
     # end
     
-    for t in 1:N_steps
+    for t in 1:T
         t % 5 == 0 && @info "t = $t"
 
         lnormwts = log_weights .- logsumexp(log_weights)
@@ -1379,7 +1379,7 @@ function particle_filter_grid_rejuv_with_checkpoints(model, N_steps, args, obser
 end;
 
 # %%
-function frame_from_weighted_trajectories(world, trajectories, weights, N_steps, title; show_clutters=false, path_actual=nothing, minalpha=.01, readings=nothing)
+function frame_from_weighted_trajectories(world, trajectories, weights, T, title; show_clutters=false, path_actual=nothing, minalpha=.01, readings=nothing)
     the_plot = start_plot(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual)
         plot!(path_actual; label="actual path", color=:brown)
@@ -1422,8 +1422,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss =
     [particle_filter_grid_rejuv_with_checkpoints(
-       #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-       full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule)
+       #model,      T,   args,         observations, N_particles, MH_arg_schedule)
+       full_model_1, T, full_model_args, observations, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = Dates.now();
 
@@ -1437,7 +1437,7 @@ for checkpoints in checkpointss
 end
 merged_weight_list = merged_weight_list .- log(length(checkpointss))
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list, merged_weight_list, N_steps, "PF + Grid MH Rejuv"; path_actual, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list, merged_weight_list, T, "PF + Grid MH Rejuv"; path_actual, minalpha=0.03)
 
 # %% [markdown]
 # This is just a first step.  We'll improve it below by improving the quality of the particle weights (and, in turn, the resampling).
@@ -1542,8 +1542,8 @@ function grid_smcp3(tr, n_steps, step_sizes)
 end;
 
 # %%
-function particle_filter_grid_smcp3_with_checkpoints(model, N_steps, args, observations, N_particles, MH_arg_schedule)
-    constraints = [constraint_from_sensor_reading(choicemap(), i, sensor_reading) for (i, sensor_reading) in enumerate(observations)]
+function particle_filter_grid_smcp3_with_checkpoints(model, T, args, observations, N_particles, MH_arg_schedule)
+    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
 
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1557,7 +1557,7 @@ function particle_filter_grid_smcp3_with_checkpoints(model, N_steps, args, obser
 
     push!(checkpoints, (get_trajectory.(traces), copy(log_weights)))
 
-    for t in 1:N_steps
+    for t in 1:T
         if t % 5 == 1
             @info "t = $t"
         end
@@ -1601,8 +1601,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss2 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-       full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule)
+       #model,      T,   args,         observations, N_particles, MH_arg_schedule)
+       full_model_1, T, full_model_args, observations, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1617,7 +1617,7 @@ merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list2, merged_weight_list2, N_steps, "PF + Grid SMCP3 Rejuv"; path_actual, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list2, merged_weight_list2, T, "PF + Grid SMCP3 Rejuv"; path_actual, minalpha=0.03)
 
 # %% [markdown]
 # That's already better.  We'll improve this algorithm even further below.
@@ -1661,8 +1661,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss4 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      N_steps,   args,         observations, N_particles, grid)
-       full_model_1, N_steps, full_model_args_v2, observations2, N_particles, [])
+       #model,      T,   args,         observations, N_particles, grid)
+       full_model_1, T, full_model_args_v2, observations2, N_particles, [])
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1677,7 +1677,7 @@ merged_weight_list4 = merged_weight_list4 .- log(length(checkpointss4));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list4, merged_weight_list4, N_steps, "Particle filter (no rejuv) - low motion noise"; path_actual=path_actual_lownoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list4, merged_weight_list4, T, "Particle filter (no rejuv) - low motion noise"; path_actual=path_actual_lownoise, minalpha=0.03)
 
 
 # %% [markdown]
@@ -1713,8 +1713,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss5 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      N_steps,   args,         observations, N_particles, grid)
-       full_model_1, N_steps, full_model_args_v2, observations3, N_particles, [])
+       #model,      T,   args,         observations, N_particles, grid)
+       full_model_1, T, full_model_args_v2, observations3, N_particles, [])
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1729,7 +1729,7 @@ merged_weight_list5 = merged_weight_list5 .- log(length(checkpointss5));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list5, merged_weight_list5, N_steps, "PF - motion noise:(model:low)(data:high)"; path_actual=path_actual_highnoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list5, merged_weight_list5, T, "PF - motion noise:(model:low)(data:high)"; path_actual=path_actual_highnoise, minalpha=0.03)
 
 # %% [markdown]
 # Conversely, if we run a no-rejuvenation particle filter with the higher model noise parameters, the runs are inconsistent.
@@ -1741,8 +1741,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss6 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      N_steps,   args,         observations, N_particles, grid)
-       full_model_1, N_steps, full_model_args, observations3, N_particles, [])
+       #model,      T,   args,         observations, N_particles, grid)
+       full_model_1, T, full_model_args, observations3, N_particles, [])
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1757,7 +1757,7 @@ merged_weight_list6 = merged_weight_list6 .- log(length(checkpointss6));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list6, merged_weight_list6, N_steps, "PF - motion noise:(model:high)(data:high)"; path_actual=path_actual_highnoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list6, merged_weight_list6, T, "PF - motion noise:(model:high)(data:high)"; path_actual=path_actual_highnoise, minalpha=0.03)
 
 # %% [markdown]
 # However, if we add back in SMCP3 rejuvenation, performance is a lot better!
@@ -1774,8 +1774,8 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 t1 = Dates.now()
 checkpointss7 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      N_steps,   args,         observations, N_particles, grid)
-       full_model_1, N_steps, full_model_args, observations3, N_particles, grid_schedule)
+       #model,      T,   args,         observations, N_particles, grid)
+       full_model_1, T, full_model_args, observations3, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1790,7 +1790,7 @@ merged_weight_list7 = merged_weight_list7 .- log(length(checkpointss7));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list7, merged_weight_list7, N_steps, "PF + Grid SMCP3 Rejuv - motion noise:high"; path_actual=path_actual_highnoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list7, merged_weight_list7, T, "PF + Grid SMCP3 Rejuv - motion noise:high"; path_actual=path_actual_highnoise, minalpha=0.03)
 
 # %% [markdown]
 # # Inference controller to automatically spend the right amount of compute for good accuracy
@@ -1804,8 +1804,8 @@ frame_from_weighted_trajectories(world, merged_traj_list7, merged_weight_list7, 
 # With high-motion noise settings, this will automatically realize that rejuvenation is needed at some steps to alleviate artifacts.
 
 # %%
-function controlled_particle_filter_with_checkpoints(model, N_steps, args, observations, N_particles::Int, og_arg_schedule)
-    constraints = [constraint_from_sensor_reading(choicemap(), i, sensor_reading) for (i, sensor_reading) in enumerate(observations)]
+function controlled_particle_filter_with_checkpoints(model, T, args, observations, N_particles::Int, og_arg_schedule)
+    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
 
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1821,7 +1821,7 @@ function controlled_particle_filter_with_checkpoints(model, N_steps, args, obser
     prev_total_weight = 0.
 
     n_rejuv = 0
-    for t in 1:N_steps
+    for t in 1:T
         if t % 5 == 0
             @info "t = $t"
         end
@@ -1880,13 +1880,13 @@ function controlled_particle_filter_with_checkpoints(model, N_steps, args, obser
         push!(checkpoints, (msg="update", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
     end
 
-    @info "Rejuvenated $n_rejuv of $N_steps steps."
+    @info "Rejuvenated $n_rejuv of $T steps."
     return checkpoints
 end;
 
 # %%
-function controlled_particle_filter_with_checkpoints_v2(model, N_steps, args, observations, N_particles::Int, og_arg_schedule)
-    constraints = [constraint_from_sensor_reading(choicemap(), i, sensor_reading) for (i, sensor_reading) in enumerate(observations)]
+function controlled_particle_filter_with_checkpoints_v2(model, T, args, observations, N_particles::Int, og_arg_schedule)
+    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
 
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1903,7 +1903,7 @@ function controlled_particle_filter_with_checkpoints_v2(model, N_steps, args, ob
     prev_total_weight = 0.
 
     n_rejuv = 0
-    for t in 1:N_steps
+    for t in 1:T
         if t % 5 == 0
             @info "t = $t"
         end
@@ -1987,7 +1987,7 @@ function controlled_particle_filter_with_checkpoints_v2(model, N_steps, args, ob
         push!(checkpoints, (msg="Extending", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
     end
 
-    @info "Rejuvenated $n_rejuv of $N_steps steps."
+    @info "Rejuvenated $n_rejuv of $T steps."
     return checkpoints
 end;
 
@@ -2005,8 +2005,8 @@ checkpointss3 = []
 t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
-        #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule))
+        #model,      T,   args,         observations, N_particles, MH_arg_schedule)
+        full_model_1, T, full_model_args, observations, N_particles, grid_schedule))
 end
 t2 = Dates.now();
 
@@ -2020,7 +2020,7 @@ for checkpoints in checkpointss3
 end
 merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, merged_traj_list3, merged_weight_list3, N_steps, "Inference Controller (moderate noise)"; path_actual, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list3, merged_weight_list3, T, "Inference Controller (moderate noise)"; path_actual, minalpha=0.03)
 
 # %% [markdown]
 # **Animation showing the controller in action----**
@@ -2030,7 +2030,7 @@ ani = Animation()
 
 checkpoints = checkpointss3[1]
 for checkpoint in checkpoints
-    frame_plot = frame_from_weighted_trajectories(world, checkpoint.traj, checkpoint.wts, N_steps, "t = $(checkpoint.t) | operation = $(checkpoint.msg)"; path_actual, minalpha=0.08)
+    frame_plot = frame_from_weighted_trajectories(world, checkpoint.traj, checkpoint.wts, T, "t = $(checkpoint.t) | operation = $(checkpoint.msg)"; path_actual, minalpha=0.08)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/controller_animation.gif", fps=1)
@@ -2053,8 +2053,8 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 #     t1 = Dates.now()
 #     for _=1:N_samples
 #         push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
-#             #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-#             full_model_1, N_steps, full_model_args, observations, N_particles, grid_schedule))
+#             #model,      T,   args,         observations, N_particles, MH_arg_schedule)
+#             full_model_1, T, full_model_args, observations, N_particles, grid_schedule))
 #     end
 #     t2 = Dates.now();
     
@@ -2067,7 +2067,7 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 #     end
 #     merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3));
 #     println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-#     frame_from_weighted_trajectories(world, merged_traj_list3, merged_weight_list3, N_steps, "controlled grid rejuv"; path_actual, minalpha=0.03)
+#     frame_from_weighted_trajectories(world, merged_traj_list3, merged_weight_list3, T, "controlled grid rejuv"; path_actual, minalpha=0.03)
 # end
 
 # %% [markdown]
@@ -2086,8 +2086,8 @@ checkpointss9 = []
 t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss9, controlled_particle_filter_with_checkpoints_v2(
-        #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, N_steps, full_model_args_v2, observations2, N_particles, grid_schedule))
+        #model,      T,   args,         observations, N_particles, MH_arg_schedule)
+        full_model_1, T, full_model_args_v2, observations2, N_particles, grid_schedule))
 end
 t2 = Dates.now();
 
@@ -2101,7 +2101,7 @@ for checkpoints in checkpointss9
 end
 merged_weight_list9 = merged_weight_list9 .- log(length(checkpointss9));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, merged_traj_list9, merged_weight_list9, N_steps, "Inference controller (low motion noise)"; path_actual=path_actual_lownoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list9, merged_weight_list9, T, "Inference controller (low motion noise)"; path_actual=path_actual_lownoise, minalpha=0.03)
 
 # %% [markdown]
 # ### Controller on HIGH NOISE TRAJECTORY
@@ -2119,8 +2119,8 @@ checkpointss10 = []
 t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss10, controlled_particle_filter_with_checkpoints_v2(
-        #model,      N_steps,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, N_steps, full_model_args, observations3, N_particles, grid_schedule))
+        #model,      T,   args,         observations, N_particles, MH_arg_schedule)
+        full_model_1, T, full_model_args, observations3, N_particles, grid_schedule))
 end
 t2 = Dates.now();
 
@@ -2134,4 +2134,4 @@ for checkpoints in checkpointss10
 end
 merged_weight_list10 = merged_weight_list10 .- log(length(checkpointss10));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, merged_traj_list10, merged_weight_list10, N_steps, "Inference controller (high motion noise)"; path_actual=path_actual_highnoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, merged_traj_list10, merged_weight_list10, T, "Inference controller (high motion noise)"; path_actual=path_actual_highnoise, minalpha=0.03)
