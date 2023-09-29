@@ -547,9 +547,9 @@ end
 gif(ani, "imgs/sensor_1.gif", fps=1)
 
 # %%
-# UNCOMMMENT to show long trace of sensor model
-trace = simulate(sensor_model_1, (robot_inputs.start_guess, world.walls, sensor_settings))
-get_choices(trace)
+# # UNCOMMENT to show long trace of sensor model
+# trace = simulate(sensor_model_1, (robot_inputs.start_guess, world.walls, sensor_settings))
+# get_choices(trace)
 
 # %% [markdown]
 # ### Full model
@@ -691,11 +691,12 @@ gif(ani, "imgs/full_1.gif", fps=5)
 # %%
 full_model_args = (robot_inputs, world_inputs, full_settings)
 
-trace = simulate(full_model_1, (N_steps, full_model_args...))
-get_selected(get_choices(trace), select(
-    :initial => :pose, (:initial => :sensor => i for i=1:5)...,
-    (:steps => t => :pose for t=1:6)...,
-    (:steps => t => :sensor => i for t=1:6, i=1:5)...))
+# # UNCOMMENT to show long trace of sensor model
+# trace = simulate(full_model_1, (N_steps, full_model_args...))
+# get_selected(get_choices(trace), select(
+#     :initial => :pose, (:initial => :sensor => i for i=1:5)...,
+#     (:steps => t => :pose for t=1:6)...,
+#     (:steps => t => :sensor => i for t=1:6, i=1:5)...))
 
 # %% [markdown]
 # ## Inference: main idea
