@@ -18,7 +18,7 @@
 # %% [markdown]
 # # TO DO
 #
-# * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.
+# * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.  motion_settings, scaled, lownoise, highnoise; full_settings, scaled, noisy.
 # * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
 # * Hierarchical (sensor) model?
 # * Fix global vars in rejection_sample etc.
