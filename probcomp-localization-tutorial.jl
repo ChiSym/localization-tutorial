@@ -682,7 +682,7 @@ end
 
 # %%
 full_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
-scaled_full_settings(settings, x) = (settings..., motion_settings = scaled_motion_settings(settings.motion_settings, x))
+scaled_full_settings(settings, x) = (settings..., motion_settings=scaled_motion_settings(settings.motion_settings, x))
 
 N_samples = 10
 
@@ -1641,16 +1641,10 @@ frame_from_weighted_trajectories(world, merged_traj_list2, merged_weight_list2, 
 # %%
 obs_selector = select(:initial => :sensor, (:steps => t => :sensor  for t=1:100)...);
 motion_settings_lownoise = (p_noise = 0.005, hd_noise = 1/50 * 2π / 360)
-sensor_settings_noisy = (sensor_settings..., s_noise = 0.15)
 
 tol2 = 0.10
 path_actual_lownoise = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_lownoise)
 observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in path_actual_lownoise];
-
-# %%
-full_model_args_v2 = (robot_inputs, world_inputs, (
-    motion_settings = motion_settings_lownoise,
-    sensor_settings = sensor_settings_noisy));
 
 # %%
 ani = Animation()
@@ -1664,6 +1658,8 @@ end
 gif(ani, "imgs/noisy_distances_lowmotionnoise.gif", fps=1)
 
 # %%
+full_model_args_noisy = (robot_inputs, world_inputs, (full_settings..., sensor_settings = (sensor_settings..., s_noise = 0.15)))
+
 N_samples = 6
 N_particles = 10
 
@@ -1671,7 +1667,7 @@ t1 = Dates.now()
 checkpointss4 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         observations, N_particles, grid)
-       full_model_1, T, full_model_args_v2, observations2, N_particles, [])
+       full_model_1, T, full_model_args_noisy, observations2, N_particles, [])
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1723,7 +1719,7 @@ t1 = Dates.now()
 checkpointss5 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         observations, N_particles, grid)
-       full_model_1, T, full_model_args_v2, observations3, N_particles, [])
+       full_model_1, T, full_model_args_noisy, observations3, N_particles, [])
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -2096,7 +2092,7 @@ t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss9, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, T, full_model_args_v2, observations2, N_particles, grid_schedule))
+        full_model_1, T, full_model_args_noisy, observations2, N_particles, grid_schedule))
 end
 t2 = Dates.now();
 
