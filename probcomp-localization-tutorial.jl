@@ -932,36 +932,16 @@ basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(mode
 
 # %%
 T_short = 4
-robot_inputs_short = (start = robot_inputs.start, controls = robot_inputs.controls[1:T_short])
-path_ideal_short = integrate_controls(robot_inputs_short, world_inputs)
+robot_inputs_short = (robot_inputs..., controls=robot_inputs.controls[1:T_short])
+path_ideal_short = path_ideal[1:(T+1)]
+path_actual_short = path_actual[1:(T+1)]
+observations_short = observations[1:(T+1)]
 
-start_actual_short = pose_prior_model(robot_inputs_short.start, motion_settings_synthetic)
-path_actual_short = integrate_controls_noisy((robot_inputs_short..., start=start_actual_short), world_inputs, motion_settings_synthetic)
-
-the_plot = start_plot(world, "Shorter path", label_world=false)
-plot!(path_ideal_short; label="ideal path", color=:green2)
-plot!(path_actual_short; label="shorter \"actual\" robot path", color=:brown)
-savefig("imgs/deviation_short")
-the_plot
-
-# %%
-tol = 0.2
-observations_short = [noisy_sensor(p, world.walls, sensor_settings, tol) for p in path_actual_short]
-
-ani = Animation()
-for (p, readings) in zip(path_actual_short, observations_short)
-    frame_plot = plot_sensors(world, "Noisy sensor distances",
-        (path_actual_short, "shorter actual path", :brown, p, readings, nothing),
-        sensor_settings; show_clutters=false)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/noisy_distances_short.gif", fps=1)
-
-# %%
 ani = Animation()
 for (p, readings) in zip(path_ideal_short, observations_short)
-    frame_plot = plot_sensors(world, "Expected path vs. sensors",
-        (path_ideal_short, "ideal path", :green2, p, readings, "sensors from shorter \"actual\" path"),
+    frame_plot = plot_sensors(world, "Expected path vs. sensors\n(shorter path)",
+        [(path_ideal_short, "ideal path", :green2, p, readings, "sensors from \"actual\" path")
+         (path_actual_short, "actual path", :brown, nothing, nothing, nothing)],
         sensor_settings; show_clutters=false)
     frame(ani, frame_plot)
 end
