@@ -573,19 +573,22 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen function full_model_1_loop(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Vector{Float64}
+@gen function full_model_1_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Vector{Float64}
     sensor_readings = Vector{Vector{Float64}}(undef, length(robot_inputs.controls) + 1)
 
     pose = {:initial => :pose} ~ pose_prior_model(robot_inputs.start_guess, full_settings.motion_settings)
     sensor_readings[1] = {:initial => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
 
-    for t in 1:length(robot_inputs.controls)
+    for t in 1:T
         pose = {:steps => t => :pose} ~ motion_model(pose, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
         sensor_readings[t+1] = {:steps => t => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
     end
 
     return sensor_readings
-end;
+end
+
+# Handle asymmetry in trace addresses.
+prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest);
 
 # %% [markdown]
 # This _generative function_ defines a probability distribution over _traces_.  Each _trace_ is a data structure containing a sequence of robot pose values, and a sequence of observations captured by the sensor.
@@ -665,10 +668,8 @@ end
 
 # %% [markdown]
 # We work with the `Unfold`-variant, because the static DSL can harness it for efficient evaluation in `Gen.update`.  The user can check that the explicit loop produces identical outputs.
-
-# %%
-# Handle asymmetry in trace addresses.
-prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest);
+#
+# We note, by the way, the introduction of the parameter `T`, used to truncate the generation of steps to lengths less than `length(robot_inputs.controls)`, which will be helpful when writing SMC code below.
 
 # %%
 full_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
