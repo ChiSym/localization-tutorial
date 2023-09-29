@@ -18,6 +18,10 @@
 # %% [markdown]
 # # TO DO
 #
+# * Get a sense of the various sources of "synthetic" data.  First path is hard-wired.  Other paths and/or sensor data?
+# * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
+# * Hierarchical (sensor) model?
+#
 # Rif comments:
 # * Correct understanding of initial pose.
 
@@ -1091,11 +1095,6 @@ the_plot = frame_from_traces(world, traces, N_steps, "SIR (original path)";
                              show_clutters=false, path_actual=path_actual)
 savefig("imgs/SIR")
 the_plot
-
-# %% [markdown]
-# ## TODO below:
-#
-# PF without any embellishments.
 
 # %% [markdown]
 # # Particle filter with MCMC Rejuvenation
