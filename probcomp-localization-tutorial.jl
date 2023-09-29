@@ -785,7 +785,7 @@ function frame_from_traces(world, traces, T, title; show_clutters=true, path_act
     if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
     for trace in traces
         poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
-        plot!([[p.p[1] for p in poses], [p.p[2] for p in poses]]; label=nothing, color=:green, alpha=0.3)
+        plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=nothing, color=:green, alpha=0.3)
         plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
               label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
     end
@@ -1400,7 +1400,7 @@ function frame_from_weighted_trajectories(world, trajectories, weights, T, title
     for (traj, wt) in zip(trajectories, normalized_weights)
         al = max(minalpha, 0.6*sqrt(wt))
         
-        plot!([[p.p[1] for p in traj], [p.p[2] for p in traj]];
+        plot!([p.p[1] for p in traj], [p.p[2] for p in traj];
               label=nothing, color=:green, alpha=al)
         plot!(traj[end]; color=:green, alpha=al, label=nothing)
         
