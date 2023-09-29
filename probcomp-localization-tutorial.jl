@@ -510,7 +510,7 @@ end
 gif(ani, "imgs/discrepancy.gif", fps=1)
 
 # %% [markdown]
-# ***The data visibly do not cohere!***  This is to be expected, because the robot's true path deviates from the one integrated from the initial pose and program.
+# ***The sensor data and the path visibly do not cohere!***  This is to be expected, because the robot's true path deviates from the one integrated from the initial pose and program.
 
 # %% [markdown]
 # ## Modeling the sensors
@@ -660,7 +660,7 @@ end
 @load_generated_functions()
 
 # %% [markdown]
-# We work with the `Unfold`-variant, because the static DSL can harness it for efficient evaluation in `Gen.update`.  The user can check that the explicit produces identical outputs.
+# We work with the `Unfold`-variant, because the static DSL can harness it for efficient evaluation in `Gen.update`.  The user can check that the explicit loop produces identical outputs.
 
 # %%
 # Handle asymmetry in trace addresses.
