@@ -18,7 +18,7 @@
 # %% [markdown]
 # # TO DO
 #
-# * Get a sense of the various sources of "synthetic" data.  First path is hard-wired.  Other paths and/or sensor data?
+# * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.
 # * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
 # * Hierarchical (sensor) model?
 # * Fix global vars in rejection_sample etc.
