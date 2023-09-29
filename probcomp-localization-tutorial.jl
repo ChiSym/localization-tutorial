@@ -207,7 +207,7 @@ end;
 # How bouncy the walls are in this world.
 world_inputs = (walls = world.walls, bounce = 0.1)
 
-path_integrated = integrate_controls(robot_inputs.start_guess, robot_inputs.controls, world_inputs);
+path_ideal = integrate_controls(robot_inputs.start_guess, robot_inputs.controls, world_inputs);
 
 # %% [markdown]
 # ### Plot such data
@@ -248,7 +248,7 @@ end;
 # %%
 the_plot = start_plot(world, "Given data", label_world=true)
 plot!(robot_inputs.start_guess; label="start pose guess", color=:green2)
-plot!([pose.p[1] for pose in path_integrated], [pose.p[2] for pose in path_integrated];
+plot!([pose.p[1] for pose in path_ideal], [pose.p[2] for pose in path_ideal];
       label="ideal program path", color=:green3, seriestype=:scatter, markersize=3, markerstrokewidth=0)
 savefig("imgs/given_data")
 the_plot
@@ -376,7 +376,7 @@ start_actual = pose_prior_model(robot_inputs.start_guess, motion_settings_synthe
 path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], 1.017840325933929)]
 
 the_plot = start_plot(world, "Actual motion deviates from ideal", label_world=false)
-plot!(path_integrated; label="ideal program path", color=:green2)
+plot!(path_ideal; label="ideal path", color=:green2)
 plot!(path_actual; label="\"actual\" robot path", color=:brown)
 savefig("imgs/deviation")
 the_plot
@@ -451,9 +451,9 @@ end;
 sensor_settings = (fov = 2π*(2/3), num_angles = 20, box_size = world.box_size)
 
 ani = Animation()
-for p in path_integrated
+for p in path_ideal
     frame_plot = plot_sensors(world, "Ideal sensor distances",
-        (path_integrated, "integrated path", :green2, p, ideal_sensor(p, world.walls, sensor_settings), "ideal sensors"),
+        (path_ideal, "ideal path", :green2, p, ideal_sensor(p, world.walls, sensor_settings), "ideal sensors"),
         sensor_settings; show_clutters=false)
     frame(ani, frame_plot)
 end
@@ -502,16 +502,16 @@ gif(ani, "imgs/noisy_distances.gif", fps=1)
 
 # %%
 ani = Animation()
-for (p, readings) in zip(path_integrated, observations)
+for (p, readings) in zip(path_ideal, observations)
     frame_plot = plot_sensors(world, "Expected path vs. sensors",
-        (path_integrated, "integrated path", :green2, p, readings, "sensors from \"actual\" path"),
+        (path_ideal, "ideal path", :green2, p, readings, "sensors from \"actual\" path"),
         sensor_settings; show_clutters=false)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/discrepancy.gif", fps=1)
 
 # %% [markdown]
-# ***The sensor data and the path visibly do not cohere!***  This is to be expected, because the robot's true path deviates from the one integrated from the initial pose and program.
+# ***The sensor data and the path visibly do not cohere!***  This is to be expected, because the robot's true path deviates from the ideal one integrated from the initial pose and program.
 
 # %% [markdown]
 # ## Modeling the sensors
@@ -543,9 +543,9 @@ end;
 sensor_settings = (sensor_settings..., s_noise = 0.05)
 
 ani = Animation()
-for p in path_integrated
+for p in path_ideal
     frame_plot = plot_sensors(world, "Sensor model (samples)",
-        (path_integrated, "integrated path", :green2, p, sensor_model_1(p, world.walls, sensor_settings), "synthetic sensor readings"),
+        (path_ideal, "ideal path", :green2, p, sensor_model_1(p, world.walls, sensor_settings), "synthetic sensor readings"),
         sensor_settings; show_clutters=false)
     frame(ani, frame_plot)
 end
@@ -922,18 +922,18 @@ end
 basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(model, args, observations, N_SIR);
 
 # %% [markdown]
-# Let us first consider a shorter robot path, but, to keep it interesting, allow a higher deviation from the ideal program.
+# Let us first consider a shorter robot path, but, to keep it interesting, allow a higher deviation from the ideal.
 
 # %%
 T_short = 4
 robot_inputs_short = (start_guess = robot_inputs.start_guess, controls = robot_inputs.controls[1:T_short])
-path_integrated_short = integrate_controls(robot_inputs_short.start_guess, robot_inputs_short.controls, world_inputs)
+path_ideal_short = integrate_controls(robot_inputs_short.start_guess, robot_inputs_short.controls, world_inputs)
 
 start_actual_short = pose_prior_model(robot_inputs_short.start_guess, motion_settings_synthetic)
 path_actual_short = integrate_controls_noisy(start_actual_short, robot_inputs_short.controls, world_inputs, motion_settings_synthetic)
 
 the_plot = start_plot(world, "Shorter path", label_world=false)
-plot!(path_integrated_short; label="ideal program path", color=:green2)
+plot!(path_ideal_short; label="ideal path", color=:green2)
 plot!(path_actual_short; label="shorter \"actual\" robot path", color=:brown)
 savefig("imgs/deviation_short")
 the_plot
@@ -953,9 +953,9 @@ gif(ani, "imgs/noisy_distances_short.gif", fps=1)
 
 # %%
 ani = Animation()
-for (p, readings) in zip(path_integrated_short, observations_short)
+for (p, readings) in zip(path_ideal_short, observations_short)
     frame_plot = plot_sensors(world, "Expected path vs. sensors",
-        (path_integrated_short, "integrated path", :green2, p, readings, "sensors from shorter \"actual\" path"),
+        (path_ideal_short, "ideal path", :green2, p, readings, "sensors from shorter \"actual\" path"),
         sensor_settings; show_clutters=false)
     frame(ani, frame_plot)
 end
@@ -1649,7 +1649,7 @@ full_model_args_v2 = (robot_inputs, world_inputs, (
 ani = Animation()
 for (p, readings) in zip(path_actual_lownoise, observations2)
     frame_plot = plot_sensors(world, "Data in low motion noise regie",
-        [(path_integrated, "ideal program path", :green2, nothing, nothing, nothing),
+        [(path_ideal, "ideal path", :green2, nothing, nothing, nothing),
          (path_actual_lownoise, "actual path", :brown, p, readings, nothing)],
         sensor_settings; show_clutters=false)
     frame(ani, frame_plot)
@@ -1698,7 +1698,7 @@ observations3 = [noisy_sensor(p, world.walls, sensor_settings, tol3) for p in pa
 ani = Animation()
 for (p, readings) in zip(path_actual_highnoise, observations3)
     frame_plot = plot_sensors(world, "Data - high motion noise",
-        [(path_integrated, "ideal program path", :green2, nothing, nothing, nothing),
+        [(path_ideal, "ideal path", :green2, nothing, nothing, nothing),
          (path_actual_highnoise, "actual path", :brown, p, readings, nothing)],
         sensor_settings; show_clutters=false)
     frame(ani, frame_plot)
