@@ -22,6 +22,7 @@
 # * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
 # * Hierarchical (sensor) model?
 # * Fix global vars in rejection_sample etc.
+# * Avoid regenerating constraints.
 #
 # Rif comments:
 # * Correct understanding of initial pose.
@@ -787,9 +788,6 @@ function sample_from_posterior(model, T, args, observations; N_MH = 10, N_partic
 end;
 
 # %%
-constraints = constraints_from_sensor_readings(choicemap(), observations);
-
-# %%
 N_samples = 10
 
 traces = [simulate(full_model_1, (T, full_model_args...)) for _ in 1:N_samples]
@@ -1034,6 +1032,7 @@ end;
 
 # %%
 T_RS = 9;
+constraints = constraints_from_sensor_readings(choicemap(), observations);
 
 # %%
 N_burn_in = 0 # omit burn-in to illustrate early behavior
