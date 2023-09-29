@@ -424,7 +424,10 @@ function ideal_sensor(p :: Pose, walls :: Vector{Segment}, sensor_settings :: Na
         readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
     end
     return readings
-end
+end;
+
+# %%
+# Plot sensor data.
 
 """
 Assumes
@@ -718,19 +721,6 @@ get_selected(get_choices(trace), selection)
 # To picture this, here are the paths produced by the model in aggregate, to get an approximate sense of the prior as a distribution.  Next to it is a similar picture of what the posterior, our goal, looks like.  (The inference process is a *black box* for this moment, and will be approached through the rest of this notebook.)
 
 # %%
-function frame_from_traces(world, traces, T, title; show_clutters=true, path_actual=nothing)
-    the_plot = start_plot(world, title; show_clutters=show_clutters)
-    if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
-    for trace in traces
-        poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
-        plot!([[p.p[1] for p in poses], [p.p[2] for p in poses]]; label=nothing, color=:green, alpha=0.3)
-        plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
-              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
-    end
-    return the_plot
-end;
-
-# %%
 # The code in this cell is the black box!
 
 # Encode constraints into choice map.
@@ -785,6 +775,21 @@ function sample_from_posterior(model, T, args, observations; N_MH = 10, N_partic
     drift_step_factor = 1/3.
     traces, _ = particle_filter_rejuv_library(model, T, args, observations, N_particles, N_MH, drift_proposal, (drift_step_factor,))
     return traces[1]
+end;
+
+# %%
+# Visualize distributions over traces.
+
+function frame_from_traces(world, traces, T, title; show_clutters=true, path_actual=nothing)
+    the_plot = start_plot(world, title; show_clutters=show_clutters)
+    if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
+    for trace in traces
+        poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+        plot!([[p.p[1] for p in poses], [p.p[2] for p in poses]]; label=nothing, color=:green, alpha=0.3)
+        plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
+              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
+    end
+    return the_plot
 end;
 
 # %%
