@@ -1697,7 +1697,7 @@ obs_selector = select(:initial => :sensor, (:steps => t => :sensor  for t=1:100)
 motion_settings_highnoise = (p_noise = 0.25, hd_noise = 1.5 * 2π / 360)
 
 tol3 = .03
-path_actual_highnoise = integrate_controls_noisy((robot_inputs...., start_guess=start_actual), world_inputs, motion_settings_highnoise)
+path_actual_highnoise = integrate_controls_noisy((robot_inputs..., start_guess=start_actual), world_inputs, motion_settings_highnoise)
 observations3 = [noisy_sensor(p, world.walls, sensor_settings, tol3) for p in path_actual_highnoise];
 
 ani = Animation()
