@@ -641,7 +641,7 @@ Assumes
 end
 model_1_chain = Unfold(model_1_kernel)
 
-combine_sensors(initial_sensor, steps) = [initial_sensor, last.(steps)...]
+combine_sensors(initial, steps) = [last(initial), last.(steps)...]
 
 """
 Assumes
@@ -652,9 +652,9 @@ Assumes
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
 @gen (static) function full_model_1(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Vector{Vector{Float64}}
-    (initial_pose, initial_sensor) = {:initial} ~ model_1_initial(robot_inputs, world_inputs.walls, full_settings)
-    steps ~ model_1_chain(T, (initial_pose, initial_sensor), robot_inputs, world_inputs, full_settings)
-    return combine_sensors(initial_sensor, steps)
+    initial ~ model_1_initial(robot_inputs, world_inputs.walls, full_settings)
+    steps ~ model_1_chain(T, initial, robot_inputs, world_inputs, full_settings)
+    return combine_sensors(initial, steps)
 end
 
 @load_generated_functions()
