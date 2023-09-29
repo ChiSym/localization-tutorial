@@ -550,10 +550,13 @@ for p in path_integrated
 end
 gif(ani, "imgs/sensor_1.gif", fps=1)
 
+# %% [markdown]
+# The trace contains many choices corresponding to directions of sensor reading from the input pose.  To reduce notebook clutter, here we just show a subset of 5 of them:
+
 # %%
-# # UNCOMMENT to show long trace of sensor model
-# trace = simulate(sensor_model_1, (robot_inputs.start_guess, world.walls, sensor_settings))
-# get_choices(trace)
+trace = simulate(sensor_model_1, (robot_inputs.start_guess, world.walls, sensor_settings))
+
+get_selected(get_choices(trace), select((1:5)...))
 
 # %% [markdown]
 # ### Full model
@@ -688,19 +691,14 @@ end
 gif(ani, "imgs/full_1.gif", fps=5)
 
 # %% [markdown]
-# Below, we show what a trace over 6 timesteps looks like.
-#
-# Note that the traces actually contain dozens of sensor values at each timestep.  In this display, we are only displaying 5 of the sensor values at each timestep, to reduce clutter in the notebook.
+# Again, the trace of the full model contains many choices, so we just show a subset of them: the initial pose plus 2 timesteps, and 5 sensor readings from each.
 
 # %%
 full_model_args = (robot_inputs, world_inputs, full_settings)
 
-# # UNCOMMENT to show long trace of sensor model
-# trace = simulate(full_model_1, (N_steps, full_model_args...))
-# get_selected(get_choices(trace), select(
-#     :initial => :pose, (:initial => :sensor => i for i=1:5)...,
-#     (:steps => t => :pose for t=1:6)...,
-#     (:steps => t => :sensor => i for t=1:6, i=1:5)...))
+trace = simulate(full_model_1, (N_steps, full_model_args...))
+selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t, :sensor => j) for t in 1:3, j in 1:5)...)
+get_selected(get_choices(trace), selection)
 
 # %% [markdown]
 # ## Inference: main idea
