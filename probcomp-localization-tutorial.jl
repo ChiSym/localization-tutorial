@@ -150,7 +150,7 @@ end;
 # %% [markdown]
 # This code has the problem that it is **unphysical**: the walls in no way constrain the robot motion.
 #
-# We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance in the normal direction to the point of contact.
+# We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance from the point of contact in the normal direction to the wall.
 
 # %%
 # Return unique s, t such that p + s*u == q + t*v.
