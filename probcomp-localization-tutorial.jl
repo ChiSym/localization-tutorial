@@ -131,11 +131,17 @@ world, robot_inputs, T = load_world("example_20_program.json");
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
 
 # %%
-function integrate_controls_unphysical(start :: Pose, controls :: Vector{Control}) :: Vector{Pose}
-    path = Vector{Pose}(undef, length(controls)+1)
-    path[1] = start
-    for t in 1:length(controls)
-        path[t+1] = Pose(path[t].p + controls[t].ds * path[t].dp, path[t].hd + controls[t].dhd)
+"""
+Assumes
+* `robot_inputs` contains fields: `start_guess`, `controls`
+"""
+function integrate_controls_unphysical(robot_inputs :: NamedTuple) :: Vector{Pose}
+    path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
+    path[1] = robot_inputs.start_guess
+    for t in 1:length(robot_inputs.controls)
+        p = path[t].p + robot_inputs.controls[t].ds * path[t].dp
+        hd = path[t].hd + robot_inputs.controls[t].dhd
+        path[t+1] = Pose(p, hd)
     end
     return path
 end;
@@ -190,14 +196,15 @@ end
 
 """
 Assumes
+* `robot_inputs` contains fields: `start_guess`, `controls`
 * `world_inputs` contains fields: `walls`, `bounce`
 """
-function integrate_controls(start :: Pose, controls :: Vector{Control}, world_inputs :: NamedTuple)
-    path = Vector{Pose}(undef, length(controls)+1)
-    path[1] = start
-    for t in 1:length(controls)
-        p = path[t].p + controls[t].ds * path[t].dp
-        hd = path[t].hd + controls[t].dhd
+function integrate_controls(robot_inputs :: NamedTuple, world_inputs :: NamedTuple)
+    path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
+    path[1] = robot_inputs.start_guess
+    for t in 1:length(robot_inputs.controls)
+        p = path[t].p + robot_inputs.controls[t].ds * path[t].dp
+        hd = path[t].hd + robot_inputs.controls[t].dhd
         path[t+1] = physical_step(path[t].p, p, hd, world_inputs)
     end
     return path
@@ -207,7 +214,7 @@ end;
 # How bouncy the walls are in this world.
 world_inputs = (walls = world.walls, bounce = 0.1)
 
-path_ideal = integrate_controls(robot_inputs.start_guess, robot_inputs.controls, world_inputs);
+path_ideal = integrate_controls(robot_inputs, world_inputs);
 
 # %% [markdown]
 # ### Plot such data
@@ -324,15 +331,15 @@ end
 
 """
 Assumes
+* `robot_inputs` contains fields: `start_guess`, `controls`
 * `world_inputs` contains fields: `walls`, `bounce`
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
-function integrate_controls_noisy(start :: Pose, controls :: Vector{Control},
-                                  world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
-    path = Vector{Pose}(undef, length(controls)+1)
-    path[1] = start
-    for t in 1:length(controls)
-        path[t+1] = motion_model(path[t], controls[t], world_inputs, motion_settings)
+function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+    path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
+    path[1] = robot_inputs.start_guess
+    for t in 1:length(robot_inputs.controls)
+        path[t+1] = motion_model(path[t], robot_inputs.controls[t], world_inputs, motion_settings)
     end
     return path
 end;
@@ -346,8 +353,7 @@ ani = Animation()
 for n in 1:N_samples
     scale = 16. * (2.)^(n-N_samples)
     frame_plot = start_plot(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))"; show_clutters=false)
-    sample_motion = integrate_controls_noisy(robot_inputs.start_guess, robot_inputs.controls,
-                                             world_inputs, scaled_motion_settings(motion_settings, scale))
+    sample_motion = integrate_controls_noisy(robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale))
     plot!(sample_motion; color=:brown)
     frame(ani, frame_plot)
 end
@@ -363,14 +369,13 @@ get_choices(trace)
 # Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.
 
 # %%
-# path_actual = integrate_controls_noisy(start_actual, robot_inputs.controls, world_inputs, motion_settings_synthetic)
-# repr(path_actual) |> clipboard
+# # Generate a path by adding noise:
 
 motion_settings_synthetic = (p_noise = 0.05, hd_noise = 2π / 360)
-start_actual = pose_prior_model(robot_inputs.start_guess, motion_settings_synthetic)
 
-# # Generate a path by adding noise:
-# path_actual = integrate_controls_noisy(start_actual, robot_inputs.controls, world_inputs, motion_settings_synthetic)
+start_actual = pose_prior_model(robot_inputs.start_guess, motion_settings_synthetic)
+# path_actual = integrate_controls_noisy((robot_inputs..., start_guess=start_actual), world_inputs, motion_settings_synthetic)
+# repr(path_actual) |> clipboard
 # Here, we will use a hard-coded one we generated earlier that we selected to more clearly illustrate
 # the main ideas in the notebook.
 path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], 1.017840325933929)]
@@ -927,10 +932,10 @@ basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(mode
 # %%
 T_short = 4
 robot_inputs_short = (start_guess = robot_inputs.start_guess, controls = robot_inputs.controls[1:T_short])
-path_ideal_short = integrate_controls(robot_inputs_short.start_guess, robot_inputs_short.controls, world_inputs)
+path_ideal_short = integrate_controls(robot_inputs_short, world_inputs)
 
 start_actual_short = pose_prior_model(robot_inputs_short.start_guess, motion_settings_synthetic)
-path_actual_short = integrate_controls_noisy(start_actual_short, robot_inputs_short.controls, world_inputs, motion_settings_synthetic)
+path_actual_short = integrate_controls_noisy((robot_inputs_short..., start_guess=start_actual_short), world_inputs, motion_settings_synthetic)
 
 the_plot = start_plot(world, "Shorter path", label_world=false)
 plot!(path_ideal_short; label="ideal path", color=:green2)
@@ -1637,7 +1642,7 @@ motion_settings_lownoise = (p_noise = 0.005, hd_noise = 1/50 * 2π / 360)
 sensor_settings_noisy = (sensor_settings..., s_noise = 0.15)
 
 tol2 = 0.10
-path_actual_lownoise = integrate_controls_noisy(start_actual, robot_inputs.controls, world_inputs, motion_settings_lownoise)
+path_actual_lownoise = integrate_controls_noisy((robot_inputs..., start_guess=start_actual), world_inputs, motion_settings_lownoise)
 observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in path_actual_lownoise];
 
 # %%
@@ -1692,7 +1697,7 @@ obs_selector = select(:initial => :sensor, (:steps => t => :sensor  for t=1:100)
 motion_settings_highnoise = (p_noise = 0.25, hd_noise = 1.5 * 2π / 360)
 
 tol3 = .03
-path_actual_highnoise = integrate_controls_noisy(start_actual, robot_inputs.controls, world_inputs, motion_settings_highnoise)
+path_actual_highnoise = integrate_controls_noisy((robot_inputs...., start_guess=start_actual), world_inputs, motion_settings_highnoise)
 observations3 = [noisy_sensor(p, world.walls, sensor_settings, tol3) for p in path_actual_highnoise];
 
 ani = Animation()
