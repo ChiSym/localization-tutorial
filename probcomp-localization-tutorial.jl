@@ -248,7 +248,7 @@ function start_plot(world, title; label_world=false, show_clutters=false)
         ylim         = (world.bounding_box[3]-border, world.bounding_box[4]+border),
         title        = title,
         legend       = :bottomleft)
-    (walls_label, clutter_label) = label_world ? ("walls", "clutter") : (nothing, nothing)
+    (walls_label, clutter_label) = label_world ? ("walls", "clutters") : (nothing, nothing)
     plot!(world.walls; c=:black, label=walls_label)
     if show_clutters; plot!(world.clutters; c=:magenta, label=clutter_label) end
     return the_plot
