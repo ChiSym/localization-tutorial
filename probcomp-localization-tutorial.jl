@@ -237,7 +237,7 @@ Plots.plot!(seg_groups :: Vector{Vector{Segment}}; args...) = plot_list(seg_grou
 Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, step_along_pose(p, r)); arrow=true, args...)
 Plots.plot!(ps :: Vector{Pose}; args...) = plot_list(ps; args...)
 
-function start_plot(world, title; label_world=false, show_clutters=true)
+function start_plot(world, title; label_world=false, show_clutters=false)
     border = world.box_size * (3.)/19.
     the_plot = plot(
         size         = (500, 500),
@@ -299,7 +299,7 @@ motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
 N_samples = 50
 pose_samples = [pose_prior_model(robot_inputs.start, motion_settings) for _ in 1:N_samples]
 
-the_plot = start_plot(world, "Pose prior model (samples)"; show_clutters=false)
+the_plot = start_plot(world, "Pose prior model (samples)")
 plot!(pose_samples; label=nothing, color=:red)
 savefig("imgs/pose_prior")
 the_plot
@@ -353,7 +353,7 @@ N_samples = 15
 ani = Animation()
 for n in 1:N_samples
     scale = 16. * (2.)^(n-N_samples)
-    frame_plot = start_plot(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))"; show_clutters=false)
+    frame_plot = start_plot(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))")
     sample_motion = integrate_controls_noisy(robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale))
     plot!(sample_motion; color=:brown)
     frame(ani, frame_plot)
@@ -440,7 +440,7 @@ project_readings(p :: Pose, readings :: Vector{Float64}, sensor_settings :: Name
 Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
 """
-function plot_sensors(world, title, path_or_paths, sensor_settings; show_clutters=true)
+function plot_sensors(world, title, path_or_paths, sensor_settings; show_clutters=false)
     the_plot = start_plot(world, title; show_clutters=show_clutters)
     paths = isa(path_or_paths, Tuple) ? [path_or_paths] : path_or_paths
     for (path, path_label, color, p, readings, readings_label) in paths
@@ -463,7 +463,7 @@ ani = Animation()
 for p in path_ideal
     frame_plot = plot_sensors(world, "Ideal sensor distances",
         (path_ideal, "ideal path", :green2, p, ideal_sensor(p, world.walls, sensor_settings), "ideal sensors"),
-        sensor_settings; show_clutters=false)
+        sensor_settings)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/ideal_distances.gif", fps=1)
@@ -499,7 +499,7 @@ ani = Animation()
 for (p, readings) in zip(path_actual, observations)
     frame_plot = plot_sensors(world, "Noisy sensor distances",
         (path_actual, "actual path", :brown, p, readings, "noisy sensors"),
-        sensor_settings; show_clutters=false)
+        sensor_settings)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/noisy_distances.gif", fps=1)
@@ -514,7 +514,7 @@ ani = Animation()
 for (p, readings) in zip(path_ideal, observations)
     frame_plot = plot_sensors(world, "Expected path vs. sensors",
         (path_ideal, "ideal path", :green2, p, readings, "sensors from \"actual\" path"),
-        sensor_settings; show_clutters=false)
+        sensor_settings)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/discrepancy.gif", fps=1)
@@ -555,7 +555,7 @@ ani = Animation()
 for p in path_ideal
     frame_plot = plot_sensors(world, "Sensor model (samples)",
         (path_ideal, "ideal path", :green2, p, sensor_model_1(p, world.walls, sensor_settings), "synthetic sensor readings"),
-        sensor_settings; show_clutters=false)
+        sensor_settings)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/sensor_1.gif", fps=1)
@@ -695,7 +695,7 @@ for n in 1:N_samples
         frame_plot = plot_sensors(world, "Full model (samples)\nnoise factor $(round(scale, digits=3))",
             [(path_actual, "actual path", :brown, nothing, nothing, nothing),
              (poses, "trace", :green, poses[t], trace[prefix_address(t, :sensor)], nothing)],
-            sensor_settings; show_clutters=false)
+            sensor_settings)
         frame(ani, frame_plot)
     end
 end
@@ -780,7 +780,7 @@ end;
 # %%
 # Visualize distributions over traces.
 
-function frame_from_traces(world, traces, T, title; show_clutters=true, path_actual=nothing)
+function frame_from_traces(world, traces, T, title; show_clutters=false, path_actual=nothing)
     the_plot = start_plot(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
     for trace in traces
@@ -797,11 +797,11 @@ N_samples = 10
 
 traces = [simulate(full_model_1, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, traces, T, "Prior on robot paths";
-                               path_actual=path_actual, show_clutters=false)
+                               path_actual=path_actual)
 
 traces = [sample_from_posterior(full_model_1, T, full_model_args, observations; N_MH=10, N_particles=10) for _ in 1:N_samples]
 posterior_plot = frame_from_traces(world, traces, T, "Posterior on robot paths";
-                                   path_actual=path_actual, show_clutters=false)
+                                   path_actual=path_actual)
 
 the_plot = plot(prior_plot, posterior_plot, size=(1000,500))
 savefig("imgs/prior_posterior")
@@ -942,7 +942,7 @@ for (p, readings) in zip(path_ideal_short, observations_short)
     frame_plot = plot_sensors(world, "Expected path vs. sensors\n(shorter path)",
         [(path_ideal_short, "ideal path", :green2, p, readings, "sensors from \"actual\" path")
          (path_actual_short, "actual path", :brown, nothing, nothing, nothing)],
-        sensor_settings; show_clutters=false)
+        sensor_settings)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/discrepancy_short.gif", fps=1)
@@ -961,8 +961,7 @@ N_samples = 10
 N_SIR = 500
 traces = [basic_SIR_library(full_model_1, (T_short, full_model_args_short...), constraints_short, N_SIR)[1] for _ in 1:N_samples]
 
-the_plot = frame_from_traces(world, traces, T_short, "SIR (short path)";
-                             show_clutters=false, path_actual=path_actual_short)
+the_plot = frame_from_traces(world, traces, T_short, "SIR (short path)"; path_actual=path_actual_short)
 savefig("imgs/SIR_short")
 the_plot
 
@@ -1078,8 +1077,7 @@ N_samples = 10
 N_SIR = 500
 traces = [basic_SIR_library(full_model_1, (T, full_model_args...), constraints, N_SIR)[1] for _ in 1:N_samples]
 
-the_plot = frame_from_traces(world, traces, T, "SIR (original path)";
-                             show_clutters=false, path_actual=path_actual)
+the_plot = frame_from_traces(world, traces, T, "SIR (original path)"; path_actual=path_actual)
 savefig("imgs/SIR")
 the_plot
 
@@ -1632,7 +1630,7 @@ for (p, readings) in zip(path_actual_lownoise, observations2)
     frame_plot = plot_sensors(world, "Data in low motion noise regie",
         [(path_ideal, "ideal path", :green2, nothing, nothing, nothing),
          (path_actual_lownoise, "actual path", :brown, p, readings, nothing)],
-        sensor_settings; show_clutters=false)
+        sensor_settings)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/noisy_distances_lowmotionnoise.gif", fps=1)
@@ -1683,7 +1681,7 @@ for (p, readings) in zip(path_actual_highnoise, observations3)
     frame_plot = plot_sensors(world, "Data - high motion noise",
         [(path_ideal, "ideal path", :green2, nothing, nothing, nothing),
          (path_actual_highnoise, "actual path", :brown, p, readings, nothing)],
-        sensor_settings; show_clutters=false)
+        sensor_settings)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/noisy_distances_highmotionnoise.gif", fps=1)
