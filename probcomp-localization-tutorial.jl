@@ -106,6 +106,7 @@ function load_world(file_name)
     walls = create_segments(walls_vec)
     clutters_vec = Vector{Vector{Vector{Float64}}}(data["clutter_vert_groups"])
     clutters = create_segments.(clutters_vec)
+    walls_clutters = [walls ; clutters...]
     start = Pose(Vector{Float64}(data["start_pose"]["p"]), Float64(data["start_pose"]["hd"]))
     controls = Vector{Control}([Control(control["ds"], control["dhd"]) for control in data["program_controls"]])
     all_points = [walls_vec ; clutters_vec... ; [start.p]]
@@ -116,7 +117,7 @@ function load_world(file_name)
     bounding_box = (x_min, x_max, y_min, y_max)
     box_size = max(x_max - x_min, y_max - y_min)
     T = length(controls)
-    return ((walls=walls, clutters=clutters, bounding_box=bounding_box, box_size=box_size),
+    return ((walls=walls, clutters=clutters, walls_clutters=walls_clutters, bounding_box=bounding_box, box_size=box_size),
             (start=start, controls=controls),
             T)
 end;
