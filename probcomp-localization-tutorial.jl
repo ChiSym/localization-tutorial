@@ -1628,12 +1628,11 @@ frame_from_weighted_trajectories(world, merged_traj_list2, merged_weight_list2, 
 # Here, we generate a low noise trajectory, and show that the bootstrap particle filter (with no rejuvenation) is sufficient to perform good inferences.  (Low motion noise, moderate observation noise.)  Proposing from the prior is quite good!
 
 # %%
-obs_selector = select(:initial => :sensor, (:steps => t => :sensor  for t=1:100)...);
 motion_settings_lownoise = (p_noise = 0.005, hd_noise = 1/50 * 2π / 360)
 
 tol2 = 0.10
 path_actual_lownoise = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_lownoise)
-observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in path_actual_lownoise];
+observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in path_actual_lownoise]
 
 # %%
 ani = Animation()
@@ -1681,7 +1680,6 @@ frame_from_weighted_trajectories(world, merged_traj_list4, merged_weight_list4, 
 # Now we'll generate a very high motion noise (low observation noise) trajectory.
 
 # %%
-obs_selector = select(:initial => :sensor, (:steps => t => :sensor  for t=1:100)...);
 motion_settings_highnoise = (p_noise = 0.25, hd_noise = 1.5 * 2π / 360)
 
 tol3 = .03
