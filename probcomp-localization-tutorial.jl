@@ -933,9 +933,9 @@ basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(mode
 # %%
 T_short = 4
 robot_inputs_short = (robot_inputs..., controls=robot_inputs.controls[1:T_short])
-path_ideal_short = path_ideal[1:(T+1)]
-path_actual_short = path_actual[1:(T+1)]
-observations_short = observations[1:(T+1)]
+path_ideal_short = path_ideal[1:(T_short+1)]
+path_actual_short = path_actual[1:(T_short+1)]
+observations_short = observations[1:(T_short+1)]
 
 ani = Animation()
 for (p, readings) in zip(path_ideal_short, observations_short)
