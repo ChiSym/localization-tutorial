@@ -34,7 +34,7 @@ if occursin("sharlaon", pwd()); cd("/Users/sharlaon/dev/probcomp-localization-tu
 # %% [markdown]
 # # ProbComp Localization Tutorial
 #
-# Some introductory text.
+# This notebook aims to give an introduction to probabilistic computation (ProbComp).  This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probablistic programming language (PPL).  The programmer can thus encode their probabilistic intuition for solving a problem into an algorithm.  Back-end language work automates the routine but error-prone derivations.
 
 # %% [markdown]
 # ## The "real world"
