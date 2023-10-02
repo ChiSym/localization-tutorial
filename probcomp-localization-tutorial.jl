@@ -254,8 +254,11 @@ function start_plot(world, title; label_world=false, show_clutters=false)
     return the_plot
 end;
 
+# %% [markdown]
+# Following this initial display of the given data, we *suppress the clutters* until much later in the notebook.
+
 # %%
-the_plot = start_plot(world, "Given data", label_world=true)
+the_plot = start_plot(world, "Given data", label_world=true, show_clutters=true)
 plot!(robot_inputs.start; label="ideal start pose", color=:green2)
 plot!([pose.p[1] for pose in path_ideal], [pose.p[2] for pose in path_ideal];
       label="ideal program path", color=:green3, seriestype=:scatter, markersize=3, markerstrokewidth=0)
