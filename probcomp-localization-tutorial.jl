@@ -23,6 +23,10 @@
 # * Hierarchical (sensor) model?
 # * Fix global vars in rejection_sample etc.
 # * Avoid regenerating constraints.
+# * "ideal path" —> "path from integrating controls"
+# * label all (hyper)parameters in visualizations
+# * integrate_controls_noisy —> dynamic DSL GF; plotting code now on its traces, incl. disks for variance around poses
+#   * similarly for other parts of model
 #
 # Rif comments:
 # * Correct understanding of initial pose.
