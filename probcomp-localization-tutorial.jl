@@ -22,7 +22,6 @@
 # * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
 # * Hierarchical (sensor) model?
 # * Fix global vars in rejection_sample etc.
-# * Avoid regenerating constraints.
 # * label all (hyper)parameters in visualizations
 # * integrate_controls_noisy —> dynamic DSL GF; plotting code now on its traces, incl. disks for variance around poses
 #   * similarly for other parts of model
@@ -732,21 +731,10 @@ get_selected(get_choices(trace), selection)
 # %%
 # The code in this cell is the black box!
 
-# Encode constraints into choice map.
+# Encode sensor reading into choice map.
 
-function constraint_from_sensor_reading(cm :: ChoiceMap, t :: Int, sensor_reading :: Vector{Float64}) :: ChoiceMap
-    for (j, reading) in enumerate(sensor_reading)
-        cm[prefix_address(t, :sensor => j => :distance)] = reading
-    end
-    return cm
-end
-
-function constraints_from_sensor_readings(cm :: ChoiceMap, sensor_readings :: Vector{Vector{Float64}}) :: ChoiceMap
-    for (t, sensor_reading) in enumerate(sensor_readings)
-        constraint_from_sensor_reading(cm, t, sensor_reading)
-    end
-    return cm
-end
+constraint_from_sensor_reading(cm :: ChoiceMap, t :: Int, sensor_reading :: Vector{Float64}) :: ChoiceMap =
+    choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(sensor_reading) )...)
 
 # Propose a move for MH.
 
@@ -765,8 +753,7 @@ end
 
 # PF with rejuvenation, using `GenParticleFilters` library code for the generic parts.
 
-function particle_filter_rejuv_library(model, T, args, observations, N_particles, N_MH, MH_proposal, MH_proposal_args)
-    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
+function particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
     state = pf_initialize(model, (0, args...), constraints[1], N_particles)
     for t in 1:T
         pf_resample!(state)
@@ -778,9 +765,9 @@ end
 
 # Run PF and return one of its particles.
 
-function sample_from_posterior(model, T, args, observations; N_MH = 10, N_particles = 10)
+function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particles = 10)
     drift_step_factor = 1/3.
-    traces, _ = particle_filter_rejuv_library(model, T, args, observations, N_particles, N_MH, drift_proposal, (drift_step_factor,))
+    traces, _ = particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, drift_proposal, (drift_step_factor,))
     return traces[1]
 end;
 
@@ -806,9 +793,10 @@ traces = [simulate(full_model_1, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, traces, T, "Prior on robot paths";
                                path_actual=path_actual)
 
-traces = [sample_from_posterior(full_model_1, T, full_model_args, observations; N_MH=10, N_particles=10) for _ in 1:N_samples]
 posterior_plot = frame_from_traces(world, traces, T, "Posterior on robot paths";
                                    path_actual=path_actual)
+constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
+traces = [sample_from_posterior(full_model_1, T, full_model_args, constraints; N_MH=10, N_particles=10) for _ in 1:N_samples]
 
 the_plot = plot(prior_plot, posterior_plot, size=(1000,500))
 savefig("imgs/prior_posterior")
@@ -912,14 +900,18 @@ the_plot
 # **Summary:** SIR generates possible samples without considering the observations $\textbf{o}_{0:T}^*$, but attempts to ultimately output a sub-collection of these randomly generated samples which are consistent with the observations.  It does this by computing the weights $w^i$.
 
 # %%
-function basic_SIR(model, args, observations, N_SIR)
+function basic_SIR(model, args, constraints, N_SIR)
+    constraints_merged = merge(constraints...)
+
     traces = Vector{Trace}(undef, N_SIR)
     log_weights = Vector{Float64}(undef, N_SIR)
     for i in 1:N_SIR
-        traces[i], log_weights[i] = generate(model, args, observations)
+        traces[i], log_weights[i] = generate(model, args, constraints_merged)
     end
+
     weights = exp.(log_weights .- maximum(log_weights))
     weights = weights ./ sum(weights)
+
     index = categorical(weights)
     return traces[index], weights[index]
 end
@@ -932,17 +924,21 @@ end
 # preceding weights.)
 # To obtain the above from the library version, one would define:
 
-basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(model, args, observations, N_SIR);
+basic_SIR_library(model, args, constraints, N_SIR) = importance_resampling(model, args, merge(constraints...), N_SIR);
 
 # %% [markdown]
 # Let us first consider a shorter robot path, but, to keep it interesting, allow a higher deviation from the ideal.
 
 # %%
 T_short = 4
+
 robot_inputs_short = (robot_inputs..., controls=robot_inputs.controls[1:T_short])
+full_model_args_short = (robot_inputs_short, world_inputs, full_settings)
+
 path_integrated_short = path_integrated[1:(T_short+1)]
 path_actual_short = path_actual[1:(T_short+1)]
 observations_short = observations[1:(T_short+1)]
+constraints_short = constraints[1:(T_short+1)]
 
 ani = Animation()
 for (p1, p2, readings) in zip(path_actual_short, path_integrated_short, observations_short)
@@ -968,9 +964,6 @@ gif(ani, "imgs/discrepancy_short.gif", fps=1)
 # > In `traces = ...` below, are you running SIR `N_SAMPLES` times and getting one sample each time? Why not run it once and get `N_SAMPLES`? Talk about this?
 
 # %%
-full_model_args_short = (robot_inputs_short, world_inputs, full_settings)
-constraints_short = constraints_from_sensor_readings(choicemap(), observations_short)
-
 N_samples = 10
 N_SIR = 500
 traces = [basic_SIR_library(full_model_1, (T_short, full_model_args_short...), constraints_short, N_SIR)[1] for _ in 1:N_samples]
@@ -994,7 +987,9 @@ the_plot
 
 # %%
 function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_ITERS)
-    C = (N_burn_in > 0) ? maximum(generate(full_model_1, (T, full_model_args...), constraints)[2] for _ in 1:N_burn_in) : -Inf
+    constraints_merged = merge(constraints...)
+    
+    C = (N_burn_in > 0) ? maximum(generate(model, args, constraints_merged)[2] for _ in 1:N_burn_in) : -Inf
     println("C set to $C")
 
     n_iters = 0
@@ -1011,7 +1006,7 @@ function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_
         while reject && n_iters < MAX_ITERS
             n_iters += 1
             
-            y, w = generate(model, args, constraints)
+            y, w = generate(model, args, constraints_merged)
             
             if w > C
                 reject = false
@@ -1029,14 +1024,14 @@ function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_
 end;
 
 # %%
-T_RS = 9;
-constraints = constraints_from_sensor_readings(choicemap(), observations);
+T_RS = 9
+constraints_RS = constraints[1:(T_RS+1)];
 
 # %%
 N_burn_in = 0 # omit burn-in to illustrate early behavior
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1050,7 +1045,7 @@ gif(ani, "imgs/RS.gif", fps=1)
 N_burn_in = 100
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1064,7 +1059,7 @@ gif(ani, "imgs/RS.gif", fps=1)
 N_burn_in = 1_000
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1130,9 +1125,7 @@ the_plot
 # This adds a step to the particle filter after resampling, which iteratively tweaks the values $\textbf{z}_t^{a^i_t}$ to make them more consistent observations.
 
 # %%
-function particle_filter_rejuv(model, T, args, observations, N_particles, N_MH, MH_proposal, MH_proposal_args)
-    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
-
+function particle_filter_rejuv(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     resample_traces = Vector{Trace}(undef, N_particles)
@@ -1178,7 +1171,7 @@ N_samples = 6
 N_particles = 10
 N_MH = 5
 t1 = Dates.now()
-traces = [particle_filter_rejuv(full_model_1, T, full_model_args, observations, N_particles,
+traces = [particle_filter_rejuv(full_model_1, T, full_model_args, constraints, N_particles,
                                 N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
 t2 = Dates.now()
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
@@ -1313,9 +1306,7 @@ end;
 # %%
 get_trajectory(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1] + 1)]
 
-function particle_filter_grid_rejuv_with_checkpoints(model, T, args, observations, N_particles, MH_arg_schedule)
-    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
-
+function particle_filter_grid_rejuv_with_checkpoints(model, T, args, constraints, N_particles, MH_arg_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     resample_traces = Vector{Trace}(undef, N_particles)
@@ -1420,8 +1411,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss =
     [particle_filter_grid_rejuv_with_checkpoints(
-       #model,      T,   args,         observations, N_particles, MH_arg_schedule)
-       full_model_1, T, full_model_args, observations, N_particles, grid_schedule)
+       #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+       full_model_1, T, full_model_args, constraints, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = Dates.now();
 
@@ -1540,9 +1531,7 @@ function grid_smcp3(tr, n_steps, step_sizes)
 end;
 
 # %%
-function particle_filter_grid_smcp3_with_checkpoints(model, T, args, observations, N_particles, MH_arg_schedule)
-    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
-
+function particle_filter_grid_smcp3_with_checkpoints(model, T, args, constraints, N_particles, MH_arg_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     resample_traces = Vector{Trace}(undef, N_particles)
@@ -1599,8 +1588,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss2 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      T,   args,         observations, N_particles, MH_arg_schedule)
-       full_model_1, T, full_model_args, observations, N_particles, grid_schedule)
+       #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+       full_model_1, T, full_model_args, constraints, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1633,6 +1622,7 @@ motion_settings_lownoise = (p_noise = 0.005, hd_noise = 1/50 * 2π / 360)
 tol2 = 0.10
 path_actual_lownoise = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_lownoise)
 observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in path_actual_lownoise]
+constraints2 = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations2)]
 
 ani = Animation()
 for (p1, p2, readings) in zip(path_actual_lownoise, path_integrated, observations2)
@@ -1660,8 +1650,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss4 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      T,   args,         observations, N_particles, grid)
-       full_model_1, T, full_model_args_noisy, observations2, N_particles, [])
+       #model,      T,   args,         constraints, N_particles, grid)
+       full_model_1, T, full_model_args_noisy, constraints2, N_particles, [])
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1690,6 +1680,7 @@ motion_settings_highnoise = (p_noise = 0.25, hd_noise = 1.5 * 2π / 360)
 tol3 = .03
 path_actual_highnoise = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_highnoise)
 observations3 = [noisy_sensor(p, world.walls, sensor_settings, tol3) for p in path_actual_highnoise];
+constraints3 = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations3)]
 
 ani = Animation()
 for (p1, p2, readings) in zip(path_actual_highnoise, path_integrated, observations3)
@@ -1719,7 +1710,7 @@ t1 = Dates.now()
 checkpointss5 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         observations, N_particles, grid)
-       full_model_1, T, full_model_args_noisy, observations3, N_particles, [])
+       full_model_1, T, full_model_args_noisy, constraints3, N_particles, [])
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1746,8 +1737,8 @@ N_particles = 10
 t1 = Dates.now()
 checkpointss6 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      T,   args,         observations, N_particles, grid)
-       full_model_1, T, full_model_args, observations3, N_particles, [])
+       #model,      T,   args,         constraints, N_particles, grid)
+       full_model_1, T, full_model_args, constraints3, N_particles, [])
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1779,8 +1770,8 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 t1 = Dates.now()
 checkpointss7 =
     [particle_filter_grid_smcp3_with_checkpoints(
-       #model,      T,   args,         observations, N_particles, grid)
-       full_model_1, T, full_model_args, observations3, N_particles, grid_schedule)
+       #model,      T,   args,         constraints, N_particles, grid)
+       full_model_1, T, full_model_args, constraints3, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = Dates.now()
 
@@ -1809,9 +1800,7 @@ frame_from_weighted_trajectories(world, merged_traj_list7, merged_weight_list7, 
 # With high-motion noise settings, this will automatically realize that rejuvenation is needed at some steps to alleviate artifacts.
 
 # %%
-function controlled_particle_filter_with_checkpoints(model, T, args, observations, N_particles::Int, og_arg_schedule)
-    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
-
+function controlled_particle_filter_with_checkpoints(model, T, args, constraints, N_particles::Int, og_arg_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     resample_traces = Vector{Trace}(undef, N_particles)
@@ -1890,9 +1879,7 @@ function controlled_particle_filter_with_checkpoints(model, T, args, observation
 end;
 
 # %%
-function controlled_particle_filter_with_checkpoints_v2(model, T, args, observations, N_particles::Int, og_arg_schedule)
-    constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
-
+function controlled_particle_filter_with_checkpoints_v2(model, T, args, constraints, N_particles::Int, og_arg_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     resample_traces = Vector{Trace}(undef, N_particles)
@@ -2010,8 +1997,8 @@ checkpointss3 = []
 t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
-        #model,      T,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, T, full_model_args, observations, N_particles, grid_schedule))
+        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+        full_model_1, T, full_model_args, constraints, N_particles, grid_schedule))
 end
 t2 = Dates.now();
 
@@ -2058,8 +2045,8 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 #     t1 = Dates.now()
 #     for _=1:N_samples
 #         push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
-#             #model,      T,   args,         observations, N_particles, MH_arg_schedule)
-#             full_model_1, T, full_model_args, observations, N_particles, grid_schedule))
+#             #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+#             full_model_1, T, full_model_args, constraints, N_particles, grid_schedule))
 #     end
 #     t2 = Dates.now();
     
@@ -2091,8 +2078,8 @@ checkpointss9 = []
 t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss9, controlled_particle_filter_with_checkpoints_v2(
-        #model,      T,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, T, full_model_args_noisy, observations2, N_particles, grid_schedule))
+        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+        full_model_1, T, full_model_args_noisy, constraints2, N_particles, grid_schedule))
 end
 t2 = Dates.now();
 
@@ -2124,8 +2111,8 @@ checkpointss10 = []
 t1 = Dates.now()
 for _=1:N_samples
     push!(checkpointss10, controlled_particle_filter_with_checkpoints_v2(
-        #model,      T,   args,         observations, N_particles, MH_arg_schedule)
-        full_model_1, T, full_model_args, observations3, N_particles, grid_schedule))
+        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+        full_model_1, T, full_model_args, constraints3, N_particles, grid_schedule))
 end
 t2 = Dates.now();
 
