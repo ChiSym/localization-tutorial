@@ -19,12 +19,11 @@
 # # TO DO
 #
 # * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.  motion_settings, scaled, lownoise, highnoise; full_settings, scaled, noisy.
-# * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
-# * Hierarchical (sensor) model?
-# * Fix global vars in rejection_sample etc.
-# * label all (hyper)parameters in visualizations
 # * integrate_controls_noisy —> dynamic DSL GF; plotting code now on its traces, incl. disks for variance around poses
 #   * similarly for other parts of model
+# * label all (hyper)parameters in visualizations
+# * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
+# * Hierarchical (sensor) model?
 #
 # Rif comments:
 # * Correct understanding of initial pose.
