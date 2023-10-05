@@ -23,7 +23,6 @@
 # * Hierarchical (sensor) model?
 # * Fix global vars in rejection_sample etc.
 # * Avoid regenerating constraints.
-# * "ideal path" —> "path from integrating controls"
 # * label all (hyper)parameters in visualizations
 # * integrate_controls_noisy —> dynamic DSL GF; plotting code now on its traces, incl. disks for variance around poses
 #   * similarly for other parts of model
@@ -220,7 +219,7 @@ end;
 # How bouncy the walls are in this world.
 world_inputs = (walls = world.walls, bounce = 0.1)
 
-path_ideal = integrate_controls(robot_inputs, world_inputs);
+path_integrated = integrate_controls(robot_inputs, world_inputs);
 
 # %% [markdown]
 # ### Plot such data
@@ -263,9 +262,9 @@ end;
 
 # %%
 the_plot = start_plot(world, "Given data", label_world=true, show_clutters=true)
-plot!(robot_inputs.start; label="ideal start pose", color=:green2)
-plot!([pose.p[1] for pose in path_ideal], [pose.p[2] for pose in path_ideal];
-      label="ideal program path", color=:green3, seriestype=:scatter, markersize=3, markerstrokewidth=0)
+plot!(robot_inputs.start; label="given start pose", color=:green2)
+plot!([pose.p[1] for pose in path_integrated], [pose.p[2] for pose in path_integrated];
+      label="path from integrating controls", color=:green3, seriestype=:scatter, markersize=3, markerstrokewidth=0)
 savefig("imgs/given_data")
 the_plot
 
@@ -389,8 +388,8 @@ start_actual = pose_prior_model(robot_inputs.start, motion_settings_synthetic)
 # the main ideas in the notebook.
 path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], 1.017840325933929)]
 
-the_plot = start_plot(world, "Actual motion deviates from ideal")
-plot!(path_ideal; label="ideal path", color=:green2)
+the_plot = start_plot(world, "Actual motion deviates from integrated")
+plot!(path_integrated; label="path from integrating controls", color=:green2)
 plot!(path_actual; label="\"actual\" robot path", color=:brown)
 savefig("imgs/deviation")
 the_plot
@@ -463,10 +462,10 @@ end;
 sensor_settings = (fov = 2π*(2/3), num_angles = 20, box_size = world.box_size)
 
 ani = Animation()
-for p in path_ideal
+for p in path_integrated
     frame_plot = plot_sensors(
         world, "Ideal sensor distances",
-        path_ideal, "ideal path", :green2,
+        path_integrated, "path from integrating controls", :green2,
         p, ideal_sensor(p, world.walls, sensor_settings), "ideal sensors",
         sensor_settings)
     frame(ani, frame_plot)
@@ -496,14 +495,14 @@ end;
 # %% [markdown]
 # Let us generate some fixed synthetic sensor data that, for pedagogical purposes, we will work with as if it were the actual sensor data of the robot.  The results are displayed in the *left hand* pane below, relative to the *actual* path, from which they were generated.
 #
-# The *right hand* pane shows these same synthetic sensor readings transposed to the point of view of the *ideal path*.  This pane shows at a glance the information that is apparent to the robot.  **The robot's problem is to resolve the discrepancy between the ideal path and the sensor data by proposing a better guess of path.**
+# The *right hand* pane shows these same synthetic sensor readings transposed to the point of view of the path *obtained by integrating the controls*.  This pane shows at a glance the information that is apparent to the robot.  **The robot's problem is to resolve the discrepancy between this integrated path and the sensor data by proposing a better guess of path.**
 
 # %%
 tol = 0.2
 observations = [noisy_sensor(p, world.walls, sensor_settings, tol) for p in path_actual]
 
 ani = Animation()
-for (p1, p2, readings) in zip(path_actual, path_ideal, observations)
+for (p1, p2, readings) in zip(path_actual, path_integrated, observations)
     model_plot = plot_sensors(
         world, "Actual data",
         path_actual, "actual path", :brown,
@@ -511,7 +510,7 @@ for (p1, p2, readings) in zip(path_actual, path_ideal, observations)
         sensor_settings)
     actual_plot = plot_sensors(
         world, "Apparent data",
-        path_ideal, "ideal path", :green2,
+        path_integrated, "path from integrating controls", :green2,
         p2, readings, "actual sensors",
         sensor_settings)
     frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Problem data")
@@ -542,18 +541,15 @@ Assumes
     return readings
 end;
 
-# %% [markdown]
-# The result does not appear much different from our noisy sensor distances, plotted over the path from which they were measured.
-
 # %%
 sensor_settings = (sensor_settings..., s_noise = 0.05)
 
 ani = Animation()
-for p in path_ideal
+for p in path_integrated
     frame_plot = plot_sensors(
         world, "Sensor model (samples)",
-        path_ideal, "some path", :green2,
-        p, sensor_model_1(p, world.walls, sensor_settings), "synthetic sensors",
+        path_integrated, "some path", :green2,
+        p, sensor_model_1(p, world.walls, sensor_settings), "synthetic sensors from path",
         sensor_settings)
     frame(ani, frame_plot)
 end
@@ -698,7 +694,7 @@ for n in 1:N_samples
             sensor_settings)
         actual_plot = plot_sensors(
             world, "Synthetic\n\"apparent\" data",
-            path_ideal, "ideal path", :green2,
+            path_integrated, "path from integrating controls", :green2,
             path_actual[t], trace[prefix_address(t, :sensor)], "trace sensors",
             sensor_settings)
         frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Full model (samples)\nnoise factor $(round(scale, digits=3))")
@@ -939,12 +935,12 @@ basic_SIR_library(model, args, observations, N_SIR) = importance_resampling(mode
 # %%
 T_short = 4
 robot_inputs_short = (robot_inputs..., controls=robot_inputs.controls[1:T_short])
-path_ideal_short = path_ideal[1:(T_short+1)]
+path_integrated_short = path_integrated[1:(T_short+1)]
 path_actual_short = path_actual[1:(T_short+1)]
 observations_short = observations[1:(T_short+1)]
 
 ani = Animation()
-for (p1, p2, readings) in zip(path_actual_short, path_ideal_short, observations_short)
+for (p1, p2, readings) in zip(path_actual_short, path_integrated_short, observations_short)
     model_plot = plot_sensors(
         world, "Actual data",
         path_actual_short, "actual path", :brown,
@@ -952,7 +948,7 @@ for (p1, p2, readings) in zip(path_actual_short, path_ideal_short, observations_
         sensor_settings)
     actual_plot = plot_sensors(
         world, "Apparent data",
-        path_ideal_short, "ideal path", :green2,
+        path_integrated_short, "path from integrating controls", :green2,
         p2, readings, "actual sensors",
         sensor_settings)
     frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Problem data\n(shortened path)")
@@ -1637,7 +1633,7 @@ path_actual_lownoise = integrate_controls_noisy((robot_inputs..., start=start_ac
 observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in path_actual_lownoise]
 
 ani = Animation()
-for (p1, p2, readings) in zip(path_actual_lownoise, path_ideal, observations2)
+for (p1, p2, readings) in zip(path_actual_lownoise, path_integrated, observations2)
     model_plot = plot_sensors(
         world, "Actual data",
         path_actual_lownoise, "actual path", :brown,
@@ -1645,7 +1641,7 @@ for (p1, p2, readings) in zip(path_actual_lownoise, path_ideal, observations2)
         sensor_settings)
     actual_plot = plot_sensors(
         world, "Apparent data",
-        path_ideal, "ideal path", :green2,
+        path_integrated, "path from integrating controls", :green2,
         p2, readings, "actual sensors",
         sensor_settings)
     frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Problem data\n(low motion noise)")
@@ -1694,7 +1690,7 @@ path_actual_highnoise = integrate_controls_noisy((robot_inputs..., start=start_a
 observations3 = [noisy_sensor(p, world.walls, sensor_settings, tol3) for p in path_actual_highnoise];
 
 ani = Animation()
-for (p1, p2, readings) in zip(path_actual_highnoise, path_ideal, observations3)
+for (p1, p2, readings) in zip(path_actual_highnoise, path_integrated, observations3)
     model_plot = plot_sensors(
         world, "Actual data",
         path_actual_highnoise, "actual path", :brown,
@@ -1702,7 +1698,7 @@ for (p1, p2, readings) in zip(path_actual_highnoise, path_ideal, observations3)
         sensor_settings)
     actual_plot = plot_sensors(
         world, "Apparent data",
-        path_ideal, "ideal path", :green2,
+        path_integrated, "path from integrating controls", :green2,
         p2, readings, "actual sensors",
         sensor_settings)
     frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Problem data\n(high motion noise)")
