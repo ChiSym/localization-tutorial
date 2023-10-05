@@ -774,11 +774,11 @@ end;
 # %%
 # Visualize distributions over traces.
 
-function frame_from_traces(world, traces, T, title; show_clutters=false, path_actual=nothing)
+function frame_from_traces(world, title, path_actual, traces; show_clutters=false)
     the_plot = start_plot(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
     for trace in traces
-        poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+        poses = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)]
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=nothing, color=:green, alpha=0.3)
         plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
               label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
@@ -790,13 +790,11 @@ end;
 N_samples = 10
 
 traces = [simulate(full_model_1, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, traces, T, "Prior on robot paths";
-                               path_actual=path_actual)
+prior_plot = frame_from_traces(world, "Prior on robot paths", path_actual, traces)
 
-posterior_plot = frame_from_traces(world, traces, T, "Posterior on robot paths";
-                                   path_actual=path_actual)
 constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
 traces = [sample_from_posterior(full_model_1, T, full_model_args, constraints; N_MH=10, N_particles=10) for _ in 1:N_samples]
+posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_actual, traces)
 
 the_plot = plot(prior_plot, posterior_plot, size=(1000,500))
 savefig("imgs/prior_posterior")
@@ -968,7 +966,7 @@ N_samples = 10
 N_SIR = 500
 traces = [basic_SIR_library(full_model_1, (T_short, full_model_args_short...), constraints_short, N_SIR)[1] for _ in 1:N_samples]
 
-the_plot = frame_from_traces(world, traces, T_short, "SIR (short path)"; path_actual=path_actual_short)
+the_plot = frame_from_traces(world, "SIR (short path)", path_actual_short, traces)
 savefig("imgs/SIR_short")
 the_plot
 
@@ -1025,6 +1023,7 @@ end;
 
 # %%
 T_RS = 9
+path_actual_RS = path_actual[1:(T_RS+1)]
 constraints_RS = constraints[1:(T_RS+1)];
 
 # %%
@@ -1035,8 +1034,7 @@ traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, traces[1:i], T_RS, "RS (particles 1 to $i)";
-                                   path_actual=path_actual[1:T_RS])
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_actual_RS, traces[1:i])
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS.gif", fps=1)
@@ -1049,8 +1047,7 @@ traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, traces[1:i], T_RS, "RS (particles 1 to $i)";
-                                   path_actual=path_actual[1:T_RS])
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_actual_RS, traces[1:i])
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS.gif", fps=1)
@@ -1063,8 +1060,7 @@ traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, traces[1:i], T_RS, "RS (particles 1 to $i)";
-                                   path_actual=path_actual[1:T_RS])
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_actual_RS, traces[1:i])
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS.gif", fps=1)
@@ -1086,7 +1082,7 @@ N_samples = 10
 N_SIR = 500
 traces = [basic_SIR_library(full_model_1, (T, full_model_args...), constraints, N_SIR)[1] for _ in 1:N_samples]
 
-the_plot = frame_from_traces(world, traces, T, "SIR (original path)"; path_actual=path_actual)
+the_plot = frame_from_traces(world, "SIR (original path)", path_actual, traces)
 savefig("imgs/SIR")
 the_plot
 
@@ -1176,8 +1172,7 @@ traces = [particle_filter_rejuv(full_model_1, T, full_model_args, constraints, N
 t2 = now()
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
-the_plot = frame_from_traces(world, traces, T, "PF+Drift Rejuv";
-                             path_actual=path_actual)
+the_plot = frame_from_traces(world, "PF+Drift Rejuv", path_actual, traces)
 savefig("imgs/PF_rejuv")
 the_plot
 
