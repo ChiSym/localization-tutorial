@@ -582,18 +582,16 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen function full_model_1_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Vector{Float64}
-    sensor_readings = Vector{Vector{Float64}}(undef, length(robot_inputs.controls) + 1)
-
+@gen function full_model_1_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
     pose = {:initial => :pose} ~ pose_prior_model(robot_inputs.start, full_settings.motion_settings)
-    sensor_readings[1] = {:initial => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
+    {:initial => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
 
     for t in 1:T
         pose = {:steps => t => :pose} ~ motion_model(pose, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
-        sensor_readings[t+1] = {:steps => t => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
+        {:steps => t => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
     end
 
-    return sensor_readings
+    # Return value is immaterial because we will only perform traced execution, and all information is contained in the trace.
 end
 
 # Handle asymmetry in trace addresses.
@@ -635,7 +633,7 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)
+@gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Tuple{Pose, Vector{Float64}}
     pose ~ pose_prior_model(robot_inputs.start, full_settings.motion_settings)
     sensor ~ sensor_model_1(pose, walls, full_settings.sensor_settings)
     return (pose, sensor)
@@ -649,15 +647,13 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen (static) function model_1_kernel(t :: Int, state :: Tuple{Pose, Vector{Float64}}, robot_inputs :: NamedTuple,
-                                      world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Tuple{Pose, Vector{Float64}}
+@gen (static) function model_1_kernel(t :: Int, state :: Tuple{Pose, Vector{Float64}}, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
+                                      full_settings :: NamedTuple) :: Tuple{Pose, Vector{Float64}} :: Tuple{Pose, Vector{Float64}}
     pose ~ motion_model(state[1], robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
     sensor ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
     return (pose, sensor)
 end
 model_1_chain = Unfold(model_1_kernel)
-
-combine_sensors(initial, steps) = [last(initial), last.(steps)...]
 
 """
 Assumes
@@ -667,10 +663,9 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen (static) function full_model_1(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Vector{Vector{Float64}}
+@gen (static) function full_model_1(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
     initial ~ model_1_initial(robot_inputs, world_inputs.walls, full_settings)
     steps ~ model_1_chain(T, initial, robot_inputs, world_inputs, full_settings)
-    return combine_sensors(initial, steps)
 end
 
 @load_generated_functions()
