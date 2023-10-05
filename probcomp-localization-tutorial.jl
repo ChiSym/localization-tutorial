@@ -1170,10 +1170,10 @@ drift_step_factor = 1/3.
 N_samples = 6
 N_particles = 10
 N_MH = 5
-t1 = Dates.now()
+t1 = now()
 traces = [particle_filter_rejuv(full_model_1, T, full_model_args, constraints, N_particles,
                                 N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
-t2 = Dates.now()
+t2 = now()
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
 the_plot = frame_from_traces(world, traces, T, "PF+Drift Rejuv";
@@ -1408,13 +1408,13 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 N_samples = 6
 N_particles = 10
 
-t1 = Dates.now()
+t1 = now()
 checkpointss =
     [particle_filter_grid_rejuv_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
        full_model_1, T, full_model_args, constraints, N_particles, grid_schedule)
      for _=1:N_samples]
-t2 = Dates.now();
+t2 = now();
 
 # %%
 merged_traj_list = []
@@ -1585,13 +1585,13 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 N_samples = 6
 N_particles = 10
 
-t1 = Dates.now()
+t1 = now()
 checkpointss2 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
        full_model_1, T, full_model_args, constraints, N_particles, grid_schedule)
      for _=1:N_samples]
-t2 = Dates.now()
+t2 = now()
 
 merged_traj_list2 = []
 merged_weight_list2 = []
@@ -1647,13 +1647,13 @@ full_model_args_noisy = (robot_inputs, world_inputs, (full_settings..., sensor_s
 N_samples = 6
 N_particles = 10
 
-t1 = Dates.now()
+t1 = now()
 checkpointss4 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
        full_model_1, T, full_model_args_noisy, constraints2, N_particles, [])
      for _=1:N_samples]
-t2 = Dates.now()
+t2 = now()
 
 merged_traj_list4 = []
 merged_weight_list4 = []
@@ -1706,13 +1706,13 @@ gif(ani, "imgs/noisy_distances_highmotionnoise.gif", fps=1)
 N_samples = 6
 N_particles = 10
 
-t1 = Dates.now()
+t1 = now()
 checkpointss5 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         observations, N_particles, grid)
        full_model_1, T, full_model_args_noisy, constraints3, N_particles, [])
      for _=1:N_samples]
-t2 = Dates.now()
+t2 = now()
 
 merged_traj_list5 = []
 merged_weight_list5 = []
@@ -1734,13 +1734,13 @@ frame_from_weighted_trajectories(world, merged_traj_list5, merged_weight_list5, 
 N_samples = 6
 N_particles = 10
 
-t1 = Dates.now()
+t1 = now()
 checkpointss6 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
        full_model_1, T, full_model_args, constraints3, N_particles, [])
      for _=1:N_samples]
-t2 = Dates.now()
+t2 = now()
 
 merged_traj_list6 = []
 merged_weight_list6 = []
@@ -1767,13 +1767,13 @@ nsteps = [3, 3, 3]
 sizes1 = [.7, .7, π/10]
 grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
-t1 = Dates.now()
+t1 = now()
 checkpointss7 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
        full_model_1, T, full_model_args, constraints3, N_particles, grid_schedule)
      for _=1:N_samples]
-t2 = Dates.now()
+t2 = now()
 
 merged_traj_list7 = []
 merged_weight_list7 = []
@@ -1994,13 +1994,13 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 N_samples = 6
 N_particles = 10
 checkpointss3 = []
-t1 = Dates.now()
+t1 = now()
 for _=1:N_samples
     push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
         full_model_1, T, full_model_args, constraints, N_particles, grid_schedule))
 end
-t2 = Dates.now();
+t2 = now();
 
 # %%
 merged_traj_list3 = []
@@ -2042,13 +2042,13 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 #     N_samples = 6
 #     N_particles = 10
 #     checkpointss3 = []
-#     t1 = Dates.now()
+#     t1 = now()
 #     for _=1:N_samples
 #         push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
 #             #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
 #             full_model_1, T, full_model_args, constraints, N_particles, grid_schedule))
 #     end
-#     t2 = Dates.now();
+#     t2 = now();
     
 #     merged_traj_list3 = []
 #     merged_weight_list3 = []
@@ -2075,13 +2075,13 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 N_samples = 6
 N_particles = 10
 checkpointss9 = []
-t1 = Dates.now()
+t1 = now()
 for _=1:N_samples
     push!(checkpointss9, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
         full_model_1, T, full_model_args_noisy, constraints2, N_particles, grid_schedule))
 end
-t2 = Dates.now();
+t2 = now();
 
 # %%
 merged_traj_list9 = []
@@ -2108,13 +2108,13 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 N_samples = 6
 N_particles = 10
 checkpointss10 = []
-t1 = Dates.now()
+t1 = now()
 for _=1:N_samples
     push!(checkpointss10, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
         full_model_1, T, full_model_args, constraints3, N_particles, grid_schedule))
 end
-t2 = Dates.now();
+t2 = now();
 
 # %%
 merged_traj_list10 = []
