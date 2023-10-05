@@ -30,14 +30,26 @@
 # Rif comments:
 # * Correct understanding of initial pose.
 
-# %%
-# Fix for Jay's Jupytext setup
-if occursin("sharlaon", pwd()); cd("/Users/sharlaon/dev/probcomp-localization-tutorial") end
-
 # %% [markdown]
 # # ProbComp Localization Tutorial
 #
 # This notebook aims to give an introduction to probabilistic computation (ProbComp).  This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probablistic programming language (PPL).  The programmer can thus encode their probabilistic intuition for solving a problem into an algorithm.  Back-end language work automates the routine but error-prone derivations.
+
+# %%
+# Global setup code
+
+# The dependencies consist of the following Juila packages.
+using Dates: now, value as dv
+using JSON: parsefile
+using Plots
+using Gen
+using GenParticleFilters
+
+# Ensure a location for image generation.
+mkpath("imgs")
+
+# Fix for Jay's Jupytext setup
+if occursin("sharlaon", pwd()); cd("/Users/sharlaon/dev/probcomp-localization-tutorial") end;
 
 # %% [markdown]
 # ## The "real world"
@@ -61,8 +73,6 @@ if occursin("sharlaon", pwd()); cd("/Users/sharlaon/dev/probcomp-localization-tu
 
 # %%
 # General code here
-
-import JSON
 
 norm(v :: Vector{Float64}) = sqrt(sum(v.^2))
 
@@ -104,7 +114,7 @@ function create_segments(verts :: Vector{Vector{Float64}}; loop_around=false) ::
 end
 
 function load_world(file_name)
-    data = JSON.parsefile(file_name)
+    data = parsefile(file_name)
     walls_vec = Vector{Vector{Float64}}(data["wall_verts"])
     walls = create_segments(walls_vec)
     clutters_vec = Vector{Vector{Vector{Float64}}}(data["clutter_vert_groups"])
@@ -225,8 +235,6 @@ path_integrated = integrate_controls(robot_inputs, world_inputs);
 # ### Plot such data
 
 # %%
-using Plots
-
 function plot_list(list; label=nothing, args...)
     if isempty(list); return end
     plt = plot!(list[1]; label=label, args...)
@@ -274,9 +282,6 @@ the_plot
 # Now we specify a model.
 #
 # Each piece of the model is declared as a *generative function*, prefaced by the `@gen` construct.
-
-# %%
-using Gen;
 
 # %% [markdown]
 # ### Pose prior model
@@ -758,8 +763,6 @@ end
 
 # PF with rejuvenation, using library code for the generic parts.
 
-using GenParticleFilters
-
 function particle_filter_rejuv_library(model, T, args, observations, N_particles, N_MH, MH_proposal, MH_proposal_args)
     constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
     state = pf_initialize(model, (0, args...), constraints[1], N_particles)
@@ -1167,9 +1170,6 @@ end
 # # Alternatively, using library calls: `particle_filter_rejuv_library` from the black box above!
 
 # %%
-using Dates
-dv = Dates.value
-
 drift_step_factor = 1/3.
 
 N_samples = 6
