@@ -761,7 +761,7 @@ end
     {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
 end
 
-# PF with rejuvenation, using library code for the generic parts.
+# PF with rejuvenation, using `GenParticleFilters` library code for the generic parts.
 
 function particle_filter_rejuv_library(model, T, args, observations, N_particles, N_MH, MH_proposal, MH_proposal_args)
     constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
