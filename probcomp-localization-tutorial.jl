@@ -1363,11 +1363,12 @@ function particle_filter_grid_rejuv_with_checkpoints(model, T, args, constraints
 end;
 
 # %%
-function frame_from_weighted_trajectories(world, trajectories, weights, T, title; show_clutters=false, path_actual=nothing, minalpha=.01, readings=nothing)
+function frame_from_weighted_trajectories(world, title, path_actual, trajectories, weights; show_clutters=false, minalpha=0.03)
+    t = length(first(trajectories))
     the_plot = start_plot(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual)
         plot!(path_actual; label="actual path", color=:brown)
-        plot!(path_actual[length(first(trajectories))], color=:black)
+        plot!(path_actual[t]; label=nothing, color=:black)
     end
 
     normalized_weights = exp.(weights .- logsumexp(weights))
@@ -1383,15 +1384,6 @@ function frame_from_weighted_trajectories(world, trajectories, weights, T, title
               label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=al)
     end
 
-    if !isnothing(path_actual) && !isnothing(readings)
-        t = length(first(trajectories))
-        projections = project_readings(path_actual[t], readings[t], sensor_settings)
-        plot!(first.(projections), last.(projections);
-          label=nothing, color=:blue, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
-        plot!([Segment(path_actual[t].p, pr) for pr in projections];
-          label=nothing, color=:blue, alpha=0.25)
-    end
-        
     return the_plot
 end;
 
@@ -1421,7 +1413,7 @@ for checkpoints in checkpointss
 end
 merged_weight_list = merged_weight_list .- log(length(checkpointss))
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list, merged_weight_list, T, "PF + Grid MH Rejuv"; path_actual, minalpha=0.03)
+frame_from_weighted_trajectories(world, "PF + Grid MH Rejuv", path_actual, merged_traj_list, merged_weight_list)
 
 # %% [markdown]
 # This is just a first step.  We'll improve it below by improving the quality of the particle weights (and, in turn, the resampling).
@@ -1599,7 +1591,7 @@ merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list2, merged_weight_list2, T, "PF + Grid SMCP3 Rejuv"; path_actual, minalpha=0.03)
+frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv", path_actual, merged_traj_list2, merged_weight_list2)
 
 # %% [markdown]
 # That's already better.  We'll improve this algorithm even further below.
@@ -1661,7 +1653,7 @@ merged_weight_list4 = merged_weight_list4 .- log(length(checkpointss4));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list4, merged_weight_list4, T, "Particle filter (no rejuv) - low motion noise"; path_actual=path_actual_lownoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion noise", path_actual_lownoise, merged_traj_list4, merged_weight_list4)
 
 
 # %% [markdown]
@@ -1720,7 +1712,7 @@ merged_weight_list5 = merged_weight_list5 .- log(length(checkpointss5));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list5, merged_weight_list5, T, "PF - motion noise:(model:low)(data:high)"; path_actual=path_actual_highnoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, "PF - motion noise:(model:low)(data:high)", path_actual_highnoise, merged_traj_list5, merged_weight_list5)
 
 # %% [markdown]
 # Conversely, if we run a no-rejuvenation particle filter with the higher model noise parameters, the runs are inconsistent.
@@ -1748,7 +1740,7 @@ merged_weight_list6 = merged_weight_list6 .- log(length(checkpointss6));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list6, merged_weight_list6, T, "PF - motion noise:(model:high)(data:high)"; path_actual=path_actual_highnoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, "PF - motion noise:(model:high)(data:high)", path_actual_highnoise, merged_traj_list6, merged_weight_list6)
 
 # %% [markdown]
 # However, if we add back in SMCP3 rejuvenation, performance is a lot better!
@@ -1781,7 +1773,7 @@ merged_weight_list7 = merged_weight_list7 .- log(length(checkpointss7));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, merged_traj_list7, merged_weight_list7, T, "PF + Grid SMCP3 Rejuv - motion noise:high"; path_actual=path_actual_highnoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv - motion noise:high", path_actual_highnoise, merged_traj_list7, merged_weight_list7)
 
 # %% [markdown]
 # # Inference controller to automatically spend the right amount of compute for good accuracy
@@ -2007,7 +1999,7 @@ for checkpoints in checkpointss3
 end
 merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, merged_traj_list3, merged_weight_list3, T, "Inference Controller (moderate noise)"; path_actual, minalpha=0.03)
+frame_from_weighted_trajectories(world, "Inference Controller (moderate noise)", path_actual, merged_traj_list3, merged_weight_list3)
 
 # %% [markdown]
 # **Animation showing the controller in action----**
@@ -2017,7 +2009,7 @@ ani = Animation()
 
 checkpoints = checkpointss3[1]
 for checkpoint in checkpoints
-    frame_plot = frame_from_weighted_trajectories(world, checkpoint.traj, checkpoint.wts, T, "t = $(checkpoint.t) | operation = $(checkpoint.msg)"; path_actual, minalpha=0.08)
+    frame_plot = frame_from_weighted_trajectories(world, "t = $(checkpoint.t) | operation = $(checkpoint.msg)", path_actual, checkpoint.traj, checkpoint.wts; minalpha=0.08)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/controller_animation.gif", fps=1)
@@ -2054,7 +2046,7 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 #     end
 #     merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3));
 #     println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-#     frame_from_weighted_trajectories(world, merged_traj_list3, merged_weight_list3, T, "controlled grid rejuv"; path_actual, minalpha=0.03)
+#     frame_from_weighted_trajectories(world, "controlled grid rejuv", path_actual, merged_traj_list3, merged_weight_list3; minalpha=0.03)
 # end
 
 # %% [markdown]
@@ -2088,7 +2080,7 @@ for checkpoints in checkpointss9
 end
 merged_weight_list9 = merged_weight_list9 .- log(length(checkpointss9));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, merged_traj_list9, merged_weight_list9, T, "Inference controller (low motion noise)"; path_actual=path_actual_lownoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, "Inference controller (low motion noise)", path_actual_lownoise, merged_traj_list9, merged_weight_list9)
 
 # %% [markdown]
 # ### Controller on HIGH NOISE TRAJECTORY
@@ -2121,4 +2113,4 @@ for checkpoints in checkpointss10
 end
 merged_weight_list10 = merged_weight_list10 .- log(length(checkpointss10));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, merged_traj_list10, merged_weight_list10, T, "Inference controller (high motion noise)"; path_actual=path_actual_highnoise, minalpha=0.03)
+frame_from_weighted_trajectories(world, "Inference controller (high motion noise)", path_actual_highnoise, merged_traj_list10, merged_weight_list10)
