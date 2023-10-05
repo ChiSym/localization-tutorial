@@ -279,9 +279,11 @@ the_plot
 # %% [markdown]
 # ## Modeling motion in Gen
 #
-# Now we specify a model.
+# Now we specify a model.  Each piece of the model is declared as a *generative function* (GF).
 #
-# Each piece of the model is declared as a *generative function*, prefaced by the `@gen` construct.
+# The `Gen` library provides two DSLs for constructing GFs: the dynamic DSL using the decorator `@gen` on a function declaration, and the static DSL similarly decorated with `@gen (static)`.
+#
+# The library offers two basic constructs for use within these DSLs: primitive *distributions* such as "Bernoulli" and "normal", and the sampling operator `~`.  Recursively, GFs may be sampled from by other GFs using `~`.  The dynamic DSL allows a rather wide class of program structures, whereas the static DSL only allows those for which a certain static analysis may be performed.
 
 # %% [markdown]
 # ### Pose prior model
