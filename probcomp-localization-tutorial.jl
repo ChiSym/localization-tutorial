@@ -247,7 +247,7 @@ Plots.plot!(seg_groups :: Vector{Vector{Segment}}; args...) = plot_list(seg_grou
 Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, step_along_pose(p, r)); arrow=true, args...)
 Plots.plot!(ps :: Vector{Pose}; args...) = plot_list(ps; args...)
 
-function start_plot(world, title; label_world=false, show_clutters=false)
+function plot_world(world, title; label_world=false, show_clutters=false)
     border = world.box_size * (3.)/19.
     the_plot = plot(
         size         = (500, 500),
@@ -267,10 +267,10 @@ end;
 # Following this initial display of the given data, we *suppress the clutters* until much later in the notebook.
 
 # %%
-the_plot = start_plot(world, "Given data", label_world=true, show_clutters=true)
-plot!(robot_inputs.start; label="given start pose", color=:green2)
+the_plot = plot_world(world, "Given data", label_world=true, show_clutters=true)
+plot!(robot_inputs.start; color=:green3, label="given start pose")
 plot!([pose.p[1] for pose in path_integrated], [pose.p[2] for pose in path_integrated];
-      label="path from integrating controls", color=:green3, seriestype=:scatter, markersize=3, markerstrokewidth=0)
+      color=:green2, label="path from integrating controls", seriestype=:scatter, markersize=3, markerstrokewidth=0)
 savefig("imgs/given_data")
 the_plot
 
@@ -311,8 +311,8 @@ motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
 N_samples = 50
 pose_samples = [pose_prior_model(robot_inputs.start, motion_settings) for _ in 1:N_samples]
 
-the_plot = start_plot(world, "Pose prior model (samples)")
-plot!(pose_samples; label=nothing, color=:red)
+the_plot = plot_world(world, "Pose prior model (samples)")
+plot!(pose_samples; color=:red, label=nothing)
 savefig("imgs/pose_prior")
 the_plot
 
@@ -357,6 +357,39 @@ Assumes
     return path
 end;
 
+# %% [markdown]
+# Note how the following trace exposes the hierarchical structure of the program flow.
+#
+# To reduce notebook clutter, we just show the start pose plus the initial 5 timesteps.
+
+# %%
+trace = simulate(integrate_controls_noisy, (robot_inputs, world_inputs, motion_settings))
+get_selected(get_choices(trace), select(:initial, (:steps => i for i in 1:5)...))
+
+# %% [markdown]
+# #### Hygenic model visualization
+#
+# We could very pass the output of the above model `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit for ProbComp: writing interpretive code for GFs in terms of their traces rather than return values.  This enables the programmer include the parameters of the model in the display for clarity.
+
+# %%
+# Handle asymmetry in the trace address structures.
+prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
+
+function get_poses(trace)
+    # We will define models below that receive an integer argument prior to `robot_inputs`.
+    T = isa(get_args(trace)[1], NamedTuple) ? length(get_args(trace)[1].controls) : length(get_args(trace)[2].controls)
+    return [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+end
+
+plot_motion!(poses, color, label) = plot!(poses; color=color, label=label)
+plot_motion_trace!(trace, color, label) = plot_motion!(get_poses(trace), color, label)
+
+function frame_from_motion_trace(world, title, trace; show_clutters=false)
+    the_plot = plot_world(world, title; show_clutters=show_clutters)
+    plot_motion_trace!(trace, :red, "motion in trace")
+    return the_plot
+end;
+
 # %%
 scaled_motion_settings(settings, x) = (p_noise = x * settings.p_noise, hd_noise = x * settings.hd_noise)
 
@@ -365,55 +398,49 @@ N_samples = 15
 ani = Animation()
 for n in 1:N_samples
     scale = 16. * (2.)^(n-N_samples)
-    frame_plot = start_plot(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))")
-    sample_motion = integrate_controls_noisy(robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale))
-    plot!(sample_motion; color=:red)
+    trace = simulate(integrate_controls_noisy, (robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale)))
+    frame_plot = frame_from_motion_trace(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))", trace)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/motion.gif", fps=1)
-
-# %%
-trace = simulate(motion_model, (robot_inputs.start, robot_inputs.controls[1], world_inputs, motion_settings))
-get_choices(trace)
 
 # %% [markdown]
 # ### Synthetic motion data
 #
 # Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.
+#
+# Since we imagine these data as having been recorded from the real world, keep only their return values, discarding the traces that produced them.
 
 # %%
 # # Generate a path by adding noise:
 
 motion_settings_synthetic = (p_noise = 0.05, hd_noise = 2π / 360)
 
-start_actual = pose_prior_model(robot_inputs.start, motion_settings_synthetic)
-# path_actual = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_synthetic)
+# path_actual = integrate_controls_noisy(robot_inputs), world_inputs, motion_settings_synthetic)
 # repr(path_actual) |> clipboard
 # Here, we will use a hard-coded one we generated earlier that we selected to more clearly illustrate
 # the main ideas in the notebook.
 path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], 1.017840325933929)]
 
-the_plot = start_plot(world, "Actual motion deviates from integrated")
-plot!(path_integrated; label="path from integrating controls", color=:green2)
-plot!(path_actual; label="\"actual\" robot path", color=:brown)
+the_plot = plot_world(world, "Actual motion deviates from integrated")
+plot!(path_integrated; color=:green2, label="path from integrating controls")
+plot!(path_actual; color=:brown, label="\"actual\" robot path")
 savefig("imgs/deviation")
 the_plot
 
 # %% [markdown]
 # ## Observing with sensors
 #
-# We assume the robot is equipped with sensors that cast rays upon the environment at certain angles relative to the given pose, and return the distance to a hit.
+# We now, additionally, assume the robot is equipped with sensors that cast rays upon the environment at certain angles relative to the given pose, and return the distance to a hit.
 
 # %% [markdown]
 # ### Ideal sensors
 #
-# Ideally, there are true distances to the walls, to be sensed along the true path.
-#
-# Starting now, and for a while, we *suppress* the effects of clutter, which the robot is unaware of anyway, and assume the robot is in the environment ideally described by the map.
+# Ideally, there are true distances to the walls.
 
 # %%
-function sensor_distance(p :: Pose, walls :: Vector{Segment}, box_size :: Float64) :: Float64
-    d = minimum(distance(p, s) for s in walls)
+function sensor_distance(pose :: Pose, walls :: Vector{Segment}, box_size :: Float64) :: Float64
+    d = minimum(distance(pose, seg) for seg in walls)
     # Capping to a finite value avoids issues below.
     return isinf(d) ? 2. * box_size : d
 end;
@@ -429,10 +456,10 @@ sensor_angle(sensor_settings :: NamedTuple, j :: Int64) =
 Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
 """
-function ideal_sensor(p :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
+function ideal_sensor(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
     readings = Vector{Float64}(undef, 2 * sensor_settings.num_angles + 1)
     for j in 1:(2 * sensor_settings.num_angles + 1)
-        sensor_pose = rotate_pose(p, sensor_angle(sensor_settings, j))
+        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
         readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
     end
     return readings
@@ -445,21 +472,25 @@ end;
 Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
 """
-project_readings(p :: Pose, readings :: Vector{Float64}, sensor_settings :: NamedTuple) :: Vector{Vector{Float64}} =
-    [step_along_pose(rotate_pose(p, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
+project_readings(pose :: Pose, readings :: Vector{Float64}, sensor_settings :: NamedTuple) :: Vector{Vector{Float64}} =
+    [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
 
 """
 Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
 """
-function plot_sensors(world, title, path, label, color, p, readings, readings_label, sensor_settings; show_clutters=false)
-    the_plot = start_plot(world, title; show_clutters=show_clutters)
-    plot!(path; label=label, color=color)
-    plot!([p.p[1]], [p.p[2]]; label=nothing, color=color, seriestype=:scatter, markersize=3, markerstrokewidth=0)
-    projections = project_readings(p, readings, sensor_settings)
+function plot_sensors!(pose, color, readings, label, sensor_settings)
+    plot!([pose.p[1]], [pose.p[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
+    projections = project_readings(pose, readings, sensor_settings)
     plot!(first.(projections), last.(projections);
-            label=readings_label, color=:blue, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
-    plot!([Segment(p.p, pr) for pr in projections]; label=nothing, color=:blue, alpha=0.25)
+            color=:blue, label=label, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
+    plot!([Segment(pose.p, pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
+end
+
+function frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false)
+    the_plot = plot_world(world, title; show_clutters=show_clutters)
+    plot_motion!(poses, poses_color, poses_label)
+    plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
     return the_plot
 end;
 
@@ -467,11 +498,11 @@ end;
 sensor_settings = (fov = 2π*(2/3), num_angles = 20, box_size = world.box_size)
 
 ani = Animation()
-for p in path_integrated
-    frame_plot = plot_sensors(
+for pose in path_integrated
+    frame_plot = frame_from_sensors(
         world, "Ideal sensor distances",
-        path_integrated, "path from integrating controls", :green2,
-        p, ideal_sensor(p, world.walls, sensor_settings), "ideal sensors",
+        path_integrated, :green2, "path from integrating controls",
+        pose, ideal_sensor(pose, world.walls, sensor_settings), "ideal sensors",
         sensor_settings)
     frame(ani, frame_plot)
 end
@@ -480,96 +511,79 @@ gif(ani, "imgs/ideal_distances.gif", fps=1)
 # %% [markdown]
 # ### Noisy sensors
 #
-# We may also assume the sensors only guarantee results within a certain *tolerance*, leading to noisy readings.
-
-# %%
-"""
-Assumes
-* `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
-"""
-function noisy_sensor(p :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple, tol :: Float64) :: Vector{Float64}
-    readings = Vector{Float64}(undef, 2 * sensor_settings.num_angles + 1)
-    for j in 1:(2 * sensor_settings.num_angles + 1)
-        sensor_pose = rotate_pose(p, sensor_angle(sensor_settings, j))
-        # Uniformly choose in the interval [distance - tol, distance + tol].
-        readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size) + (2.0*tol*rand() - tol)
-    end
-    return readings
-end;
-
-# %% [markdown]
-# Let us generate some fixed synthetic sensor data that, for pedagogical purposes, we will work with as if it were the actual sensor data of the robot.  The results are displayed in the *left hand* pane below, relative to the *actual* path, from which they were generated.
-#
-# The *right hand* pane shows these same synthetic sensor readings transposed to the point of view of the path *obtained by integrating the controls*.  This pane shows at a glance the information that is apparent to the robot.  **The robot's problem is to resolve the discrepancy between this integrated path and the sensor data by proposing a better guess of path.**
-
-# %%
-tol = 0.2
-observations = [noisy_sensor(p, world.walls, sensor_settings, tol) for p in path_actual]
-
-ani = Animation()
-for (p1, p2, readings) in zip(path_actual, path_integrated, observations)
-    model_plot = plot_sensors(
-        world, "Actual data",
-        path_actual, "actual path", :brown,
-        p1, readings, "actual sensors",
-        sensor_settings)
-    actual_plot = plot_sensors(
-        world, "Apparent data",
-        path_integrated, "path from integrating controls", :green2,
-        p2, readings, "actual sensors",
-        sensor_settings)
-    frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Problem data")
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/discrepancy.gif", fps=1)
-
-# %% [markdown]
-# ## Modeling the sensors
-#
-
-# %% [markdown]
-# ### Sensor model
-#
-# Suppose we do not know the details of the sensor, for example its tolerance behavior.  We simply model the readings as approximately correct, using Gaussian noise.
+# We assume that the sensor readings are themselves uncertain, say, the distances only knowable up to some noise.  We model this as follows.
 
 # %%
 """
 Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen function sensor_model_1(p :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
+@gen function sensor_model(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
     readings = Vector{Float64}(undef, 2 * sensor_settings.num_angles + 1)
     for j in 1:(2 * sensor_settings.num_angles + 1)
-        sensor_pose = rotate_pose(p, sensor_angle(sensor_settings, j))
+        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
         readings[j] = {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
     end
     return readings
 end;
 
-# %%
-sensor_settings = (sensor_settings..., s_noise = 0.05)
+# %% [markdown]
+# The trace contains many choices corresponding to directions of sensor reading from the input pose.  To reduce notebook clutter, here we just show a subset of 5 of them:
 
+# %%
+sensor_settings = (sensor_settings..., s_noise = 0.10)
+
+trace = simulate(sensor_model, (robot_inputs.start, world.walls, sensor_settings))
+get_selected(get_choices(trace), select((1:5)...))
+
+# %%
+# TODO: Add settings/params display code.
+function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
+    return frame_from_sensors(world, title, poses, poses_color, poses_label, pose, get_retval(trace), "trace sensors", get_args(trace)[3]; show_clutters=show_clutters)
+end;
+
+# %%
 ani = Animation()
-for p in path_integrated
-    frame_plot = plot_sensors(
+for pose in path_integrated
+    trace = simulate(sensor_model, (pose, world.walls, sensor_settings))
+    frame_plot = frame_from_sensors_trace(
         world, "Sensor model (samples)",
-        path_integrated, "some path", :green2,
-        p, sensor_model_1(p, world.walls, sensor_settings), "synthetic sensors from path",
-        sensor_settings)
+        path_integrated, :green2, "some path",
+        pose, trace)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/sensor_1.gif", fps=1)
 
 # %% [markdown]
-# The trace contains many choices corresponding to directions of sensor reading from the input pose.  To reduce notebook clutter, here we just show a subset of 5 of them:
+# ### Synthetic sensor data
+#
+# Let us generate some fixed synthetic sensor data that, for pedagogical purposes, we will work with as if it were the actual sensor data of the robot.  The results are displayed in the *left hand* pane below, relative to the *actual* path, from which they were generated.
+#
+# The *right hand* pane shows these same synthetic sensor readings transposed to the point of view of the path *obtained by integrating the controls*.  This pane shows at a glance the information that is apparent to the robot.  **The robot's problem is to resolve the discrepancy between this integrated path and the sensor data by proposing a better guess of path.**
 
 # %%
-trace = simulate(sensor_model_1, (robot_inputs.start, world.walls, sensor_settings))
+# TODO: Futz with sensor settings here?
+observations = [sensor_model(pose, world.walls, sensor_settings) for pose in path_actual]
 
-get_selected(get_choices(trace), select((1:5)...))
+ani = Animation()
+for (pose_actual, pose_integrated, readings) in zip(path_actual, path_integrated, observations)
+    actual_plot = frame_from_sensors(
+        world, "Actual data",
+        path_actual, :brown, "actual path",
+        pose_actual, readings, "actual sensors",
+        sensor_settings)
+    integrated_plot = frame_from_sensors(
+        world, "Apparent data",
+        path_integrated, :green2, "path from integrating controls",
+        pose_integrated, readings, "actual sensors",
+        sensor_settings)
+    frame_plot = plot(actual_plot, integrated_plot, size=(1000,500), plot_title="Problem data")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/discrepancy.gif", fps=1)
 
 # %% [markdown]
-# ### Full model
+# ## Full model
 #
 # We connect the pieces into a full model.  There are two ways of expressing this same functionality.  The first uses an explicit loop:
 
@@ -584,18 +598,15 @@ Assumes
 """
 @gen function full_model_1_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
     pose = {:initial => :pose} ~ pose_prior_model(robot_inputs.start, full_settings.motion_settings)
-    {:initial => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
+    {:initial => :sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
 
     for t in 1:T
         pose = {:steps => t => :pose} ~ motion_model(pose, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
-        {:steps => t => :sensor} ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
+        {:steps => t => :sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
     end
 
     # Return value is immaterial because we will only perform traced execution, and all information is contained in the trace.
-end
-
-# Handle asymmetry in trace addresses.
-prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest);
+end;
 
 # %% [markdown]
 # This _generative function_ defines a probability distribution over _traces_.  Each _trace_ is a data structure containing a sequence of robot pose values, and a sequence of observations captured by the sensor.
@@ -611,7 +622,7 @@ prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps
 # The probability distribution on this trace is defined using the following components:
 # 1. $P_{\text{init}}(\textbf{z}_0)$ (`pose_prior_model`)
 # 2. $P_{\text{step}}(\textbf{z}_t ; \textbf{z}_{t-1})$ (`motion_model`)
-# 3. $P_{\text{obs}}(\textbf{o}_t ; \textbf{z}_t)$ (`sensor_model_1`)
+# 3. $P_{\text{obs}}(\textbf{o}_t ; \textbf{z}_t)$ (`sensor_model`)
 #
 # Let $P_\text{full}$ denote the distribution defined by `full_model_1_loop`.  The code above declares that the distribution is
 # $$
@@ -635,7 +646,7 @@ Assumes
 """
 @gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Tuple{Pose, Vector{Float64}}
     pose ~ pose_prior_model(robot_inputs.start, full_settings.motion_settings)
-    sensor ~ sensor_model_1(pose, walls, full_settings.sensor_settings)
+    sensor ~ sensor_model(pose, walls, full_settings.sensor_settings)
     return (pose, sensor)
 end
 
@@ -648,9 +659,9 @@ Assumes
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
 @gen (static) function model_1_kernel(t :: Int, state :: Tuple{Pose, Vector{Float64}}, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
-                                      full_settings :: NamedTuple) :: Tuple{Pose, Vector{Float64}} :: Tuple{Pose, Vector{Float64}}
+                                      full_settings :: NamedTuple) :: Tuple{Pose, Vector{Float64}}
     pose ~ motion_model(state[1], robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
-    sensor ~ sensor_model_1(pose, world_inputs.walls, full_settings.sensor_settings)
+    sensor ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
     return (pose, sensor)
 end
 model_1_chain = Unfold(model_1_kernel)
@@ -675,8 +686,44 @@ end
 #
 # We note, by the way, the introduction of the parameter `T`, used to truncate the generation of steps to lengths less than `length(robot_inputs.controls)`, which will be helpful when writing SMC code below.
 
+# %% [markdown]
+# Again, the trace of the full model contains many choices, so we just show a subset of them: the initial pose plus 2 timesteps, and 5 sensor readings from each.
+
 # %%
 full_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
+full_model_args = (robot_inputs, world_inputs, full_settings)
+
+trace = simulate(full_model_1, (T, full_model_args...))
+selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t, :sensor => j) for t in 1:3, j in 1:5)...)
+get_selected(get_choices(trace), selection)
+
+# %% [markdown]
+# By this point, visualization is essential.
+
+# %%
+function frames_from_full_trace(ani, world, title, trace; show_clutters=false)
+    T = get_args(trace)[1]
+    path_trace = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+    path_integrated = integrate_controls(get_args(trace)[2], get_args(trace)[3])
+    trace_sensors = [trace[prefix_address(t, :sensor)] for t in 1:(T+1)]
+    sensor_settings = get_args(trace)[4].sensor_settings
+    for (pose_trace, pose_integrated, readings) in zip(path_trace, path_integrated, trace_sensors)
+        plot_trace = frame_from_sensors(
+            world, "Synthetic\n\"actual\" data",
+            path_trace, :green, "trace path",
+            pose_trace, readings, "trace sensors",
+            sensor_settings; show_clutters=show_clutters)
+        plot_integrated = frame_from_sensors(
+            world, "Synthetic\n\"apparent\" data",
+            path_integrated, :green2, "path from integrating controls",
+            pose_integrated, readings, "trace sensors",
+            sensor_settings; show_clutters=show_clutters)
+        frame_plot = plot(plot_trace, plot_integrated, size=(1000,500), plot_title=title)
+        frame(ani, frame_plot)
+    end
+end;
+
+# %%
 scaled_full_settings(settings, x) = (settings..., motion_settings=scaled_motion_settings(settings.motion_settings, x))
 
 N_samples = 10
@@ -685,33 +732,9 @@ ani = Animation()
 for n in 1:N_samples
     scale = (2.)^(2+(n-N_samples))
     trace = simulate(full_model_1, (T, robot_inputs, world_inputs, scaled_full_settings(full_settings, scale)))
-    path_trace = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
-    for t in 1:(T+1)
-        model_plot = plot_sensors(
-            world, "Synthetic\n\"actual\" data",
-            path_trace, "trace path", :green,
-            trace[prefix_address(t, :pose)], trace[prefix_address(t, :sensor)], "trace sensors",
-            sensor_settings)
-        actual_plot = plot_sensors(
-            world, "Synthetic\n\"apparent\" data",
-            path_integrated, "path from integrating controls", :green2,
-            path_actual[t], trace[prefix_address(t, :sensor)], "trace sensors",
-            sensor_settings)
-        frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Full model (samples)\nnoise factor $(round(scale, digits=3))")
-        frame(ani, frame_plot)
-    end
+    frames_from_full_trace(ani, world, "Full model (samples)\nnoise factor $(round(scale, digits=3))", trace)
 end
 gif(ani, "imgs/full_1.gif", fps=5)
-
-# %% [markdown]
-# Again, the trace of the full model contains many choices, so we just show a subset of them: the initial pose plus 2 timesteps, and 5 sensor readings from each.
-
-# %%
-full_model_args = (robot_inputs, world_inputs, full_settings)
-
-trace = simulate(full_model_1, (T, full_model_args...))
-selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t, :sensor => j) for t in 1:3, j in 1:5)...)
-get_selected(get_choices(trace), selection)
 
 # %% [markdown]
 # ## Inference: main idea
@@ -727,8 +750,8 @@ get_selected(get_choices(trace), selection)
 
 # Encode sensor reading into choice map.
 
-constraint_from_sensor_reading(cm :: ChoiceMap, t :: Int, sensor_reading :: Vector{Float64}) :: ChoiceMap =
-    choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(sensor_reading) )...)
+constraint_from_sensors(cm :: ChoiceMap, t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
+    choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
 
 # Propose a move for MH.
 
@@ -769,7 +792,7 @@ end;
 # Visualize distributions over traces.
 
 function frame_from_traces(world, title, path_actual, traces; show_clutters=false)
-    the_plot = start_plot(world, title; show_clutters=show_clutters)
+    the_plot = plot_world(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
     for trace in traces
         poses = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)]
@@ -786,7 +809,7 @@ N_samples = 10
 traces = [simulate(full_model_1, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", path_actual, traces)
 
-constraints = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations)]
+constraints = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations)]
 traces = [sample_from_posterior(full_model_1, T, full_model_args, constraints; N_MH=10, N_particles=10) for _ in 1:N_samples]
 posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_actual, traces)
 
@@ -933,18 +956,18 @@ observations_short = observations[1:(T_short+1)]
 constraints_short = constraints[1:(T_short+1)]
 
 ani = Animation()
-for (p1, p2, readings) in zip(path_actual_short, path_integrated_short, observations_short)
-    model_plot = plot_sensors(
+for (pose_actual, pose_integrated, readings) in zip(path_actual_short, path_integrated_short, observations_short)
+    actual_plot = frame_from_sensors(
         world, "Actual data",
-        path_actual_short, "actual path", :brown,
-        p1, readings, "actual sensors",
+        path_actual_short, :brown, "actual path",
+        pose_actual, readings, "actual sensors",
         sensor_settings)
-    actual_plot = plot_sensors(
+    integrated_plot = frame_from_sensors(
         world, "Apparent data",
-        path_integrated_short, "path from integrating controls", :green2,
-        p2, readings, "actual sensors",
+        path_integrated_short, :green2, "path from integrating controls",
+        pose_integrated, readings, "actual sensors",
         sensor_settings)
-    frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Problem data\n(shortened path)")
+    frame_plot = plot(actual_plot, integrated_plot, size=(1000,500), plot_title="Problem data\n(shortened path)")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/discrepancy_short.gif", fps=1)
@@ -1359,7 +1382,7 @@ end;
 # %%
 function frame_from_weighted_trajectories(world, title, path_actual, trajectories, weights; show_clutters=false, minalpha=0.03)
     t = length(first(trajectories))
-    the_plot = start_plot(world, title; show_clutters=show_clutters)
+    the_plot = plot_world(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual)
         plot!(path_actual; label="actual path", color=:brown)
         plot!(path_actual[t]; label=nothing, color=:black)
@@ -1599,25 +1622,26 @@ frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv", path_actual, me
 
 # %%
 motion_settings_lownoise = (p_noise = 0.005, hd_noise = 1/50 * 2π / 360)
+# Relevant to synthetic sensors:
+# tol2 = 0.10
 
-tol2 = 0.10
-path_actual_lownoise = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_lownoise)
-observations2 = [noisy_sensor(p, world.walls, sensor_settings, tol2) for p in path_actual_lownoise]
-constraints2 = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations2)]
+path_actual_lownoise = integrate_controls_noisy(robot_inputs, world_inputs, motion_settings_lownoise)
+observations2 = [sensor_model(pose, world.walls, sensor_settings) for pose in path_actual_lownoise]
+constraints2 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations2)]
 
 ani = Animation()
-for (p1, p2, readings) in zip(path_actual_lownoise, path_integrated, observations2)
-    model_plot = plot_sensors(
+for (pose_actual, pose_integrated, readings) in zip(path_actual_lownoise, path_integrated, observations2)
+    actual_plot = frame_from_sensors(
         world, "Actual data",
-        path_actual_lownoise, "actual path", :brown,
-        p1, readings, "actual sensors",
+        path_actual_lownoise, :brown, "actual path",
+        pose_actual, readings, "actual sensors",
         sensor_settings)
-    actual_plot = plot_sensors(
+    integrated_plot = frame_from_sensors(
         world, "Apparent data",
-        path_integrated, "path from integrating controls", :green2,
-        p2, readings, "actual sensors",
+        path_integrated, :green2, "path from integrating controls",
+        pose_integrated, readings, "actual sensors",
         sensor_settings)
-    frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Problem data\n(low motion noise)")
+    frame_plot = plot(actual_plot, integrated_plot, size=(1000,500), plot_title="Problem data\n(low motion noise)")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/noisy_distances_lowmotionnoise.gif", fps=1)
@@ -1657,25 +1681,26 @@ frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion
 
 # %%
 motion_settings_highnoise = (p_noise = 0.25, hd_noise = 1.5 * 2π / 360)
+# Relevant to synthetic sensors:
+# tol3 = .03
 
-tol3 = .03
-path_actual_highnoise = integrate_controls_noisy((robot_inputs..., start=start_actual), world_inputs, motion_settings_highnoise)
-observations3 = [noisy_sensor(p, world.walls, sensor_settings, tol3) for p in path_actual_highnoise];
-constraints3 = [constraint_from_sensor_reading(choicemap(), t, sensor_reading) for (t, sensor_reading) in enumerate(observations3)]
+path_actual_highnoise = integrate_controls_noisy(robot_inputs, world_inputs, motion_settings_highnoise)
+observations3 = [sensor_model(pose, world.walls, sensor_settings) for pose in path_actual_highnoise];
+constraints3 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations3)]
 
 ani = Animation()
-for (p1, p2, readings) in zip(path_actual_highnoise, path_integrated, observations3)
-    model_plot = plot_sensors(
+for (pose_actual, pose_integrated, readings) in zip(path_actual_highnoise, path_integrated, observations3)
+    actual_plot = frame_from_sensors(
         world, "Actual data",
-        path_actual_highnoise, "actual path", :brown,
-        p1, readings, "actual sensors",
+        path_actual_highnoise, :brown, "actual path",
+        pose_actual, readings, "actual sensors",
         sensor_settings)
-    actual_plot = plot_sensors(
+    integrated_plot = frame_from_sensors(
         world, "Apparent data",
-        path_integrated, "path from integrating controls", :green2,
-        p2, readings, "actual sensors",
+        path_integrated, :green2, "path from integrating controls",
+        pose_integrated, readings, "actual sensors",
         sensor_settings)
-    frame_plot = plot(model_plot, actual_plot, size=(1000,500), plot_title="Problem data\n(high motion noise)")
+    frame_plot = plot(actual_plot, integrated_plot, size=(1000,500), plot_title="Problem data\n(high motion noise)")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/noisy_distances_highmotionnoise.gif", fps=1)
