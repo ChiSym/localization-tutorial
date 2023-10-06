@@ -16,14 +16,14 @@
 # ---
 
 # %% [markdown]
-# # TO DO
+# # TODO
 #
-# * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.  motion_settings, scaled, lownoise, highnoise; full_settings, scaled, noisy.
-# * integrate_controls_noisy —> dynamic DSL GF; plotting code now on its traces, incl. disks for variance around poses
-#   * similarly for other parts of model
+# * integrate_controls_noisy (similarly for other parts of model): incl. disks for variance around poses
 # * label all (hyper)parameters in visualizations
+# * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.  motion_settings, scaled, lownoise, highnoise; full_settings, scaled, noisy.
 # * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
 # * Hierarchical (sensor) model?
+# * fix docstrings
 #
 # Rif comments:
 # * Correct understanding of initial pose.
@@ -383,6 +383,7 @@ end
 
 plot_motion!(poses, color, label) = plot!(poses; color=color, label=label)
 
+# TODO: visualize hyperparameters, e.g. disks for variance around poses
 function frame_from_motion_trace(world, title, trace; show_clutters=false)
     the_plot = plot_world(world, title; show_clutters=show_clutters)
     plot_motion!(get_poses(trace), :red, "motion in trace")
@@ -536,7 +537,7 @@ trace = simulate(sensor_model, (robot_inputs.start, world.walls, sensor_settings
 get_selected(get_choices(trace), select((1:5)...))
 
 # %%
-# TODO: Add settings/params display code.
+# TODO: Add settings/(hyper)params display code.
 function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
     return frame_from_sensors(world, title, poses, poses_color, poses_label, pose, get_retval(trace), "trace sensors", get_args(trace)[3]; show_clutters=show_clutters)
 end;
