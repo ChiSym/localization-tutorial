@@ -375,34 +375,38 @@ get_selected(get_choices(trace), select(:initial, (:steps => i for i in 1:5)...)
 # Handle asymmetry in the trace address structures.
 prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 
-function get_poses(trace)
-    # We will define models below that receive an integer argument prior to `robot_inputs`.
-    T = isa(get_args(trace)[1], NamedTuple) ? length(get_args(trace)[1].controls) : length(get_args(trace)[2].controls)
-    return [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
-end
-
-plot_motion!(poses, color, label) = plot!(poses; color=color, label=label)
-
-# TODO: visualize hyperparameters, e.g. disks for variance around poses
-function frame_from_motion_trace(world, title, trace; show_clutters=false)
-    the_plot = plot_world(world, title; show_clutters=show_clutters)
-    plot_motion!(get_poses(trace), :red, "motion in trace")
-    return the_plot
+function frames_from_motion_trace(ani, world, title, trace; show_clutters=false, std_devs_radius=2.)
+    robot_inputs = get_args(trace)[1]
+    T = length(robot_inputs.controls)
+    poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+    noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
+    motion_settings = get_args(trace)[3]
+    for t in 1:(T+1)
+        frame_plot = plot_world(world, title; show_clutters=show_clutters)
+        plot!(poses[1:t-1]; color=:black, label="past poses")
+        plot!([noiseless_steps[t][1]], [noiseless_steps[t][2]];
+              color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
+              markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
+        plot!(Pose(trace[prefix_address(t, :pose => :p)], poses[t].hd); color=:red, label="sampled next step")
+        frame(ani, frame_plot)
+    end
 end;
+
+# %% [markdown]
+# We remind the reader that in two dimensions, about $86\%$ of samples from the multivariate normal distribution lie within $2\sigma$ in Mahalanobis distance. 
 
 # %%
 scaled_motion_settings(settings, x) = (p_noise = x * settings.p_noise, hd_noise = x * settings.hd_noise)
 
-N_samples = 15
+N_samples = 5
 
 ani = Animation()
 for n in 1:N_samples
-    scale = 16. * (2.)^(n-N_samples)
+    scale = 2. * (2.)^(n-N_samples)
     trace = simulate(integrate_controls_noisy, (robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale)))
-    frame_plot = frame_from_motion_trace(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))", trace)
-    frame(ani, frame_plot)
+    frames_from_motion_trace(ani, world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))", trace)
 end
-gif(ani, "imgs/motion.gif", fps=1)
+gif(ani, "imgs/motion.gif", fps=2)
 
 # %% [markdown]
 # ### Synthetic motion data
@@ -489,7 +493,7 @@ end
 
 function frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false)
     the_plot = plot_world(world, title; show_clutters=show_clutters)
-    plot_motion!(poses, poses_color, poses_label)
+    plot!(poses; color=poses_color, label=poses_label)
     plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
     return the_plot
 end;
