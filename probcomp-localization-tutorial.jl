@@ -375,12 +375,13 @@ get_selected(get_choices(trace), select(:initial, (:steps => i for i in 1:5)...)
 # Handle asymmetry in the trace address structures.
 prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 
-function frames_from_motion_trace(ani, world, title, trace; show_clutters=false, std_devs_radius=2.)
+function frames_from_motion_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
     robot_inputs = get_args(trace)[1]
     T = length(robot_inputs.controls)
     poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
     motion_settings = get_args(trace)[3]
+    plots = Vector{Plots.Plot}(undef, T+1)
     for t in 1:(T+1)
         frame_plot = plot_world(world, title; show_clutters=show_clutters)
         plot!(poses[1:t-1]; color=:black, label="past poses")
@@ -388,8 +389,9 @@ function frames_from_motion_trace(ani, world, title, trace; show_clutters=false,
               color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
               markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
         plot!(Pose(trace[prefix_address(t, :pose => :p)], poses[t].hd); color=:red, label="sampled next step")
-        frame(ani, frame_plot)
+        plots[t] = frame_plot
     end
+    return plots
 end;
 
 # %% [markdown]
@@ -404,7 +406,8 @@ ani = Animation()
 for n in 1:N_samples
     scale = 2. * (2.)^(n-N_samples)
     trace = simulate(integrate_controls_noisy, (robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale)))
-    frames_from_motion_trace(ani, world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))", trace)
+    frames = frames_from_motion_trace(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))", trace)
+    for frame_plot in frames; frame(ani, frame_plot) end
 end
 gif(ani, "imgs/motion.gif", fps=2)
 
@@ -705,40 +708,45 @@ get_selected(get_choices(trace), selection)
 # By this point, visualization is essential.
 
 # %%
-function frames_from_full_trace(ani, world, title, trace; show_clutters=false)
+function frames_from_full_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
     T = get_args(trace)[1]
-    path_trace = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
-    path_integrated = integrate_controls(get_args(trace)[2], get_args(trace)[3])
-    trace_sensors = [trace[prefix_address(t, :sensor)] for t in 1:(T+1)]
+    robot_inputs = get_args(trace)[2]
+    poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+    noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
+    motion_settings = get_args(trace)[4].motion_settings
+    sensor_readings = [trace[prefix_address(t, :sensor)] for t in 1:(T+1)]
     sensor_settings = get_args(trace)[4].sensor_settings
-    for (pose_trace, pose_integrated, readings) in zip(path_trace, path_integrated, trace_sensors)
-        plot_trace = frame_from_sensors(
-            world, "Synthetic\n\"actual\" data",
-            path_trace, :green, "trace path",
-            pose_trace, readings, "trace sensors",
+    plots = Vector{Plots.Plot}(undef, 2*(T+1))
+    for t in 1:(T+1)
+        frame_plot = plot_world(world, title; show_clutters=show_clutters)
+        plot!(poses[1:t-1]; color=:black, label=nothing)
+        plot!([noiseless_steps[t][1]], [noiseless_steps[t][2]];
+              color=:red, label=nothing, seriestype=:scatter,
+              markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
+        plot!(Pose(trace[prefix_address(t, :pose => :p)], poses[t].hd); color=:red, label=nothing)
+        plots[2*t-1] = frame_plot
+        plots[2*t] = frame_from_sensors(
+            world, title,
+            poses[1:t], :black, nothing,
+            poses[t], sensor_readings[t], nothing,
             sensor_settings; show_clutters=show_clutters)
-        plot_integrated = frame_from_sensors(
-            world, "Synthetic\n\"apparent\" data",
-            path_integrated, :green2, "path from integrating controls",
-            pose_integrated, readings, "trace sensors",
-            sensor_settings; show_clutters=show_clutters)
-        frame_plot = plot(plot_trace, plot_integrated, size=(1000,500), plot_title=title)
-        frame(ani, frame_plot)
     end
+    return plots
 end;
 
 # %%
 scaled_full_settings(settings, x) = (settings..., motion_settings=scaled_motion_settings(settings.motion_settings, x))
 
-N_samples = 10
+N_samples = 5
 
 ani = Animation()
 for n in 1:N_samples
-    scale = (2.)^(2+(n-N_samples))
+    scale = 2. * (2.)^(n-N_samples)
     trace = simulate(full_model_1, (T, robot_inputs, world_inputs, scaled_full_settings(full_settings, scale)))
-    frames_from_full_trace(ani, world, "Full model (samples)\nnoise factor $(round(scale, digits=3))", trace)
+    frames = frames_from_full_trace(world, "Full model (samples)\nnoise factor $(round(scale, digits=3))", trace)
+    for frame_plot in frames; frame(ani, frame_plot) end
 end
-gif(ani, "imgs/full_1.gif", fps=5)
+gif(ani, "imgs/full_1.gif", fps=2)
 
 # %% [markdown]
 # ## Inference: main idea
