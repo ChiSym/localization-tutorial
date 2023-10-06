@@ -18,12 +18,30 @@
 # %% [markdown]
 # # TODO
 #
-# * integrate_controls_noisy (similarly for other parts of model): incl. disks for variance around poses
-# * label all (hyper)parameters in visualizations
+# * ALL AT ONCE
+#   * "Gen basics: GFs, traces, scores, edits"
+#     * introduce motion model together with math notation for rand vars and densities
+#     * introduce get_score to get densities out of Gen
+#     * note that the density was a product; introduce project gives its factors
+#     * introduce update to edit traces (and return ratio of weights)
+#     * roll integrate_noisy into Markov, teach equivalence between the two versions
+#       * static version scales in constant time (vs. linear) in length of sequence
+#     * sensor model only for single frame
+#     * inline sensor model into the unfold to get full model
+#   * "The data"
+#     * combined synthetic motion and sensors
+#     * demo the data that the robot has (separated)
+#   * "Why we need inference"
+#     * You can try integrating the path.
+#     * But it produces atypical likelihoods when the true motion noise is high.
+#   * then continue ...
 # * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.  motion_settings, scaled, lownoise, highnoise; full_settings, scaled, noisy.
+# * alternate world models for comparison with robot model.  Examples: variants of parameters
+# * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
+# * label all (hyper)parameters in visualizations
+# * fix docstrings
 # * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
 # * Hierarchical (sensor) model?
-# * fix docstrings
 #
 # Rif comments:
 # * Correct understanding of initial pose.
@@ -393,9 +411,6 @@ function frames_from_motion_trace(world, title, trace; show_clutters=false, std_
     end
     return plots
 end;
-
-# %% [markdown]
-# We remind the reader that in two dimensions, about $86\%$ of samples from the multivariate normal distribution lie within $2\sigma$ in Mahalanobis distance. 
 
 # %%
 scaled_motion_settings(settings, x) = (p_noise = x * settings.p_noise, hd_noise = x * settings.hd_noise)
