@@ -348,11 +348,11 @@ Assumes
 * `world_inputs` contains fields: `walls`, `bounce`
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
-function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+@gen function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
-    path[1] = robot_inputs.start
+    path[1] = {:initial => :pose} ~ pose_prior_model(robot_inputs.start, motion_settings)
     for t in 1:length(robot_inputs.controls)
-        path[t+1] = motion_model(path[t], robot_inputs.controls[t], world_inputs, motion_settings)
+        path[t+1] = {:steps => t => :pose} ~ motion_model(path[t], robot_inputs.controls[t], world_inputs, motion_settings)
     end
     return path
 end;
