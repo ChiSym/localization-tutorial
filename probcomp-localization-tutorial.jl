@@ -294,7 +294,7 @@ Assumes
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
 @gen (static) function pose_prior_model(start :: Pose, motion_settings :: NamedTuple) :: Pose
-    p ~ mvnormal(start.p, motion_settings.p_noise * [1 0 ; 0 1])
+    p ~ mvnormal(start.p, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd, motion_settings.hd_noise)
     return Pose(p, hd)
 end
@@ -335,7 +335,7 @@ Assumes
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
 @gen (static) function motion_model(start :: Pose, c :: Control, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
-    p ~ mvnormal(start.p + c.ds * start.dp, motion_settings.p_noise * [1 0 ; 0 1])
+    p ~ mvnormal(start.p + c.ds * start.dp, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd + c.dhd, motion_settings.hd_noise)
     return physical_step(start.p, p, hd, world_inputs)
 end
@@ -764,7 +764,7 @@ constraint_from_sensors(cm :: ChoiceMap, t :: Int, readings :: Vector{Float64}) 
     p = trace[prefix_address(t, :pose => :p)]
     hd = trace[prefix_address(t, :pose => :hd)]
 
-    {prefix_address(t, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise * [1 0 ; 0 1])
+    {prefix_address(t, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
     {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
 end
 
