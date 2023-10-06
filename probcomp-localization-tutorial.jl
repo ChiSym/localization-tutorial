@@ -382,11 +382,10 @@ function get_poses(trace)
 end
 
 plot_motion!(poses, color, label) = plot!(poses; color=color, label=label)
-plot_motion_trace!(trace, color, label) = plot_motion!(get_poses(trace), color, label)
 
 function frame_from_motion_trace(world, title, trace; show_clutters=false)
     the_plot = plot_world(world, title; show_clutters=show_clutters)
-    plot_motion_trace!(trace, :red, "motion in trace")
+    plot_motion!(get_poses(trace), :red, "motion in trace")
     return the_plot
 end;
 
