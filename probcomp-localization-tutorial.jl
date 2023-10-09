@@ -18,6 +18,8 @@
 # %% [markdown]
 # # TODO
 #
+# * "Score" versus "weight" versus...?!
+#
 # * ALL AT ONCE
 #   * "Gen basics: GFs, traces, scores, edits"
 #     * introduce motion model together with math notation for rand vars and densities
@@ -293,72 +295,97 @@ savefig("imgs/given_data")
 the_plot
 
 # %% [markdown]
-# ## Modeling uncertain motion in Gen
+# ## Gen basics
 #
-# As said initially, we are uncertain about the true initial position and subsequent motion of the robot.  In order to reason about these, we now specify a model.
+# As said initially, we are uncertain about the true initial position and subsequent motion of the robot.  In order to reason about these, we now specify a model using `Gen`.
 #
 # Each piece of the model is declared as a *generative function* (GF).  The `Gen` library provides two DSLs for constructing GFs: the dynamic DSL using the decorator `@gen` on a function declaration, and the static DSL similarly decorated with `@gen (static)`.  The dynamic DSL allows a rather wide class of program structures, whereas the static DSL only allows those for which a certain static analysis may be performed.
 #
-# The library offers two basic constructs for use within these DSLs: primitive *distributions* such as "Bernoulli" and "normal", and the sampling operator `~`.  Recursively, GFs may be sampled from by other GFs using `~`.
+# The library offers two basic constructs for use within these DSLs: primitive *distributions* such as "Bernoulli" and "normal", and the sampling operator `~`.  Recursively, GFs may sample from other GFs using `~`.
 
 # %% [markdown]
-# ### Pose prior model
+# ### Components of the motion model
 #
-# To model the possible trajectories of the robot, we begin by modeling our uncertainty in where it started.
+# We start with the two building blocks: the starting pose and individual steps of motion.
 
 # %%
 """
 Assumes
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
-@gen (static) function pose_prior_model(start :: Pose, motion_settings :: NamedTuple) :: Pose
+@gen (static) function start_pose_prior(start :: Pose, motion_settings :: NamedTuple) :: Pose
     p ~ mvnormal(start.p, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd, motion_settings.hd_noise)
     return Pose(p, hd)
 end
 
-# This call is required by Gen's static DSL in order to invoke `pose_prior_model` below.
-load_generated_functions()
-
-# %% [markdown]
-# We can just call `pose_prior_model` like a normal function and it will just run stochastically.
-
-# %%
-motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
-
-N_samples = 50
-pose_samples = [pose_prior_model(robot_inputs.start, motion_settings) for _ in 1:N_samples]
-
-the_plot = plot_world(world, "Pose prior model (samples)")
-plot!(pose_samples; color=:red, label=nothing)
-savefig("imgs/pose_prior")
-the_plot
-
-# %% [markdown]
-# We can also perform *traced execution* using the construct `Gen.simulate`, and inspect the stochastic choices performed with the `~` operator.
-
-# %%
-trace = simulate(pose_prior_model, (robot_inputs.start, motion_settings))
-get_choices(trace)
-
-# %% [markdown]
-# ### Motion model
-#
-# The motion is modeled as updating the pose in response to controls of the program, but in effect only up to some error.
-
-# %%
 """
 Assumes
 * `world_inputs` contains fields: `walls`, `bounce`
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
-@gen (static) function motion_model(start :: Pose, c :: Control, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
+@gen (static) function motion_step_model(start :: Pose, c :: Control, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
     p ~ mvnormal(start.p + c.ds * start.dp, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd + c.dhd, motion_settings.hd_noise)
     return physical_step(start.p, p, hd, world_inputs)
 end
 
 @load_generated_functions()
+
+# This call is required by Gen's static DSL in order to invoke the above objects.
+load_generated_functions()
+
+# %% [markdown]
+# In math terms!
+
+# %% [markdown]
+# Returning to the code, we can call a GF like a normal function and it will just run stochastically:
+
+# %%
+motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
+
+N_samples = 50
+pose_samples = [start_pose_prior(robot_inputs.start, motion_settings) for _ in 1:N_samples]
+
+the_plot = plot_world(world, "Start pose prior (samples)")
+plot!(pose_samples; color=:red, label=nothing)
+savefig("imgs/start_prior")
+the_plot
+
+# %%
+N_samples = 50
+noiseless_step = robot_inputs.start.p + robot_inputs.controls[1].ds * robot_inputs.start.dp
+step_samples = [motion_step_model(robot_inputs.start, robot_inputs.controls[1], world_inputs, motion_settings) for _ in 1:N_samples]
+
+std_devs_radius = 2
+
+the_plot = plot_world(world, "Motion step model model (samples)")
+plot!(robot_inputs.start; color=:black, label="step from here")
+plot!([noiseless_step[1]], [noiseless_step[2]];
+      color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
+      markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
+plot!(step_samples; color=:red, label="step samples")
+savefig("imgs/motion_step")
+the_plot
+
+# %% [markdown]
+# ### Traces, choices, and scores
+#
+# We can also perform *traced execution* using the construct `Gen.simulate`, and inspect the stochastic choices performed with the `~` operator.
+
+# %%
+trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
+get_choices(trace)
+
+# %% [markdown]
+# Also get_score and project
+
+# %% [markdown]
+# ### Modeling a full path
+#
+# The motion is modeled as updating the pose in response to controls of the program, but in effect only up to some error.
+
+# %%
 
 """
 Assumes
@@ -368,25 +395,24 @@ Assumes
 """
 @gen function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
-    path[1] = {:initial => :pose} ~ pose_prior_model(robot_inputs.start, motion_settings)
+    path[1] = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
     for t in 1:length(robot_inputs.controls)
-        path[t+1] = {:steps => t => :pose} ~ motion_model(path[t], robot_inputs.controls[t], world_inputs, motion_settings)
+        path[t+1] = {:steps => t => :pose} ~ motion_step_model(path[t], robot_inputs.controls[t], world_inputs, motion_settings)
     end
     return path
 end;
 
 # %% [markdown]
-# Note how the following trace exposes the hierarchical structure of the program flow.
-#
-# To reduce notebook clutter, we just show the start pose plus the initial 5 timesteps.
+# Mathematically, we are dealing with the following.
+
+# %% [markdown]
+# Returning to the computation, note how the following trace exposes the hierarchical structure of the program flow.  (To reduce notebook clutter, we just show the start pose plus the initial 5 timesteps.)
 
 # %%
 trace = simulate(integrate_controls_noisy, (robot_inputs, world_inputs, motion_settings))
 get_selected(get_choices(trace), select(:initial, (:steps => i for i in 1:5)...))
 
 # %% [markdown]
-# #### Hygenic model visualization
-#
 # We could very pass the output of the above model `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit for ProbComp: writing interpretive code for GFs in terms of their traces rather than return values.  This enables the programmer include the parameters of the model in the display for clarity.
 
 # %%
@@ -427,36 +453,19 @@ end
 gif(ani, "imgs/motion.gif", fps=2)
 
 # %% [markdown]
-# ### Synthetic motion data
+# ### Updating traces, and improving performance using combinators.
 #
-# Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.
+# Trace updates.  Returns the difference in the weights.
 #
-# Since we imagine these data as having been recorded from the real world, keep only their return values, discarding the traces that produced them.
-
-# %%
-# # Generate a path by adding noise:
-
-motion_settings_synthetic = (p_noise = 0.05, hd_noise = 2π / 360)
-
-# path_actual = integrate_controls_noisy(robot_inputs), world_inputs, motion_settings_synthetic)
-# repr(path_actual) |> clipboard
-# Here, we will use a hard-coded one we generated earlier that we selected to more clearly illustrate
-# the main ideas in the notebook.
-path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], 1.017840325933929)]
-
-the_plot = plot_world(world, "Actual motion deviates from integrated")
-plot!(path_integrated; color=:green2, label="path from integrating controls")
-plot!(path_actual; color=:brown, label="\"actual\" robot path")
-savefig("imgs/deviation")
-the_plot
+# We may alternatively express the same computation using a *combinator*.  Doing so explicitly captures the structure of Markov chain, and allows for efficient incremental construction of traces as the path length increases.
 
 # %% [markdown]
-# ## Observing with sensors
+# ### Observing with sensors
 #
 # We now, additionally, assume the robot is equipped with sensors that cast rays upon the environment at certain angles relative to the given pose, and return the distance to a hit.
 
 # %% [markdown]
-# ### Ideal sensors
+# #### Ideal sensors
 #
 # Ideally, there are true distances to the walls.
 
@@ -531,7 +540,7 @@ end
 gif(ani, "imgs/ideal_distances.gif", fps=1)
 
 # %% [markdown]
-# ### Noisy sensors
+# #### Noisy sensors
 #
 # We assume that the sensor readings are themselves uncertain, say, the distances only knowable up to some noise.  We model this as follows.
 
@@ -577,35 +586,7 @@ end
 gif(ani, "imgs/sensor_1.gif", fps=1)
 
 # %% [markdown]
-# ### Synthetic sensor data
-#
-# Let us generate some fixed synthetic sensor data that, for pedagogical purposes, we will work with as if it were the actual sensor data of the robot.  The results are displayed in the *left hand* pane below, relative to the *actual* path, from which they were generated.
-#
-# The *right hand* pane shows these same synthetic sensor readings transposed to the point of view of the path *obtained by integrating the controls*.  This pane shows at a glance the information that is apparent to the robot.  **The robot's problem is to resolve the discrepancy between this integrated path and the sensor data by proposing a better guess of path.**
-
-# %%
-# TODO: Futz with sensor settings here?
-observations = [sensor_model(pose, world.walls, sensor_settings) for pose in path_actual]
-
-ani = Animation()
-for (pose_actual, pose_integrated, readings) in zip(path_actual, path_integrated, observations)
-    actual_plot = frame_from_sensors(
-        world, "Actual data",
-        path_actual, :brown, "actual path",
-        pose_actual, readings, "actual sensors",
-        sensor_settings)
-    integrated_plot = frame_from_sensors(
-        world, "Apparent data",
-        path_integrated, :green2, "path from integrating controls",
-        pose_integrated, readings, "actual sensors",
-        sensor_settings)
-    frame_plot = plot(actual_plot, integrated_plot, size=(1000,500), plot_title="Problem data")
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/discrepancy.gif", fps=1)
-
-# %% [markdown]
-# ## Full model
+# ### Full model
 #
 # We connect the pieces into a full model.  There are two ways of expressing this same functionality.  The first uses an explicit loop:
 
@@ -619,11 +600,11 @@ Assumes
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
 @gen function full_model_1_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
-    pose = {:initial => :pose} ~ pose_prior_model(robot_inputs.start, full_settings.motion_settings)
+    pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, full_settings.motion_settings)
     {:initial => :sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
 
     for t in 1:T
-        pose = {:steps => t => :pose} ~ motion_model(pose, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
+        pose = {:steps => t => :pose} ~ motion_step_model(pose, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
         {:steps => t => :sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
     end
 
@@ -642,8 +623,8 @@ end;
 # So a trace of this generative function is a data structure containing the pair $(\textbf{z}_{0:T}, \textbf{o}_{0:T})$.
 #
 # The probability distribution on this trace is defined using the following components:
-# 1. $P_{\text{init}}(\textbf{z}_0)$ (`pose_prior_model`)
-# 2. $P_{\text{step}}(\textbf{z}_t ; \textbf{z}_{t-1})$ (`motion_model`)
+# 1. $P_{\text{init}}(\textbf{z}_0)$ (`start_pose_prior`)
+# 2. $P_{\text{step}}(\textbf{z}_t ; \textbf{z}_{t-1})$ (`motion_step_model`)
 # 3. $P_{\text{obs}}(\textbf{o}_t ; \textbf{z}_t)$ (`sensor_model`)
 #
 # Let $P_\text{full}$ denote the distribution defined by `full_model_1_loop`.  The code above declares that the distribution is
@@ -667,7 +648,7 @@ Assumes
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
 @gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Tuple{Pose, Vector{Float64}}
-    pose ~ pose_prior_model(robot_inputs.start, full_settings.motion_settings)
+    pose ~ start_pose_prior(robot_inputs.start, full_settings.motion_settings)
     sensor ~ sensor_model(pose, walls, full_settings.sensor_settings)
     return (pose, sensor)
 end
@@ -682,7 +663,7 @@ Assumes
 """
 @gen (static) function model_1_kernel(t :: Int, state :: Tuple{Pose, Vector{Float64}}, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
                                       full_settings :: NamedTuple) :: Tuple{Pose, Vector{Float64}}
-    pose ~ motion_model(state[1], robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
+    pose ~ motion_step_model(state[1], robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
     sensor ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
     return (pose, sensor)
 end
@@ -762,6 +743,56 @@ for n in 1:N_samples
     for frame_plot in frames; frame(ani, frame_plot) end
 end
 gif(ani, "imgs/full_1.gif", fps=2)
+
+# %% [markdown]
+# ## The data
+#
+# Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.
+#
+# Since we imagine these data as having been recorded from the real world, keep only their return values, discarding the traces that produced them.
+
+# %%
+# # Generate a path by adding noise:
+
+motion_settings_synthetic = (p_noise = 0.05, hd_noise = 2π / 360)
+
+# path_actual = integrate_controls_noisy(robot_inputs), world_inputs, motion_settings_synthetic)
+# repr(path_actual) |> clipboard
+# Here, we will use a hard-coded one we generated earlier that we selected to more clearly illustrate
+# the main ideas in the notebook.
+path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], 1.017840325933929)]
+
+the_plot = plot_world(world, "Actual motion deviates from integrated")
+plot!(path_integrated; color=:green2, label="path from integrating controls")
+plot!(path_actual; color=:brown, label="\"actual\" robot path")
+savefig("imgs/deviation")
+the_plot
+
+# %% [markdown]
+# Let us generate some fixed synthetic sensor data that, for pedagogical purposes, we will work with as if it were the actual sensor data of the robot.  The results are displayed in the *left hand* pane below, relative to the *actual* path, from which they were generated.
+#
+# The *right hand* pane shows these same synthetic sensor readings transposed to the point of view of the path *obtained by integrating the controls*.  This pane shows at a glance the information that is apparent to the robot.  **The robot's problem is to resolve the discrepancy between this integrated path and the sensor data by proposing a better guess of path.**
+
+# %%
+# TODO: Futz with sensor settings here?
+observations = [sensor_model(pose, world.walls, sensor_settings) for pose in path_actual]
+
+ani = Animation()
+for (pose_actual, pose_integrated, readings) in zip(path_actual, path_integrated, observations)
+    actual_plot = frame_from_sensors(
+        world, "Actual data",
+        path_actual, :brown, "actual path",
+        pose_actual, readings, "actual sensors",
+        sensor_settings)
+    integrated_plot = frame_from_sensors(
+        world, "Apparent data",
+        path_integrated, :green2, "path from integrating controls",
+        pose_integrated, readings, "actual sensors",
+        sensor_settings)
+    frame_plot = plot(actual_plot, integrated_plot, size=(1000,500), plot_title="Problem data")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/discrepancy.gif", fps=1)
 
 # %% [markdown]
 # ## Inference: main idea
@@ -1519,13 +1550,13 @@ end
         prev_p = updated_tr[prefix_address(t - 1, :pose => :p)]
         prev_hd = updated_tr[prefix_address(t - 1, :pose => :hd)]
         pose_scores = [
-            Gen.assess(motion_model,
+            Gen.assess(motion_step_model,
                        (Pose(prev_p, prev_hd), robot_inputs.controls[t - 1], world_inputs, settings.motion_settings),
                        ch)[1]
             for ch in chmap_grid]
     else
         pose_scores = [
-            Gen.assess(pose_prior_model,
+            Gen.assess(start_pose_prior,
                        (robot_inputs.start, settings.motion_settings),
                        ch)[1]
             for ch in chmap_grid]
