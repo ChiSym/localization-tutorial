@@ -404,7 +404,7 @@ get_score(trace)
 # %% [markdown]
 # ### Modeling a full path
 #
-# We factor the code into two parts.  First comes the model, which contains all information in its trace—its return value is redundant.  Then the noisy path integration performs a simple exctraction.
+# We factor the code into two parts.  First comes the model, which contains all information in its trace—its return value is redundant.  Then the noisy path integration performs a simple extraction.
 
 # %%
 """
