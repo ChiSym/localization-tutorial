@@ -330,13 +330,25 @@ Assumes
     return physical_step(start.p, p, hd, world_inputs)
 end
 
+# This call is required by Gen's static DSL in order to use the above objects in the code below.
 @load_generated_functions()
 
-# This call is required by Gen's static DSL in order to invoke the above objects.
-load_generated_functions()
-
 # %% [markdown]
-# In math terms!
+# The corresponding math is as follows.  First some notations.
+#
+# Generally, if $P$ is a distribution depending on parameters $\theta$, then we write $P(z; \theta)$ for the probability density associated to the value $z$, and we write $z \sim P(\cdot\,; \theta)$ to declare that the value $z$ has been sampled according to these densities.  Thus the semicolon delimits general parameters.  When parameters are fixed and understood from context, we may delete them and write, say, $P(z)$ or $z \sim P(\cdot)$.
+#
+# In the case of our setup, the random variables $\mathbf x_t = (p_t, \theta_t)$ for $t = 0,1,\ldots,T$ range over the space of poses, so $p_t$ is a position vector and $\theta_t$ is a heading angle.  We denote the vector of these data by $\mathbf x_{0:T} = [\mathbf x_0, \mathbf x_1, \ldots, \mathbf x_T]$.  Our beliefs about the robot's position at time $t$ are encoded in a distribution on the values of $\mathbf x_t$:
+#
+# * $P_\text{init}(\mathbf x_0; \mathbf r_0, \nu)$ (`start_pose_prior`),
+# * $P_\text{step}(\textbf{z}_t ; \textbf{z}_{t-1}, \mathbf r_t, \nu)$ (`motion_step_model`) for $t=1,2,\ldots,T$.
+#
+# Here $\mathbf r_0 = (y_0, \eta_0)$ indicates the (estimated) robot start pose, and similarly the $\mathbf r_t = (s_t, \eta_t)$ are the controls, whereas $\nu = (\nu_\text p, \nu_\text{hd})$ denotes the noise parameter.  Since one has
+#
+# Decompose into MVNormal times Normal.
+#
+# Don't forget pushforward under physical_step and angle mod 2pi.
+#
 
 # %% [markdown]
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
@@ -378,7 +390,16 @@ trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
 get_choices(trace)
 
 # %% [markdown]
-# Also get_score and project
+# We may also extract the (log) score $\log P(z)$ for the sample at hand:
+
+# %%
+get_score(trace)
+
+# %% [markdown]
+# The above score is (the log of) the product of the densities of all the primitive choices that were made to obtain $z$.  One can obtain (the log of) the product of just some subset of these subscores:
+
+# %%
+# project
 
 # %% [markdown]
 # ### Modeling a full path
@@ -417,6 +438,8 @@ end;
 
 # %% [markdown]
 # Mathematically, we are dealing with the following.
+#
+# Math math math
 
 # %% [markdown]
 # Returning to the computation, note how the following trace exposes the hierarchical structure of the program flow.  (To reduce notebook clutter, we just show the start pose plus the initial 5 timesteps.)
