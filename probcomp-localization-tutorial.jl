@@ -588,28 +588,7 @@ gif(ani, "imgs/sensor_1.gif", fps=1)
 # %% [markdown]
 # ### Full model
 #
-# We connect the pieces into a full model.  There are two ways of expressing this same functionality.  The first uses an explicit loop:
-
-# %%
-"""
-Assumes
-* `robot_inputs` contains fields: `start`, `controls`
-* `world_inputs` contains fields: `walls`, `bounce`
-* `full_settings` contains fields: `motion_settings`, `sensor_settings`
-    * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
-    * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
-"""
-@gen function full_model_1_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
-    pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, full_settings.motion_settings)
-    {:initial => :sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
-
-    for t in 1:T
-        pose = {:steps => t => :pose} ~ motion_step_model(pose, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
-        {:steps => t => :sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
-    end
-
-    # Return value is immaterial because we will only perform traced execution, and all information is contained in the trace.
-end;
+# We connect the pieces into a full model.
 
 # %% [markdown]
 # This _generative function_ defines a probability distribution over _traces_.  Each _trace_ is a data structure containing a sequence of robot pose values, and a sequence of observations captured by the sensor.
