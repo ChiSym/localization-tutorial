@@ -383,9 +383,25 @@ get_choices(trace)
 # %% [markdown]
 # ### Modeling a full path
 #
-# The motion is modeled as updating the pose in response to controls of the program, but in effect only up to some error.
+# We factor the code into two parts.  First comes the model, which contains all information in its trace—its return value is redundant.  Then the noisy path integration performs a simple exctraction.
 
 # %%
+"""
+Assumes
+* `robot_inputs` contains fields: `start`, `controls`
+* `world_inputs` contains fields: `walls`, `bounce`
+* `motion_settings` contains fields: `p_noise`, `hd_noise`
+"""
+@gen function motion_model_path_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+    pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
+
+    for t in 1:T
+        pose = {:steps => t => :pose} ~ motion_step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)
+    end
+end
+
+# Handle asymmetry in the trace address structures.
+prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 
 """
 Assumes
@@ -393,13 +409,10 @@ Assumes
 * `world_inputs` contains fields: `walls`, `bounce`
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
-@gen function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
-    path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
-    path[1] = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
-    for t in 1:length(robot_inputs.controls)
-        path[t+1] = {:steps => t => :pose} ~ motion_step_model(path[t], robot_inputs.controls[t], world_inputs, motion_settings)
-    end
-    return path
+function integrate_controls_noisy_loop(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+    T = length(robot_inputs.controls)
+    trace = simulate(motion_model_path_loop, (T, robot_inputs, world_inputs, motion_settings))
+    return [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
 end;
 
 # %% [markdown]
@@ -416,9 +429,6 @@ get_selected(get_choices(trace), select(:initial, (:steps => i for i in 1:5)...)
 # We could very pass the output of the above model `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit for ProbComp: writing interpretive code for GFs in terms of their traces rather than return values.  This enables the programmer include the parameters of the model in the display for clarity.
 
 # %%
-# Handle asymmetry in the trace address structures.
-prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
-
 function frames_from_motion_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
     robot_inputs = get_args(trace)[1]
     T = length(robot_inputs.controls)
@@ -458,6 +468,33 @@ gif(ani, "imgs/motion.gif", fps=2)
 # Trace updates.  Returns the difference in the weights.
 #
 # We may alternatively express the same computation using a *combinator*.  Doing so explicitly captures the structure of Markov chain, and allows for efficient incremental construction of traces as the path length increases.
+
+# %%
+@gen (static) function motion_path_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
+    # Condense to `return {:pose} ~ ...` ?
+    pose ~ motion_step_model(state, robot_inputs.controls[t], world_inputs, motion_settings)
+    return pose
+end
+motion_path_chain = Unfold(motion_path_kernel)
+
+@gen (static) function motion_path_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+    initial = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
+    {:steps} ~ motion_path_chain(T, initial, robot_inputs, world_inputs, motion_settings)
+end
+
+@load_generated_functions()
+
+"""
+Assumes
+* `robot_inputs` contains fields: `start`, `controls`
+* `world_inputs` contains fields: `walls`, `bounce`
+* `motion_settings` contains fields: `p_noise`, `hd_noise`
+"""
+function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+    T = length(robot_inputs.controls)
+    trace = simulate(motion_model_path, (T, robot_inputs, world_inputs, motion_settings))
+    return [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+end;
 
 # %% [markdown]
 # ### Ideal sensors
