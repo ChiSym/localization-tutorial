@@ -460,14 +460,11 @@ gif(ani, "imgs/motion.gif", fps=2)
 # We may alternatively express the same computation using a *combinator*.  Doing so explicitly captures the structure of Markov chain, and allows for efficient incremental construction of traces as the path length increases.
 
 # %% [markdown]
-# ### Observing with sensors
+# ### Ideal sensors
 #
 # We now, additionally, assume the robot is equipped with sensors that cast rays upon the environment at certain angles relative to the given pose, and return the distance to a hit.
-
-# %% [markdown]
-# #### Ideal sensors
 #
-# Ideally, there are true distances to the walls.
+# We first describe the ideal case, where the sensors return the true distances to the walls.
 
 # %%
 function sensor_distance(pose :: Pose, walls :: Vector{Segment}, box_size :: Float64) :: Float64
@@ -540,7 +537,7 @@ end
 gif(ani, "imgs/ideal_distances.gif", fps=1)
 
 # %% [markdown]
-# #### Noisy sensors
+# ### Noisy sensors
 #
 # We assume that the sensor readings are themselves uncertain, say, the distances only knowable up to some noise.  We model this as follows.
 
@@ -550,12 +547,15 @@ Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
 @gen function sensor_model(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
-    readings = Vector{Float64}(undef, 2 * sensor_settings.num_angles + 1)
     for j in 1:(2 * sensor_settings.num_angles + 1)
         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
-        readings[j] = {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
+        {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
     end
-    return readings
+end
+
+function noisy_sensor(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
+    trace = simulate(sensor_model, (pose, walls, sensor_settings))
+    return [trace[j => :distance] for j in 1:(2 * sensor_settings.num_angles + 1)]
 end;
 
 # %% [markdown]
@@ -570,7 +570,10 @@ get_selected(get_choices(trace), select((1:5)...))
 # %%
 # TODO: Add settings/(hyper)params display code.
 function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
-    return frame_from_sensors(world, title, poses, poses_color, poses_label, pose, get_retval(trace), "trace sensors", get_args(trace)[3]; show_clutters=show_clutters)
+    readings = [trace[j => :distance] for j in 1:(2 * sensor_settings.num_angles + 1)]
+    return frame_from_sensors(world, title, poses, poses_color, poses_label, pose,
+                             readings, "trace sensors", get_args(trace)[3];
+                             show_clutters=show_clutters)
 end;
 
 # %%
@@ -626,10 +629,10 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Tuple{Pose, Vector{Float64}}
+@gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Pose
     pose ~ start_pose_prior(robot_inputs.start, full_settings.motion_settings)
-    sensor ~ sensor_model(pose, walls, full_settings.sensor_settings)
-    return (pose, sensor)
+    {:sensor} ~ sensor_model(pose, walls, full_settings.sensor_settings)
+    return pose
 end
 
 """
@@ -640,11 +643,11 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen (static) function model_1_kernel(t :: Int, state :: Tuple{Pose, Vector{Float64}}, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
-                                      full_settings :: NamedTuple) :: Tuple{Pose, Vector{Float64}}
+@gen (static) function model_1_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
+                                      full_settings :: NamedTuple) :: Pose
     pose ~ motion_step_model(state[1], robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
-    sensor ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
-    return (pose, sensor)
+    {:sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
+    return pose
 end
 model_1_chain = Unfold(model_1_kernel)
 
@@ -754,7 +757,7 @@ the_plot
 
 # %%
 # TODO: Futz with sensor settings here?
-observations = [sensor_model(pose, world.walls, sensor_settings) for pose in path_actual]
+observations = [noisy_sensor(pose, world.walls, sensor_settings) for pose in path_actual]
 
 ani = Animation()
 for (pose_actual, pose_integrated, readings) in zip(path_actual, path_integrated, observations)
@@ -1663,7 +1666,7 @@ motion_settings_lownoise = (p_noise = 0.005, hd_noise = 1/50 * 2π / 360)
 # tol2 = 0.10
 
 path_actual_lownoise = integrate_controls_noisy(robot_inputs, world_inputs, motion_settings_lownoise)
-observations2 = [sensor_model(pose, world.walls, sensor_settings) for pose in path_actual_lownoise]
+observations2 = [noisy_sensor(pose, world.walls, sensor_settings) for pose in path_actual_lownoise]
 constraints2 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations2)]
 
 ani = Animation()
@@ -1722,7 +1725,7 @@ motion_settings_highnoise = (p_noise = 0.25, hd_noise = 1.5 * 2π / 360)
 # tol3 = .03
 
 path_actual_highnoise = integrate_controls_noisy(robot_inputs, world_inputs, motion_settings_highnoise)
-observations3 = [sensor_model(pose, world.walls, sensor_settings) for pose in path_actual_highnoise];
+observations3 = [noisy_sensor(pose, world.walls, sensor_settings) for pose in path_actual_highnoise];
 constraints3 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations3)]
 
 ani = Animation()
