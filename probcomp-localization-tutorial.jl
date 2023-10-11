@@ -21,15 +21,6 @@
 # * "Score" versus "weight" versus...?!
 #
 # * ALL AT ONCE
-#   * "Gen basics: GFs, traces, scores, edits"
-#     * introduce motion model together with math notation for rand vars and densities
-#     * introduce get_score to get densities out of Gen
-#     * note that the density was a product; introduce project gives its factors
-#     * introduce update to edit traces (and return ratio of weights)
-#     * roll integrate_noisy into Markov, teach equivalence between the two versions
-#       * static version scales in constant time (vs. linear) in length of sequence
-#     * sensor model only for single frame
-#     * inline sensor model into the unfold to get full model
 #   * "The data"
 #     * combined synthetic motion and sensors
 #     * demo the data that the robot has (separated)
@@ -37,6 +28,8 @@
 #     * You can try integrating the path.
 #     * But it produces atypical likelihoods when the true motion noise is high.
 #   * then continue ...
+# * Not just a graph of slower (un-Unfold) loop, but perhaps debugging statements showing the reexectution.
+# * path_small_deviations, path_large_deviations
 # * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.  motion_settings, scaled, lownoise, highnoise; full_settings, scaled, noisy.
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
 # * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
@@ -334,23 +327,6 @@ end
 @load_generated_functions()
 
 # %% [markdown]
-# The corresponding math is as follows.  First some notations.
-#
-# Generally, if $P$ is a distribution depending on parameters $\theta$, then we write $P(z; \theta)$ for the probability density associated to the value $z$, and we write $z \sim P(\cdot\,; \theta)$ to declare that the value $z$ has been sampled according to these densities.  Thus the semicolon delimits general parameters.  When parameters are fixed and understood from context, we may delete them and write, say, $P(z)$ or $z \sim P(\cdot)$.
-#
-# In the case of our setup, the random variables $\mathbf x_t = (p_t, \theta_t)$ for $t = 0,1,\ldots,T$ range over the space of poses, so $p_t$ is a position vector and $\theta_t$ is a heading angle.  We denote the vector of these data by $\mathbf x_{0:T} = [\mathbf x_0, \mathbf x_1, \ldots, \mathbf x_T]$.  Our beliefs about the robot's position at time $t$ are encoded in a distribution on the values of $\mathbf x_t$:
-#
-# * $P_\text{init}(\mathbf x_0; \mathbf r_0, \nu)$ (`start_pose_prior`),
-# * $P_\text{step}(\textbf{z}_t ; \textbf{z}_{t-1}, \mathbf r_t, \nu)$ (`motion_step_model`) for $t=1,2,\ldots,T$.
-#
-# Here $\mathbf r_0 = (y_0, \eta_0)$ indicates the (estimated) robot start pose, and similarly the $\mathbf r_t = (s_t, \eta_t)$ are the controls, whereas $\nu = (\nu_\text p, \nu_\text{hd})$ denotes the noise parameter.  Since one has
-#
-# Decompose into MVNormal times Normal.
-#
-# Don't forget pushforward under physical_step and angle mod 2pi.
-#
-
-# %% [markdown]
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
 
 # %%
@@ -388,6 +364,28 @@ the_plot
 # %%
 trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
 get_choices(trace)
+
+# %% [markdown]
+# TBD REVISE SIMPLIFY:  A generative function in Gen can be mathematically modeled as specifying a probability distribution over the space of all traces, with some subset thereof as its support.  Some particular GFs, upon examination, may be determined to only produce traces satisfying certain constraints, e.g., certain addresses always exist.  When such constraints imply that a certain operation on this GF's traces is well-defined, e.g. extracting the value at an address that always exists, then this operation corresponds to a well-defined random variable.
+#
+# The math should accomplish: there is a set of random variables that corresp to the values that arise at trace values.  People should know how to define those RVs and write down the full joint density and how it factors into products.
+#
+#
+# Generally, if $P$ is a distribution depending on parameters $\theta$, then we write $P(z; \theta)$ for the probability density associated to the value $z$, and we write $z \sim P(\cdot\,; \theta)$ to declare that the value $z$ has been sampled according to these densities.  Thus the semicolon delimits general parameters.  When parameters are fixed and understood from context, we may delete them and write, say, $P(z)$ or $z \sim P(\cdot)$.
+#
+# In the case of our setup, a pose consists of a pair 
+#
+# the random variables $z_t = (p_t, \theta_t)$ for $t = 0,1,\ldots,T$ range over the space of poses, so $p_t$ is a position vector and $\theta_t$ is a heading angle.  We denote the vector of these data by $z_{0:T} = [z_0, z_1, \ldots, z_T]$.  Our beliefs about the robot's position at time $t$ are encoded in a distribution on the values of $z_t$:
+#
+# * $P_\text{init}(\mathbf z_0; \mathbf r_0, \nu)$ (`start_pose_prior`),
+# * $P_\text{step}(\textbf{z}_t ; \textbf{z}_{t-1}, \mathbf r_t, \nu)$ (`motion_step_model`) for $t=1,2,\ldots,T$.
+#
+# Here $\mathbf r_0 = (y_0, \eta_0)$ indicates the (estimated) robot start pose, and similarly the $\mathbf r_t = (s_t, \eta_t)$ are the controls, whereas $\nu = (\nu_\text p, \nu_\text{hd})$ denotes the noise parameter.  Since one has
+#
+# Decompose into MVNormal times Normal.
+#
+# Don't forget pushforward under physical_step and angle mod 2pi.
+#
 
 # %% [markdown]
 # We may also extract the (log) score $\log P(z)$ for the sample at hand:
