@@ -357,52 +357,89 @@ savefig("imgs/motion_step")
 the_plot
 
 # %% [markdown]
-# ### Traces, choices, and scores
+# ### Traces: choice maps
 #
-# We can also perform *traced execution* using the construct `Gen.simulate`, and inspect the stochastic choices performed with the `~` operator.
+# We can also perform *traced execution* of a generative function using the construct `Gen.simulate`.  This means that certain information is recorded during execution and packaged into a *trace*, and this trace is returned instead of the bare return value sample.
+#
+# The foremost information stored in the trace is the *choice map*, which is an associative array from labels to the labeled stochastic choices, i.e. occurrences of the `~` operator, there were encountered.  It is accessed by `Gen.get_choices`:
 
 # %%
+# `simulate` takes the GF plus a tuple of args to pass to it.
 trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
 get_choices(trace)
 
 # %% [markdown]
-# TBD REVISE SIMPLIFY:  A generative function in Gen can be mathematically modeled as specifying a probability distribution over the space of all traces, with some subset thereof as its support.  Some particular GFs, upon examination, may be determined to only produce traces satisfying certain constraints, e.g., certain addresses always exist.  When such constraints imply that a certain operation on this GF's traces is well-defined, e.g. extracting the value at an address that always exists, then this operation corresponds to a well-defined random variable.
-#
-# The math should accomplish: there is a set of random variables that corresp to the values that arise at trace values.  People should know how to define those RVs and write down the full joint density and how it factors into products.
-#
-#
-# Generally, if $P$ is a distribution depending on parameters $\theta$, then we write $P(z; \theta)$ for the probability density associated to the value $z$, and we write $z \sim P(\cdot\,; \theta)$ to declare that the value $z$ has been sampled according to these densities.  Thus the semicolon delimits general parameters.  When parameters are fixed and understood from context, we may delete them and write, say, $P(z)$ or $z \sim P(\cdot)$.
-#
-# In the case of our setup, a pose consists of a pair 
-#
-# the random variables $z_t = (p_t, \theta_t)$ for $t = 0,1,\ldots,T$ range over the space of poses, so $p_t$ is a position vector and $\theta_t$ is a heading angle.  We denote the vector of these data by $z_{0:T} = [z_0, z_1, \ldots, z_T]$.  Our beliefs about the robot's position at time $t$ are encoded in a distribution on the values of $z_t$:
-#
-# * $P_\text{init}(\mathbf z_0; \mathbf r_0, \nu)$ (`start_pose_prior`),
-# * $P_\text{step}(\textbf{z}_t ; \textbf{z}_{t-1}, \mathbf r_t, \nu)$ (`motion_step_model`) for $t=1,2,\ldots,T$.
-#
-# Here $\mathbf r_0 = (y_0, \eta_0)$ indicates the (estimated) robot start pose, and similarly the $\mathbf r_t = (s_t, \eta_t)$ are the controls, whereas $\nu = (\nu_\text p, \nu_\text{hd})$ denotes the noise parameter.  Since one has
-#
-# Decompose into MVNormal times Normal.
-#
-# Don't forget pushforward under physical_step and angle mod 2pi.
-#
+# The choice map being the point of focus of the trace in most discussions, we often abusively just speak of a *trace* when we really mean its *choice map*.
 
 # %% [markdown]
-# We may also extract the (log) score $\log P(z)$ for the sample at hand:
+# ### Gen.jl API for traces
+#
+# One can access the primitive choices in a trace using the bracket syntax `trace[address]`.  One can access from a trace the GF that produced it using `Gen.get_gen_fn`, along with with arguments that were supplied using `Gen.get_args`, and the return value sample of the GF using `Gen.get_retval`.  See below the fold for examples of all these.
+
+# %%
+trace[:p]
+
+# %%
+trace[:hd]
+
+# %%
+get_gen_fn(trace)
+
+# %%
+get_args(trace)
+
+# %%
+get_retval(trace)
+
+# %% [markdown]
+# ### Traces: scores/weights/densities
+#
+# Traced execution of a generative function also produces a particular kind of score/weight/density.  One is tempted to view the GF as mathematically corresponding to a distribution over return values, and then one is led to seek the density of the returned value.  But this is the ***wrong thing to do here***, and the score/weight/density being introduced here a ***different number***.  Let us show why in the example.
+#
+# A pose consists of a pair $(p, \theta)$ where $p$ is a position vector and $\theta$ is an angle, and a control consists of a pair $(s, \eta)$ where $s$ is a distance of displacement and $\eta$ is a change in angle.  Write $v(\theta) = (\cos\theta, \sin\theta)$ for the unit vector in the direction $\theta$.  We are given an estimated start pose $r_0 = (y_0, \eta_0)$ and controls $r_t = (s_t, \eta_t)$ for $t=1,\ldots,T$.  We are also given "motion settings" parameters $\nu = (\nu_\text p, \nu_\text{hd})$ and a "world" $w$.  Our beliefs about the robot's positions at the times $t$ are encoded in random variables $z_0 \sim \text{init}^!(r_0, \nu)$ coming from `start_pose_prior`, and $z_t \sim \text{step}^!(z_{t-1}, r_t, w, \nu)$ for $t=1,\ldots,T$ coming from `step_model`.  To define them, we first declare independent random variables $p, \theta$.
+# * For $t = 0$, we let $p \sim \text{mvnormal}(y_0, \nu_\text p^2 I)$ and $\theta \sim \text{normal}(\eta_0, \nu_\text{hd})$.
+# * For $t > 0$, we let $p \sim \text{mvnormal}(p_{t-1} + s_t\,v(\theta_{t-1}), \nu_\text p)$ and $\theta \sim \text{normal}(\theta_{t-1} + \eta_t, \nu_\text{hd})$.
+#
+# To get $z_t = (p_t, \theta_t)$ from $(p, t)$, we reduce $\theta$ modulo $2\pi$, and when $t > 0$ we apply collision physics (relative to $w$) to the path from $p_{t-1}$ to $p$.
+#
+# The issue is the passage from the auxiliary $(p, \theta)$ to the returned $(p_t, \theta_t)$.  Infinitely many values of $\theta$ contribute density to any final angle value; characterizing the accumulation of density through the collision physics is even worse.  Generally speaking, the marginalization problem of knowing the overall density of a sample value is as intractable as finding and then summing over all inputs to a computation with a given output.
+#
+# The approach of Gen (ProbComp in general?!) is instead to factor a generative function into the pair of a probability distribution over *choice maps* (which we abusively also call a probability distribution over *traces*), and a deterministic function on these data that produces the return value from them.  The density that traced execution returns is not the probability density of the return value (as per above), but instead the probability density of the trace (actually, its choice map).
+#
+# Returning to the example, in the above notations $\text{init}^!$ and $\text{step}^!$, the superscript exclamation points were intended to flag that they were the wrong distributions to consider.  Let $\text{init}$ and $\text{step}$ instead be the respective distributions over *traces* corresponding to `start_pose_prior` and `step_model`, so that $\text{init}^!$ and $\text{step}^!$ are their respective pushforwards under the return value function $\text{retval}$.  Thus, we re-express the random variables as $z_t = \text{retval}(\text{trace}_t)$, where $\text{trace}_0 \sim \text{init}(r_0, \nu)$ and $\text{trace}_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$ for $t=1,\ldots,T$.  Identifying the choice map $\text{trace}_t$ with a pair $(p, \theta)$, we have the following closed forms:
+# $$
+# P_\text{init}((p, \theta); r_0, \nu)
+# = P_\text{mvnormal}(p; y_0, \nu_\text p^2 I) \cdot P_\text{normal}(\theta; \eta_0, \nu_\text{hd}) \\
+# P_\text{step}((p, \theta); z_{t-1}, r_t, \nu)
+# = P_\text{mvnormal}(p; p_{t-1} + s_t\,v(\theta_{t-1}), \nu_\text p) \cdot P_\text{normal}(\theta; \theta_{t-1} + \eta_t, \nu_\text{hd}).
+# $$
+#
+# In general, the density of a trace factors as the product of the densities of the individual primitive choices that appear in it.  Since the primitive distributions of the language are equipped with efficient probability density functions, this overall computation is tractable.  It is represented by `Gen.get_score`:
 
 # %%
 get_score(trace)
 
 # %% [markdown]
-# The above score is (the log of) the product of the densities of all the primitive choices that were made to obtain $z$.  One can obtain (the log of) the product of just some subset of these subscores:
+# #### Subscores/subweights/subdensities
+#
+# Instead of (the log of) the product of all the primitive choices made in a trace, one can take the product over just a subset using `Gen.project`.  See below the fold for examples.
 
 # %%
-# project
+project(trace, select())
+
+# %%
+project(trace, select(:p))
+
+# %%
+project(trace, select(:hd))
+
+# %%
+project(trace, select(:p, :hd)) == get_score(trace)
 
 # %% [markdown]
 # ### Modeling a full path
 #
-# We factor the code into two parts.  First comes the model, which contains all information in its trace—its return value is redundant.  Then the noisy path integration performs a simple extraction.
+# We factor the code into two parts.  First comes the model, which contains all information in its trace.  This renders its return value redundant; the the noisy path integration would then be just a wrapper around its functionality, extracting what it needs from the trace.  (We postpone writing this wrapper until the end of the next section.)
 
 # %%
 """
@@ -423,12 +460,10 @@ end
 prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest);
 
 # %% [markdown]
-# Mathematically, we are dealing with the following.
-#
-# Math math math
+# *Aside:*  It is worth acknowledging two strange things in the above code, the extra text "`_loop`" in the function name, and the seemingly redundant new parameter `T`.  Both will be addressed in the next section.
 
 # %% [markdown]
-# Returning to the computation, note how the following trace exposes the hierarchical structure of the program flow.  (To reduce notebook clutter, we just show the start pose plus the initial 5 timesteps.)
+# A trace of `path_model_loop` is more interesting than the ones for `start_pose_prior` and `step_model`.  Let's take a look.  (To reduce notebook clutter, we just show the start pose plus the initial 5 timesteps.)
 
 # %%
 T = length(robot_inputs.controls)
@@ -436,9 +471,26 @@ trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_setting
 get_selected(get_choices(trace), select(:initial, (:steps => i for i in 1:5)...))
 
 # %% [markdown]
-# We could very pass the output of the above model `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit for ProbComp: writing interpretive code for GFs in terms of their traces rather than return values.  This enables the programmer include the parameters of the model in the display for clarity.
+# We find that a choicemap is a tree structure rather than a flat associative array.  Addresses are actually root-to-node paths, which are constructed using the `=>` operator.
+#
+# Moreover, when the source code of a GF applies the `~` operator not to a primitive distribution but to some other generative function, the latter's choice map is included as a subtree rooted at the corresponding node.  That is, the choice map captures the recursive structure of the stochastic locations of the control flow.
+
+# %% [markdown]
+#
+# The corresponding mathematical picture is as follows.  We write $x_{[a:b]} = (x_a, x_{a+1}, \ldots, x_b)$ to gather the $x_t$ into a vector.  Then a distribution over traces denoted $\text{path}$ corresponds to `path_model`, and we have a random variable $\text{trace}_{[0:T]} \sim \text{motion}(r_{[0:T]}, w, \nu)$.  Here we have identified the trace with a vector $\text{trace}_{[0:T]}$, where $\text{trace}_0 \sim \text{init}(r_0, \nu)$, and $\text{trace}_t \sim \text{step}(z_{t-1}, r_t, \nu)$ for each $t=1,\ldots,T$, and each $z_t$ is the return value of $\text{trace}_t$ under the corresponding sub-GF.  The density of $\text{trace}$ is
+# $$
+# P_\text{path}(\text{trace}; r_{[0:T]}, w, \nu)
+# = P_\text{init}(\text{trace}_0; r_0, \nu) \cdot \prod\nolimits_{t=1}^T P_\text{step}(\text{trace}_t; z_{t-1}, r_t, \nu)
+# $$
+# where each term, in turn, factors into a product of two (multivariate) normal densities as described above.
+
+# %% [markdown]
+# As our truncation of the example trace above might suggest, visualization is an essential practice in ProbComp.  We could very pass the output of the above `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit: writing interpretive code for GFs in terms of their traces rather than their return values.  This enables the programmer include the parameters of the model in the display for clarity.
 
 # %%
+plot_path!(trace, color, label) =
+    plot!([trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)]; color=color, label=label)
+
 function frames_from_motion_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
     T = get_args(trace)[1]
     robot_inputs = get_args(trace)[2]
@@ -475,9 +527,51 @@ gif(ani, "imgs/motion.gif", fps=2)
 # %% [markdown]
 # ### Updating traces, and improving performance using combinators.
 #
-# Trace updates.  Returns the difference in the weights.
+# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `Gen.update` takes as inputs a trace, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace.  It also returns (the log of) the ratio of the output trace's density to the input trace's density, together with a precise record of the resulting modifications to the trace.
+
+# %% [markdown]
+# In our example, one could, for instance, replace the first step's stochastic choice of heading with a specific value.
+
+# %%
+trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
+big_first_step, big_step_weight_diff, y, _ =
+    update(trace,
+           (T, robot_inputs, world_inputs, motion_settings), (NoChange(), NoChange(), NoChange(), NoChange()),
+           choicemap((:steps => 1 => :pose => :hd, π/2.)))
+the_plot = plot_world(world, "Modifying a heading")
+plot_path!(trace, :green, "Some path")
+plot_path!(big_first_step, :red, "With heading at first step modified")
+savefig("imgs/modify_trace_1")
+the_plot
+
+# %% [markdown]
+# In the above picture, the green path is apparently missing, having been near-completely overdrawn by the red path.  This is because in the execution of the model, the only change in the stochastic choices took place where we specified.  In particular, the stochastic choice of position at the second step was left unchanged.  This choice was typical relative to the heading in the old trace, and while it is not impossible relative to the heading in the new trace, it is *far unlikelier* under mulitvariate normal distribution supporting it.  This is the log of how much unlikelier:
+
+# %%
+big_step_weight_diff
+
+# %% [markdown]
+# One can also modify the arguments to the program.  In our example, we might have on hand a very long list of controls, and we wish to explore the space of paths incrementally in the timestep:
+
+# %%
+trace = simulate(path_model_loop, (0, robot_inputs, world_inputs, motion_settings))
+for t in 1:T
+    trace, _, _, _ = update(trace,
+                   (t, robot_inputs, world_inputs, motion_settings), (UnknownChange(), NoChange(), NoChange(), NoChange()),
+                   choicemap())
+    # ...
+    # Do something with the trace of the partial path up to time t.
+    # ...
+    @assert has_value(get_choices(trace), :steps => t => :pose => :p)
+    @assert !has_value(get_choices(trace), :steps => (t+1) => :pose => :p)
+end;
+
+# %% [markdown]
+# This is a good opportunity to introduce some computational complexity considerations.
 #
-# We may alternatively express the same computation using a *combinator*.  Doing so explicitly captures the structure of Markov chain, and allows for efficient incremental construction of traces as the path length increases.
+# Because the dynamic DSL does not understand the loop inside `path_model_loop`, calling `Gen.update` with the new value of `T` requires re-execution of the whole loop.  This means that the update requires $O(T)$ time, and the above code requires $O(T^2)$ time.
+#
+# But we humans understand that incrementing the argument `T` simply requires running the loop body once more.  This operation runs in $O(1)$ time, so the outer loop requires $O(T)$ time.  Gen can intelligently work this way if we encode the structure of Markov chain in this model using a *combinator* for the static DSL, as follows.
 
 # %%
 @gen (static) function motion_path_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
@@ -492,6 +586,39 @@ end
 
 @load_generated_functions()
 
+# %% [markdown]
+# The models `path_model_loop` and `path_model` have been arranged to produce identically structured traces with the same frequencies and return values, and to correspond to identical distributions over traces in the mathematical picture, thereby yielding the same weights.  They give rise to identical computations under `Gen.simulate`, whereas the new model is sometimes more efficient under `Gen.update`.  Here we illustrate the efficiency gain.
+
+# %%
+N_repeats = 100
+robot_inputs_long = (robot_inputs..., controls = reduce(vcat, [robot_inputs.controls for _ in 1:N_repeats]))
+
+t1 = now()
+trace = simulate(path_model_loop, (0, robot_inputs_long, world_inputs, motion_settings))
+for t in 1:(T * N_repeats)
+    trace, _, _, _ = update(trace,
+                           (t, robot_inputs_long, world_inputs, motion_settings), (UnknownChange(), NoChange(), NoChange(), NoChange()),
+                           choicemap())
+end
+t2 = now()
+println("Explicit loop: $(dv(t2-t1))ms")
+
+t1 = now()
+trace = simulate(path_model, (0, robot_inputs_long, world_inputs, motion_settings))
+for t in 1:(T * N_repeats)
+    trace, _, _, _ = update(trace,
+                           (t, robot_inputs_long, world_inputs, motion_settings), (UnknownChange(), NoChange(), NoChange(), NoChange()),
+                            choicemap())
+end
+t2 = now()
+println("Markov chain combinator: $(dv(t2-t1))ms")
+
+# %% [markdown]
+# Owing to the efficiency comparison, we eschew `path_model_loop` in what follows.
+#
+# We are finally in a position to write our noisy path integration wrapper.
+
+# %%
 """
 Assumes
 * `robot_inputs` contains fields: `start`, `controls`
@@ -597,6 +724,8 @@ function noisy_sensor(pose :: Pose, walls :: Vector{Segment}, sensor_settings ::
 end;
 
 # %% [markdown]
+# (We satisfy ourselves with writing a loop in the dynamic DSL because we will have no need for incremental recomputation within this model.)
+#
 # The trace contains many choices corresponding to directions of sensor reading from the input pose.  To reduce notebook clutter, here we just show a subset of 5 of them:
 
 # %%
@@ -604,6 +733,14 @@ sensor_settings = (sensor_settings..., s_noise = 0.10)
 
 trace = simulate(sensor_model, (robot_inputs.start, world.walls, sensor_settings))
 get_selected(get_choices(trace), select((1:5)...))
+
+# %% [markdown]
+# The mathematical picture is as follows.  Given the parameters a pose $z$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(z, w, \nu)$ over the traces of `sensor_model`.  It samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{2J+1})$, where $J = \nu_\text{num\_angles}$, each $o^{(j)}$ following a certain normal distribution depending on the parameters.  Thus the density of $o$ factors into a product of the form
+# $$
+# P_\text{sensor}(o; z, w, \nu) = \prod\nolimits_{j=1}^{2J+1} P_\text{normal}(o^{(j)}; \ldots).
+# $$
+#
+# Visualizing the traces of the model is probably more useful for orientation, so we do this now.
 
 # %%
 # TODO: Add settings/(hyper)params display code.
@@ -629,33 +766,7 @@ gif(ani, "imgs/sensor_1.gif", fps=1)
 # %% [markdown]
 # ### Full model
 #
-# We connect the pieces into a full model.
-
-# %% [markdown]
-# This _generative function_ defines a probability distribution over _traces_.  Each _trace_ is a data structure containing a sequence of robot pose values, and a sequence of observations captured by the sensor.
-#
-# Notation:
-# - $\textbf{z}_t$ = robot pose at time $t$
-# - $\textbf{o}_t$ = observed robot sensor measurement at time $t$
-# - $\textbf{z}_{0:T}$ = $[\textbf{z}_0, \textbf{z}_1, \dots, \textbf{z}_T]$
-# - $\textbf{o}_{0:T}$ = $[\textbf{o}_0, \textbf{o}_1, \dots, \textbf{o}_T]$
-#
-# So a trace of this generative function is a data structure containing the pair $(\textbf{z}_{0:T}, \textbf{o}_{0:T})$.
-#
-# The probability distribution on this trace is defined using the following components:
-# 1. $P_{\text{init}}(\textbf{z}_0)$ (`start_pose_prior`)
-# 2. $P_{\text{step}}(\textbf{z}_t ; \textbf{z}_{t-1})$ (`motion_step_model`)
-# 3. $P_{\text{obs}}(\textbf{o}_t ; \textbf{z}_t)$ (`sensor_model`)
-#
-# Let $P_\text{full}$ denote the distribution defined by `full_model_1_loop`.  The code above declares that the distribution is
-# $$
-# P_\text{full}(\textbf{z}_{0:T}, \textbf{o}_{0:T}) = P_{\text{init}}(\textbf{z}_0) P_{\text{obs}}(\textbf{o}_0 ; \textbf{z}_0) \prod_{t=1}^T{[P_{\text{step}}(\textbf{z}_t ; \textbf{z}_{t-1}) P_{\text{obs}}(\textbf{o}_t ; \textbf{z}_t)]}
-# $$
-#
-# The `for` loop in the code implements the product in the math.
-
-# %% [markdown]
-# The second recognizes the model as a Markov chain, and accordingly invokes the `Unfold` combinator to capture this structure.
+# We combine the sensor model with the motion model pieces to form a "full model", which whose traces describe simulations of the entire robot situation as we have described it.
 
 # %%
 """
@@ -714,6 +825,12 @@ selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t
 get_selected(get_choices(trace), selection)
 
 # %% [markdown]
+# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(\text{trace}_{[0:T]}, o_{[0:T]})$ where $\text{trace}_{[0:T]} \sim \text{path}(\ldots)$ as above, giving rise to $z_{[0:T]}$, and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
+# $$
+# P_\text{full}((\text{trace}_{0:T}, o_{0:T}); \ldots)
+# = P_\text{path}(\text{trace}_{[0:T]}; \ldots) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots).
+# $$
+#
 # By this point, visualization is essential.
 
 # %%
@@ -756,6 +873,44 @@ for n in 1:N_samples
     for frame_plot in frames; frame(ani, frame_plot) end
 end
 gif(ani, "imgs/full_1.gif", fps=2)
+
+# %% [markdown]
+# ### Aside: abstracting essential features of generative functions, traces, and weights
+
+# %% [markdown]
+# #### Tree structure
+
+# %%
+@gen function example_sub_gf(p)
+    foo ~ bernoulli(p)
+    return foo ? "asdf" : -4
+end
+
+@gen function example_sup_gf(p)
+    {:call} ~ example_sub_gf(p)
+    {:bar} ~ normal(0., 1.)
+    return 7
+end
+
+example_trace = simulate(example_sup_gf, (0.5,))
+get_choices(example_trace)
+
+# %% [markdown]
+# #### Mathy picture
+#
+# TBD REVISE SIMPLIFY:
+#
+# For a particular GF, we call another function a *well-defined function of its traces* if it is a function of traces that invokes only valid choice addresses for every possible stochastic execution of the GF.
+#
+# [Some particular GFs, upon examination, may be determined to only produce traces satisfying certain constraints, so that certain functions of their traces are valid for all possible stochastic executions.  (For a conservative example, certain addresses might always exist, and the function might extract only these choices from the traces.)  We call the latter function a *well-defined function on traces* of the former GF.]
+#
+# A generative function in Gen can be mathematically modeled as specifying a probability distribution over the space of all traces, with some subset thereof as its support.  A well-defined function of its traces then corresponds to a random variable.
+#
+#
+#
+# Generally, if $P$ is a distribution depending on parameters $\theta$, then we write $P(z; \theta)$ for the probability density associated to the value $z$, and we write $z \sim P(\cdot\,; \theta)$ to declare that the value $z$ has been sampled according to these densities.  Thus the semicolon delimits general parameters.  When parameters are fixed and understood from context, we may delete them and write, say, $P(z)$ or $z \sim P(\cdot)$.
+#
+#
 
 # %% [markdown]
 # ## The data
