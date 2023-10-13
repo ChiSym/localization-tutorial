@@ -420,19 +420,7 @@ Assumes
 end
 
 # Handle asymmetry in the trace address structures.
-prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
-
-"""
-Assumes
-* `robot_inputs` contains fields: `start`, `controls`
-* `world_inputs` contains fields: `walls`, `bounce`
-* `motion_settings` contains fields: `p_noise`, `hd_noise`
-"""
-function integrate_controls_noisy_loop(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
-    T = length(robot_inputs.controls)
-    trace = simulate(motion_model_path_loop, (T, robot_inputs, world_inputs, motion_settings))
-    return [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
-end;
+prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest);
 
 # %% [markdown]
 # Mathematically, we are dealing with the following.
