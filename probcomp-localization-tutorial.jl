@@ -588,30 +588,37 @@ end;
 N_repeats = 100
 robot_inputs_long = (robot_inputs..., controls = reduce(vcat, [robot_inputs.controls for _ in 1:N_repeats]))
 
-t1 = now()
+time_ends_loop = Vector(undef, T * N_repeats)
+time_start = now()
 trace = simulate(path_model_loop, (0, robot_inputs_long, world_inputs, motion_settings))
 for t in 1:(T * N_repeats)
     trace, _, _, _ = update(trace,
                            (t, robot_inputs_long, world_inputs, motion_settings), (UnknownChange(), NoChange(), NoChange(), NoChange()),
                            choicemap())
+    time_ends_loop[t] = now()
 end
-t2 = now()
-println("Explicit loop: $(dv(t2-t1))ms")
+time_diffs_loop = dv.(time_ends_loop - [time_start, time_ends_loop[1:end-1]...])
+println("Explicit loop: $(dv(time_ends_loop[end]-time_start))ms")
 
-t1 = now()
+time_ends_chain = Vector(undef, T * N_repeats)
+time_start = now()
 trace = simulate(path_model, (0, robot_inputs_long, world_inputs, motion_settings))
 for t in 1:(T * N_repeats)
     trace, _, _, _ = update(trace,
                            (t, robot_inputs_long, world_inputs, motion_settings), (UnknownChange(), NoChange(), NoChange(), NoChange()),
                             choicemap())
+    time_ends_chain[t] = now()
 end
-t2 = now()
-println("Markov chain combinator: $(dv(t2-t1))ms")
+time_diffs_chain = dv.(time_ends_chain - [time_start, time_ends_chain[1:end-1]...])
+println("Markov chain combinator: $(dv(time_ends_chain[end]-time_start))ms")
+
+the_plot = plot([range(1, T * N_repeats)...], time_diffs_loop; label="Explicit loop", title="Gen.update steps into trace", xlabel="t'th step", ylabel="time (ms)")
+plot!([range(1, T * N_repeats)...], time_diffs_chain; label="Markov chain combinator")
+savefig("imgs/dynamic_static_comparison")
+the_plot
 
 # %% [markdown]
-# Owing to the efficiency comparison, we eschew `path_model_loop` in what follows.
-#
-# We are finally in a position to write our noisy path integration wrapper.
+# Owing to the efficiency comparison, we eschew `path_model_loop` in favor of `path_model` in what follows.  To begin with, we finally write our noisy path integration wrapper.
 
 # %%
 """
