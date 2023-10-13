@@ -545,16 +545,9 @@ end;
 Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
 """
-project_readings(pose :: Pose, readings :: Vector{Float64}, sensor_settings :: NamedTuple) :: Vector{Vector{Float64}} =
-    [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
-
-"""
-Assumes
-* `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
-"""
 function plot_sensors!(pose, color, readings, label, sensor_settings)
     plot!([pose.p[1]], [pose.p[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
-    projections = project_readings(pose, readings, sensor_settings)
+    projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
     plot!(first.(projections), last.(projections);
             color=:blue, label=label, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
     plot!([Segment(pose.p, pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
