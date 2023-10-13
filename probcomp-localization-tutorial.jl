@@ -440,11 +440,11 @@ get_selected(get_choices(trace), select(:initial, (:steps => i for i in 1:5)...)
 
 # %%
 function frames_from_motion_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
-    robot_inputs = get_args(trace)[1]
-    T = length(robot_inputs.controls)
+    T = get_args(trace)[1]
+    robot_inputs = get_args(trace)[2]
     poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
-    motion_settings = get_args(trace)[3]
+    motion_settings = get_args(trace)[4]
     plots = Vector{Plots.Plot}(undef, T+1)
     for t in 1:(T+1)
         frame_plot = plot_world(world, title; show_clutters=show_clutters)
