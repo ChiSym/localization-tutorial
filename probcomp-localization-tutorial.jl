@@ -839,8 +839,8 @@ function frames_from_full_trace(world, title, trace; show_clutters=false, std_de
     robot_inputs = get_args(trace)[2]
     poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
-    motion_settings = get_args(trace)[4].motion_settings
-    sensor_readings = [trace[prefix_address(t, :sensor)] for t in 1:(T+1)]
+    settings = get_args(trace)[4]
+    sensor_readings = [[trace[prefix_address(t, :sensor => j => :distance)] for j in 1:(2 * settings.sensor_settings.num_angles + 1)] for t in 1:(T+1)]
     sensor_settings = get_args(trace)[4].sensor_settings
     plots = Vector{Plots.Plot}(undef, 2*(T+1))
     for t in 1:(T+1)
@@ -848,7 +848,7 @@ function frames_from_full_trace(world, title, trace; show_clutters=false, std_de
         plot!(poses[1:t-1]; color=:black, label=nothing)
         plot!([noiseless_steps[t][1]], [noiseless_steps[t][2]];
               color=:red, label=nothing, seriestype=:scatter,
-              markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
+              markersize=(20. * std_devs_radius * settings.motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
         plot!(Pose(trace[prefix_address(t, :pose => :p)], poses[t].hd); color=:red, label=nothing)
         plots[2*t-1] = frame_plot
         plots[2*t] = frame_from_sensors(
