@@ -317,7 +317,7 @@ Assumes
 * `world_inputs` contains fields: `walls`, `bounce`
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
-@gen (static) function motion_step_model(start :: Pose, c :: Control, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
+@gen (static) function step_model(start :: Pose, c :: Control, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
     p ~ mvnormal(start.p + c.ds * start.dp, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd + c.dhd, motion_settings.hd_noise)
     return physical_step(start.p, p, hd, world_inputs)
@@ -343,7 +343,7 @@ the_plot
 # %%
 N_samples = 50
 noiseless_step = robot_inputs.start.p + robot_inputs.controls[1].ds * robot_inputs.start.dp
-step_samples = [motion_step_model(robot_inputs.start, robot_inputs.controls[1], world_inputs, motion_settings) for _ in 1:N_samples]
+step_samples = [step_model(robot_inputs.start, robot_inputs.controls[1], world_inputs, motion_settings) for _ in 1:N_samples]
 
 std_devs_radius = 2
 
@@ -411,11 +411,11 @@ Assumes
 * `world_inputs` contains fields: `walls`, `bounce`
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
-@gen function motion_model_path_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+@gen function path_model_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
 
     for t in 1:T
-        pose = {:steps => t => :pose} ~ motion_step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)
+        pose = {:steps => t => :pose} ~ step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)
     end
 end
 
@@ -443,7 +443,8 @@ end;
 # Returning to the computation, note how the following trace exposes the hierarchical structure of the program flow.  (To reduce notebook clutter, we just show the start pose plus the initial 5 timesteps.)
 
 # %%
-trace = simulate(integrate_controls_noisy, (robot_inputs, world_inputs, motion_settings))
+T = length(robot_inputs.controls)
+trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
 get_selected(get_choices(trace), select(:initial, (:steps => i for i in 1:5)...))
 
 # %% [markdown]
@@ -477,7 +478,7 @@ N_samples = 5
 ani = Animation()
 for n in 1:N_samples
     scale = 2. * (2.)^(n-N_samples)
-    trace = simulate(integrate_controls_noisy, (robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale)))
+    trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale)))
     frames = frames_from_motion_trace(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))", trace)
     for frame_plot in frames; frame(ani, frame_plot) end
 end
@@ -492,13 +493,11 @@ gif(ani, "imgs/motion.gif", fps=2)
 
 # %%
 @gen (static) function motion_path_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
-    # Condense to `return {:pose} ~ ...` ?
-    pose ~ motion_step_model(state, robot_inputs.controls[t], world_inputs, motion_settings)
-    return pose
+    return {:pose} ~ step_model(state, robot_inputs.controls[t], world_inputs, motion_settings)
 end
 motion_path_chain = Unfold(motion_path_kernel)
 
-@gen (static) function motion_path_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+@gen (static) function path_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     initial = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
     {:steps} ~ motion_path_chain(T, initial, robot_inputs, world_inputs, motion_settings)
 end
@@ -687,7 +686,7 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen (static) function model_1_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Pose
+@gen (static) function full_model_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Pose
     pose ~ start_pose_prior(robot_inputs.start, full_settings.motion_settings)
     {:sensor} ~ sensor_model(pose, walls, full_settings.sensor_settings)
     return pose
@@ -701,13 +700,13 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen (static) function model_1_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
+@gen (static) function full_model_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
                                       full_settings :: NamedTuple) :: Pose
-    pose ~ motion_step_model(state[1], robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
+    pose ~ step_model(state[1], robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
     {:sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
     return pose
 end
-model_1_chain = Unfold(model_1_kernel)
+full_model_chain = Unfold(full_model_kernel)
 
 """
 Assumes
@@ -717,9 +716,9 @@ Assumes
     * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
     * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
-@gen (static) function full_model_1(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
-    initial ~ model_1_initial(robot_inputs, world_inputs.walls, full_settings)
-    steps ~ model_1_chain(T, initial, robot_inputs, world_inputs, full_settings)
+@gen (static) function full_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
+    initial ~ full_model_initial(robot_inputs, world_inputs.walls, full_settings)
+    steps ~ full_model_chain(T, initial, robot_inputs, world_inputs, full_settings)
 end
 
 @load_generated_functions()
@@ -736,7 +735,7 @@ end
 full_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
 full_model_args = (robot_inputs, world_inputs, full_settings)
 
-trace = simulate(full_model_1, (T, full_model_args...))
+trace = simulate(full_model, (T, full_model_args...))
 selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t, :sensor => j) for t in 1:3, j in 1:5)...)
 get_selected(get_choices(trace), selection)
 
@@ -778,7 +777,7 @@ N_samples = 5
 ani = Animation()
 for n in 1:N_samples
     scale = 2. * (2.)^(n-N_samples)
-    trace = simulate(full_model_1, (T, robot_inputs, world_inputs, scaled_full_settings(full_settings, scale)))
+    trace = simulate(full_model, (T, robot_inputs, world_inputs, scaled_full_settings(full_settings, scale)))
     frames = frames_from_full_trace(world, "Full model (samples)\nnoise factor $(round(scale, digits=3))", trace)
     for frame_plot in frames; frame(ani, frame_plot) end
 end
@@ -904,11 +903,11 @@ end;
 # %%
 N_samples = 10
 
-traces = [simulate(full_model_1, (T, full_model_args...)) for _ in 1:N_samples]
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", path_actual, traces)
 
 constraints = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations)]
-traces = [sample_from_posterior(full_model_1, T, full_model_args, constraints; N_MH=10, N_particles=10) for _ in 1:N_samples]
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints; N_MH=10, N_particles=10) for _ in 1:N_samples]
 posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_actual, traces)
 
 the_plot = plot(prior_plot, posterior_plot, size=(1000,500))
@@ -1079,7 +1078,7 @@ gif(ani, "imgs/discrepancy_short.gif", fps=1)
 # %%
 N_samples = 10
 N_SIR = 500
-traces = [basic_SIR_library(full_model_1, (T_short, full_model_args_short...), constraints_short, N_SIR)[1] for _ in 1:N_samples]
+traces = [basic_SIR_library(full_model, (T_short, full_model_args_short...), constraints_short, N_SIR)[1] for _ in 1:N_samples]
 
 the_plot = frame_from_traces(world, "SIR (short path)", path_actual_short, traces)
 savefig("imgs/SIR_short")
@@ -1145,7 +1144,7 @@ constraints_RS = constraints[1:(T_RS+1)];
 N_burn_in = 0 # omit burn-in to illustrate early behavior
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1158,7 +1157,7 @@ gif(ani, "imgs/RS.gif", fps=1)
 N_burn_in = 100
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1171,7 +1170,7 @@ gif(ani, "imgs/RS.gif", fps=1)
 N_burn_in = 1_000
 N_particles = 20
 compute_bound = 5_000
-traces = rejection_sample(full_model_1, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1195,7 +1194,7 @@ gif(ani, "imgs/RS.gif", fps=1)
 # %%
 N_samples = 10
 N_SIR = 500
-traces = [basic_SIR_library(full_model_1, (T, full_model_args...), constraints, N_SIR)[1] for _ in 1:N_samples]
+traces = [basic_SIR_library(full_model, (T, full_model_args...), constraints, N_SIR)[1] for _ in 1:N_samples]
 
 the_plot = frame_from_traces(world, "SIR (original path)", path_actual, traces)
 savefig("imgs/SIR")
@@ -1282,7 +1281,7 @@ N_samples = 6
 N_particles = 10
 N_MH = 5
 t1 = now()
-traces = [particle_filter_rejuv(full_model_1, T, full_model_args, constraints, N_particles,
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints, N_particles,
                                 N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
 t2 = now()
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
@@ -1514,7 +1513,7 @@ t1 = now()
 checkpointss =
     [particle_filter_grid_rejuv_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-       full_model_1, T, full_model_args, constraints, N_particles, grid_schedule)
+       full_model, T, full_model_args, constraints, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = now();
 
@@ -1590,7 +1589,7 @@ end
         prev_p = updated_tr[prefix_address(t - 1, :pose => :p)]
         prev_hd = updated_tr[prefix_address(t - 1, :pose => :hd)]
         pose_scores = [
-            Gen.assess(motion_step_model,
+            Gen.assess(step_model,
                        (Pose(prev_p, prev_hd), robot_inputs.controls[t - 1], world_inputs, settings.motion_settings),
                        ch)[1]
             for ch in chmap_grid]
@@ -1691,7 +1690,7 @@ t1 = now()
 checkpointss2 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-       full_model_1, T, full_model_args, constraints, N_particles, grid_schedule)
+       full_model, T, full_model_args, constraints, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = now()
 
@@ -1754,7 +1753,7 @@ t1 = now()
 checkpointss4 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
-       full_model_1, T, full_model_args_noisy, constraints2, N_particles, [])
+       full_model, T, full_model_args_noisy, constraints2, N_particles, [])
      for _=1:N_samples]
 t2 = now()
 
@@ -1814,7 +1813,7 @@ t1 = now()
 checkpointss5 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         observations, N_particles, grid)
-       full_model_1, T, full_model_args_noisy, constraints3, N_particles, [])
+       full_model, T, full_model_args_noisy, constraints3, N_particles, [])
      for _=1:N_samples]
 t2 = now()
 
@@ -1842,7 +1841,7 @@ t1 = now()
 checkpointss6 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
-       full_model_1, T, full_model_args, constraints3, N_particles, [])
+       full_model, T, full_model_args, constraints3, N_particles, [])
      for _=1:N_samples]
 t2 = now()
 
@@ -1875,7 +1874,7 @@ t1 = now()
 checkpointss7 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
-       full_model_1, T, full_model_args, constraints3, N_particles, grid_schedule)
+       full_model, T, full_model_args, constraints3, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = now()
 
@@ -2102,7 +2101,7 @@ t1 = now()
 for _=1:N_samples
     push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-        full_model_1, T, full_model_args, constraints, N_particles, grid_schedule))
+        full_model, T, full_model_args, constraints, N_particles, grid_schedule))
 end
 t2 = now();
 
@@ -2150,7 +2149,7 @@ gif(ani, "imgs/controller_animation.gif", fps=1/3)
 #     for _=1:N_samples
 #         push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
 #             #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-#             full_model_1, T, full_model_args, constraints, N_particles, grid_schedule))
+#             full_model, T, full_model_args, constraints, N_particles, grid_schedule))
 #     end
 #     t2 = now();
     
@@ -2183,7 +2182,7 @@ t1 = now()
 for _=1:N_samples
     push!(checkpointss9, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-        full_model_1, T, full_model_args_noisy, constraints2, N_particles, grid_schedule))
+        full_model, T, full_model_args_noisy, constraints2, N_particles, grid_schedule))
 end
 t2 = now();
 
@@ -2216,7 +2215,7 @@ t1 = now()
 for _=1:N_samples
     push!(checkpointss10, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-        full_model_1, T, full_model_args, constraints3, N_particles, grid_schedule))
+        full_model, T, full_model_args, constraints3, N_particles, grid_schedule))
 end
 t2 = now();
 
