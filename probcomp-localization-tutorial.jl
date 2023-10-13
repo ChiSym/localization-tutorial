@@ -792,7 +792,7 @@ Assumes
 """
 @gen (static) function full_model_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
                                       full_settings :: NamedTuple) :: Pose
-    pose ~ step_model(state[1], robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
+    pose ~ step_model(state, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
     {:sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
     return pose
 end
