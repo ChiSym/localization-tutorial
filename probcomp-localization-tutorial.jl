@@ -29,12 +29,13 @@
 #     * But it produces atypical likelihoods when the true motion noise is high.
 #   * then continue ...
 # * Not just a graph of slower (un-Unfold) loop, but perhaps debugging statements showing the reexectution.
+#   * Julia @debug macro not compatible with static DSL!
 # * path_small_deviations, path_large_deviations
 # * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.  motion_settings, scaled, lownoise, highnoise; full_settings, scaled, noisy.
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
 # * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
 # * label all (hyper)parameters in visualizations
-# * fix docstrings
+# * fix docstrings, image filenames
 # * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
 # * Hierarchical (sensor) model?
 #
