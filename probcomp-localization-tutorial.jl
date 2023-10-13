@@ -665,8 +665,6 @@ gif(ani, "imgs/sensor_1.gif", fps=1)
 # The second recognizes the model as a Markov chain, and accordingly invokes the `Unfold` combinator to capture this structure.
 
 # %%
-# The staging of `full_model_1` into these subfunctions is required for Gen's static DSL.
-
 """
 Assumes
 * `robot_inputs` contains fields: `start`
@@ -710,11 +708,6 @@ Assumes
 end
 
 @load_generated_functions()
-
-# %% [markdown]
-# We work with the `Unfold`-variant, because the static DSL can harness it for efficient evaluation in `Gen.update`.  The user can check that the explicit loop produces identical outputs.
-#
-# We note, by the way, the introduction of the parameter `T`, used to truncate the generation of steps to lengths less than `length(robot_inputs.controls)`, which will be helpful when writing SMC code below.
 
 # %% [markdown]
 # Again, the trace of the full model contains many choices, so we just show a subset of them: the initial pose plus 2 timesteps, and 5 sensor readings from each.
