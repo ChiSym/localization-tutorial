@@ -321,10 +321,7 @@ Assumes
     p ~ mvnormal(start.p + c.ds * start.dp, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd + c.dhd, motion_settings.hd_noise)
     return physical_step(start.p, p, hd, world_inputs)
-end
-
-# This call is required by Gen's static DSL in order to use the above objects in the code below.
-@load_generated_functions()
+end;
 
 # %% [markdown]
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
@@ -582,9 +579,7 @@ motion_path_chain = Unfold(motion_path_kernel)
 @gen (static) function path_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     initial = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
     {:steps} ~ motion_path_chain(T, initial, robot_inputs, world_inputs, motion_settings)
-end
-
-@load_generated_functions()
+end;
 
 # %% [markdown]
 # The models `path_model_loop` and `path_model` have been arranged to produce identically structured traces with the same frequencies and return values, and to correspond to identical distributions over traces in the mathematical picture, thereby yielding the same weights.  They give rise to identical computations under `Gen.simulate`, whereas the new model is sometimes more efficient under `Gen.update`.  Here we illustrate the efficiency gain.
@@ -809,9 +804,7 @@ Assumes
 @gen (static) function full_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
     initial ~ full_model_initial(robot_inputs, world_inputs.walls, full_settings)
     steps ~ full_model_chain(T, initial, robot_inputs, world_inputs, full_settings)
-end
-
-@load_generated_functions()
+end;
 
 # %% [markdown]
 # Again, the trace of the full model contains many choices, so we just show a subset of them: the initial pose plus 2 timesteps, and 5 sensor readings from each.
