@@ -627,7 +627,7 @@ Assumes
 """
 function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     T = length(robot_inputs.controls)
-    trace = simulate(motion_model_path, (T, robot_inputs, world_inputs, motion_settings))
+    trace = simulate(path_model, (T, robot_inputs, world_inputs, motion_settings))
     return [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
 end;
 
