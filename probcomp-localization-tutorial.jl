@@ -246,7 +246,7 @@ path_integrated = integrate_controls(robot_inputs, world_inputs);
 # ### Plot such data
 
 # %%
-function plot_list(list; label=nothing, args...)
+function plot_list!(list; label=nothing, args...)
     if isempty(list); return end
     plt = plot!(list[1]; label=label, args...)
     for item in list[2:end]; plot!(item; label=nothing, args...) end
@@ -254,11 +254,11 @@ function plot_list(list; label=nothing, args...)
 end
 
 Plots.plot!(seg :: Segment; args...) = plot!([seg.p1[1], seg.p2[1]], [seg.p1[2], seg.p2[2]]; args...)
-Plots.plot!(segs :: Vector{Segment}; args...) = plot_list(segs; args...)
-Plots.plot!(seg_groups :: Vector{Vector{Segment}}; args...) = plot_list(seg_groups; args...)
+Plots.plot!(segs :: Vector{Segment}; args...) = plot_list!(segs; args...)
+Plots.plot!(seg_groups :: Vector{Vector{Segment}}; args...) = plot_list!(seg_groups; args...)
 
 Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, step_along_pose(p, r)); arrow=true, args...)
-Plots.plot!(ps :: Vector{Pose}; args...) = plot_list(ps; args...)
+Plots.plot!(ps :: Vector{Pose}; args...) = plot_list!(ps; args...)
 
 function plot_world(world, title; label_world=false, show_clutters=false)
     border = world.box_size * (3.)/19.
