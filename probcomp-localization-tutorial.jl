@@ -30,8 +30,6 @@
 #   * then continue ...
 # * Not just a graph of slower (un-Unfold) loop, but perhaps debugging statements showing the reexectution.
 #   * Julia @debug macro not compatible with static DSL!
-# * path_small_deviations, path_large_deviations
-# * Consolidate synthetic data sources: hardwired, short, lownoise, highnoise.  motion_settings, scaled, lownoise, highnoise; full_settings, scaled, noisy.
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
 # * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
 # * label all (hyper)parameters in visualizations
@@ -402,7 +400,7 @@ get_retval(trace)
 #
 # The issue is the passage from the auxiliary $(p, \theta)$ to the returned $(p_t, \theta_t)$.  Infinitely many values of $\theta$ contribute density to any final angle value; characterizing the accumulation of density through the collision physics is even worse.  Generally speaking, the marginalization problem of knowing the overall density of a sample value is as intractable as finding and then summing over all inputs to a computation with a given output.
 #
-# The approach of Gen (ProbComp in general?!) is instead to factor a generative function into the pair of a probability distribution over *choice maps* (which we abusively also call a probability distribution over *traces*), and a deterministic function on these data that produces the return value from them.  The density that traced execution returns is not the probability density of the return value as per above, but instead *the probability density of its choice map* (which we abusively call *the probability density of its trace*).
+# The only thing a program can reasonably be expected to know is the density of its arriving at its return value *via the particular stochastic computation path* that got it there.  Accordingly, the approach of Gen (ProbComp in general?!) is instead to factor a generative function into the pair of a probability distribution over *choice maps* (which we abusively also call a probability distribution over *traces*), and a deterministic function on these data that produces the return value from them.  The density that traced execution returns is not the probability density of the return value as per above, but instead *the probability density of its choice map* (which we abusively call *the probability density of its trace*).
 #
 # Returning to the example, in the above notations $\text{init}^!$ and $\text{step}^!$, the superscript exclamation points were intended to flag that they were the wrong distributions to consider.  Let $\text{init}$ and $\text{step}$ instead be the respective distributions over *traces* corresponding to `start_pose_prior` and `step_model`, so that $\text{init}^!$ and $\text{step}^!$ are their respective pushforwards under the return value function $\text{retval}$.  Thus, we re-express the random variables as $z_t = \text{retval}(\text{trace}_t)$, where $\text{trace}_0 \sim \text{init}(r_0, \nu)$ and $\text{trace}_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$ for $t=1,\ldots,T$.  Identifying the choice map $\text{trace}_t$ with a pair $(p, \theta)$, we have the following closed forms:
 # $$
@@ -911,52 +909,64 @@ get_choices(example_trace)
 # %% [markdown]
 # ## The data
 #
-# Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.
-#
-# Since we imagine these data as having been recorded from the real world, keep only their return values, discarding the traces that produced them.
+# Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.  We will generate two versions, one each with low or high motion deviation.
 
 # %%
-# # Generate a path by adding noise:
+motion_settings_low_deviation = (p_noise = 0.05, hd_noise = (1/10.) * 2π / 360)
+trace_low_deviation = simulate(full_model, (T, robot_inputs, world_inputs, (full_settings..., motion_settings=motion_settings_low_deviation)))
 
-motion_settings_synthetic = (p_noise = 0.05, hd_noise = 2π / 360)
+motion_settings_high_deviation = (p_noise = 0.25, hd_noise = 2π / 360)
+trace_high_deviation = simulate(full_model, (T, robot_inputs, world_inputs, (full_settings..., motion_settings=motion_settings_high_deviation)))
 
-# path_actual = integrate_controls_noisy(robot_inputs), world_inputs, motion_settings_synthetic)
-# repr(path_actual) |> clipboard
-# Here, we will use a hard-coded one we generated earlier that we selected to more clearly illustrate
-# the main ideas in the notebook.
-path_actual = Pose[Pose([1.8105055257302352, 16.95308477268976], 0.08768023894197674), Pose([3.80905621762144, 17.075619417709827], -0.5290211691806687), Pose([4.901118854352547, 16.374655088848304], -0.4554764850547685), Pose([6.308254748808569, 15.860770355551818], 0.05551953564181333), Pose([6.491438805390425, 15.493868458696895], -0.5802542842551736), Pose([7.447278355948555, 14.63103882275873], -1.315938749141227), Pose([7.434195388758904, 13.887476796022026], -1.515750524264586), Pose([7.045563974694356, 13.539511976225148], -1.3226432715239562), Pose([7.755917122113763, 12.118889998110918], -1.1875170980293068), Pose([8.031624143251104, 11.095208641644854], -0.38287120113753326), Pose([8.345690304200131, 10.843957790912832], -0.31488971003874827), Pose([8.971822052978622, 10.580306565768808], -0.0855234941283848), Pose([10.228980988810147, 10.430017431253829], -0.05160460191130738), Pose([11.337251889505731, 10.10090883752962], -0.025335824641921776), Pose([12.82024096259476, 9.81017583656567], 0.20336314833906002), Pose([13.658185429388778, 10.048753805232767], 1.4040405665068887), Pose([13.838175614976866, 10.788813324304678], 1.3842380063444915), Pose([14.384659102337947, 11.8750750875864], 0.9943086776465678), Pose([14.996345006995664, 12.681411208177314], 1.0223226390004532), Pose([15.226334529348852, 13.347705702094283], 1.017840325933929)]
-
-the_plot = plot_world(world, "Actual motion deviates from integrated")
-plot!(path_integrated; color=:green2, label="path from integrating controls")
-plot!(path_actual; color=:brown, label="\"actual\" robot path")
-savefig("imgs/deviation")
-the_plot
-
-# %% [markdown]
-# Let us generate some fixed synthetic sensor data that, for pedagogical purposes, we will work with as if it were the actual sensor data of the robot.  The results are displayed in the *left hand* pane below, relative to the *actual* path, from which they were generated.
-#
-# The *right hand* pane shows these same synthetic sensor readings transposed to the point of view of the path *obtained by integrating the controls*.  This pane shows at a glance the information that is apparent to the robot.  **The robot's problem is to resolve the discrepancy between this integrated path and the sensor data by proposing a better guess of path.**
-
-# %%
-# TODO: Futz with sensor settings here?
-observations = [noisy_sensor(pose, world.walls, sensor_settings) for pose in path_actual]
-
+frames_low = frames_from_full_trace(world, "Low motion deviation", trace_low_deviation)
+frames_high = frames_from_full_trace(world, "High motion deviation", trace_high_deviation)
 ani = Animation()
-for (pose_actual, pose_integrated, readings) in zip(path_actual, path_integrated, observations)
-    actual_plot = frame_from_sensors(
-        world, "Actual data",
-        path_actual, :brown, "actual path",
-        pose_actual, readings, "actual sensors",
-        sensor_settings)
-    integrated_plot = frame_from_sensors(
-        world, "Apparent data",
-        path_integrated, :green2, "path from integrating controls",
-        pose_integrated, readings, "actual sensors",
-        sensor_settings)
-    frame_plot = plot(actual_plot, integrated_plot, size=(1000,500), plot_title="Problem data")
+for (low, high) in zip(frames_low, frames_high)
+    frame_plot = plot(low, high, size=(1000,500), plot_title="Synthetic data")
     frame(ani, frame_plot)
 end
-gif(ani, "imgs/discrepancy.gif", fps=1)
+gif(ani, "imgs/the_data.gif", fps=2)
+
+# %% [markdown]
+# Since we imagine these data as having been recorded from the real world, keep only their extracted data, *discarding* the traces that produced them.
+
+# %%
+path_actual_low_deviation = [trace_low_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
+observations_low_deviation = [[trace_low_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:(2 * sensor_settings.num_angles + 1)] for i in 1:(T+1)]
+
+path_actual_high_deviation = [trace_high_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
+observations_high_deviation = [[trace_high_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:(2 * sensor_settings.num_angles + 1)] for i in 1:(T+1)];
+
+# %% [markdown]
+# We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.  Because the actual path and the sensors are both noisy, these data do not cohere, and it is the robot's task to resolve this discrepancy by proposing a better guess of a path.
+
+# %%
+function plot_bare_sensors(world, title, readings, sensor_settings)
+    border = world.box_size * (3.)/19.
+    the_plot = plot(
+        size         = (500, 500),
+        aspect_ratio = :equal,
+        grid         = false,
+        xlim         = (world.bounding_box[1]-border, world.bounding_box[2]+border),
+        ylim         = (world.bounding_box[3]-border, world.bounding_box[4]+border),
+        title        = title,
+        legend       = :bottomleft)
+    center_point = [(world.bounding_box[1] + world.bounding_box[2])/2., (world.bounding_box[3] + world.bounding_box[4])/2.]
+    plot_sensors!(Pose(center_point, 0.), :black, readings, "sensor readings", sensor_settings)
+    return the_plot
+end;
+
+# %%
+ani = Animation()
+for (t, (pose, readings_low, readings_high)) in enumerate(zip(path_integrated, observations_low_deviation, observations_high_deviation))
+    plot_integrated = plot_world(world, "Integrated path")
+    plot!(path_integrated[1:t]; color=:green, label="path from integrating controls")
+    plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, sensor_settings)
+    plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, sensor_settings)
+    the_frame = plot(plot_integrated, plot_low, plot_high; size=(1500,500), layout=grid(1,4), plot_title="Data available to robot")
+    frame(ani, the_frame)
+end
+gif(ani, "imgs/robot_can_see.gif", fps=2)
 
 # %% [markdown]
 # ## Inference: main idea
@@ -1030,6 +1040,10 @@ N_samples = 10
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", path_actual, traces)
+
+# constraints = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations)]
+# constraints2 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations_low_deviation)]
+# constraints3 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations_high_deviation)]
 
 constraints = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations)]
 traces = [sample_from_posterior(full_model, T, full_model_args, constraints; N_MH=10, N_particles=10) for _ in 1:N_samples]
@@ -1843,19 +1857,11 @@ frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv", path_actual, me
 # Here, we generate a low noise trajectory, and show that the bootstrap particle filter (with no rejuvenation) is sufficient to perform good inferences.  (Low motion noise, moderate observation noise.)  Proposing from the prior is quite good!
 
 # %%
-motion_settings_lownoise = (p_noise = 0.005, hd_noise = 1/50 * 2π / 360)
-# Relevant to synthetic sensors:
-# tol2 = 0.10
-
-path_actual_lownoise = integrate_controls_noisy(robot_inputs, world_inputs, motion_settings_lownoise)
-observations2 = [noisy_sensor(pose, world.walls, sensor_settings) for pose in path_actual_lownoise]
-constraints2 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations2)]
-
 ani = Animation()
-for (pose_actual, pose_integrated, readings) in zip(path_actual_lownoise, path_integrated, observations2)
+for (pose_actual, pose_integrated, readings) in zip(path_actual_low_deviation, path_integrated, observations_low_deviation)
     actual_plot = frame_from_sensors(
         world, "Actual data",
-        path_actual_lownoise, :brown, "actual path",
+        path_actual_low_deviation, :brown, "actual path",
         pose_actual, readings, "actual sensors",
         sensor_settings)
     integrated_plot = frame_from_sensors(
@@ -1869,8 +1875,6 @@ end
 gif(ani, "imgs/noisy_distances_lowmotionnoise.gif", fps=1)
 
 # %%
-full_model_args_noisy = (robot_inputs, world_inputs, (full_settings..., sensor_settings = (sensor_settings..., s_noise = 0.15)))
-
 N_samples = 6
 N_particles = 10
 
@@ -1878,7 +1882,7 @@ t1 = now()
 checkpointss4 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
-       full_model, T, full_model_args_noisy, constraints2, N_particles, [])
+       full_model, T, full_model_args, constraints2, N_particles, [])
      for _=1:N_samples]
 t2 = now()
 
@@ -1893,7 +1897,7 @@ merged_weight_list4 = merged_weight_list4 .- log(length(checkpointss4));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion noise", path_actual_lownoise, merged_traj_list4, merged_weight_list4)
+frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion noise", path_actual_low_deviation, merged_traj_list4, merged_weight_list4)
 
 
 # %% [markdown]
@@ -1902,19 +1906,11 @@ frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion
 # Now we'll generate a very high motion noise (low observation noise) trajectory.
 
 # %%
-motion_settings_highnoise = (p_noise = 0.25, hd_noise = 1.5 * 2π / 360)
-# Relevant to synthetic sensors:
-# tol3 = .03
-
-path_actual_highnoise = integrate_controls_noisy(robot_inputs, world_inputs, motion_settings_highnoise)
-observations3 = [noisy_sensor(pose, world.walls, sensor_settings) for pose in path_actual_highnoise];
-constraints3 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations3)]
-
 ani = Animation()
-for (pose_actual, pose_integrated, readings) in zip(path_actual_highnoise, path_integrated, observations3)
+for (pose_actual, pose_integrated, readings) in zip(path_actual_high_deviation, path_integrated, observations_high_deviation)
     actual_plot = frame_from_sensors(
         world, "Actual data",
-        path_actual_highnoise, :brown, "actual path",
+        path_actual_high_deviation, :brown, "actual path",
         pose_actual, readings, "actual sensors",
         sensor_settings)
     integrated_plot = frame_from_sensors(
@@ -1938,7 +1934,7 @@ t1 = now()
 checkpointss5 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         observations, N_particles, grid)
-       full_model, T, full_model_args_noisy, constraints3, N_particles, [])
+       full_model, T, full_model_args, constraints3, N_particles, [])
      for _=1:N_samples]
 t2 = now()
 
@@ -1953,7 +1949,7 @@ merged_weight_list5 = merged_weight_list5 .- log(length(checkpointss5));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF - motion noise:(model:low)(data:high)", path_actual_highnoise, merged_traj_list5, merged_weight_list5)
+frame_from_weighted_trajectories(world, "PF - motion noise:(model:low)(data:high)", path_actual_high_deviation, merged_traj_list5, merged_weight_list5)
 
 # %% [markdown]
 # Conversely, if we run a no-rejuvenation particle filter with the higher model noise parameters, the runs are inconsistent.
@@ -1981,7 +1977,7 @@ merged_weight_list6 = merged_weight_list6 .- log(length(checkpointss6));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF - motion noise:(model:high)(data:high)", path_actual_highnoise, merged_traj_list6, merged_weight_list6)
+frame_from_weighted_trajectories(world, "PF - motion noise:(model:high)(data:high)", path_actual_high_deviation, merged_traj_list6, merged_weight_list6)
 
 # %% [markdown]
 # However, if we add back in SMCP3 rejuvenation, performance is a lot better!
@@ -2014,7 +2010,7 @@ merged_weight_list7 = merged_weight_list7 .- log(length(checkpointss7));
 
 # %%
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv - motion noise:high", path_actual_highnoise, merged_traj_list7, merged_weight_list7)
+frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv - motion noise:high", path_actual_high_deviation, merged_traj_list7, merged_weight_list7)
 
 # %% [markdown]
 # # Inference controller to automatically spend the right amount of compute for good accuracy
@@ -2307,7 +2303,7 @@ t1 = now()
 for _=1:N_samples
     push!(checkpointss9, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-        full_model, T, full_model_args_noisy, constraints2, N_particles, grid_schedule))
+        full_model, T, full_model_args, constraints2, N_particles, grid_schedule))
 end
 t2 = now();
 
@@ -2321,7 +2317,7 @@ for checkpoints in checkpointss9
 end
 merged_weight_list9 = merged_weight_list9 .- log(length(checkpointss9));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, "Inference controller (low motion noise)", path_actual_lownoise, merged_traj_list9, merged_weight_list9)
+frame_from_weighted_trajectories(world, "Inference controller (low motion noise)", path_actual_low_deviation, merged_traj_list9, merged_weight_list9)
 
 # %% [markdown]
 # ### Controller on HIGH NOISE TRAJECTORY
@@ -2354,4 +2350,4 @@ for checkpoints in checkpointss10
 end
 merged_weight_list10 = merged_weight_list10 .- log(length(checkpointss10));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, "Inference controller (high motion noise)", path_actual_highnoise, merged_traj_list10, merged_weight_list10)
+frame_from_weighted_trajectories(world, "Inference controller (high motion noise)", path_actual_high_deviation, merged_traj_list10, merged_weight_list10)
