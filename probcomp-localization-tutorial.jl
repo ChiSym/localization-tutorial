@@ -20,14 +20,6 @@
 #
 # * "Score" versus "weight" versus...?!
 #
-# * ALL AT ONCE
-#   * "The data"
-#     * combined synthetic motion and sensors
-#     * demo the data that the robot has (separated)
-#   * "Why we need inference"
-#     * You can try integrating the path.
-#     * But it produces atypical likelihoods when the true motion noise is high.
-#   * then continue ...
 # * Not just a graph of slower (un-Unfold) loop, but perhaps debugging statements showing the reexectution.
 #   * Julia @debug macro not compatible with static DSL!
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
@@ -693,7 +685,7 @@ ani = Animation()
 for pose in path_integrated
     frame_plot = frame_from_sensors(
         world, "Ideal sensor distances",
-        path_integrated, :green2, "path from integrating controls",
+        path_integrated, :green2, "some path",
         pose, ideal_sensor(pose, world.walls, sensor_settings), "ideal sensors",
         sensor_settings)
     frame(ani, frame_plot)
@@ -923,7 +915,7 @@ frames_low = frames_from_full_trace(world, "Low motion deviation", trace_low_dev
 frames_high = frames_from_full_trace(world, "High motion deviation", trace_high_deviation)
 ani = Animation()
 for (low, high) in zip(frames_low, frames_high)
-    frame_plot = plot(low, high, size=(1000,500), plot_title="Synthetic data")
+    frame_plot = plot(low, high; size=(1000,500), plot_title="Synthetic data")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/the_data.gif", fps=2)
@@ -932,10 +924,12 @@ gif(ani, "imgs/the_data.gif", fps=2)
 # Since we imagine these data as having been recorded from the real world, keep only their extracted data, *discarding* the traces that produced them.
 
 # %%
-path_actual_low_deviation = [trace_low_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
-observations_low_deviation = [[trace_low_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:(2 * sensor_settings.num_angles + 1)] for i in 1:(T+1)]
+# These are are what we hope to recover...
+path_low_deviation = [trace_low_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
+path_high_deviation = [trace_high_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
 
-path_actual_high_deviation = [trace_high_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
+# ...using these data.
+observations_low_deviation = [[trace_low_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:(2 * sensor_settings.num_angles + 1)] for i in 1:(T+1)]
 observations_high_deviation = [[trace_high_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:(2 * sensor_settings.num_angles + 1)] for i in 1:(T+1)];
 
 # %% [markdown]
@@ -957,6 +951,31 @@ function plot_bare_sensors(world, title, readings, sensor_settings)
 end;
 
 # %%
+short_control(c) = "ds = $(round(c.ds, digits=2)), dhd = $(round(c.dhd, digits=2))"
+
+ani = Animation()
+for (t, (pose, readings_low, readings_high)) in enumerate(zip(path_integrated, observations_low_deviation, observations_high_deviation))
+    plot_integrated = plot_world(world, "Startup data")
+    plot!(path_integrated[1]; color=:green, label="start guess")
+    if t > 1; annotate!(5, 2.5, "Control $(t-1):\n$(short_control(robot_inputs.controls[t-1]))") end
+    plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, sensor_settings)
+    plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
+    plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, sensor_settings)
+    plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
+    the_frame = plot(plot_integrated, plot_low, plot_high; size=(1500,500), layout=grid(1,3), plot_title="<— Data available to robot —>")
+    frame(ani, the_frame)
+end
+gif(ani, "imgs/robot_can_see.gif", fps=2)
+
+# %% [markdown]
+# Because the actual path deviates from the idealized integrated path, and the sensors are noisy, ***these data do not cohere***, and it is the robot's task to resolve this discrepancy by proposing a better guess of a path.
+
+# %% [markdown]
+# ## Why we need inference
+#
+# The path obtained by integrating the controls serves as a proposal for the true path, but it is unsatisfactory, especially in the high motion deviation case.  One can see intuitively in the picture that the sensor measurements do not fit the walls very well:
+
+# %%
 ani = Animation()
 for (t, (pose, readings_low, readings_high)) in enumerate(zip(path_integrated, observations_low_deviation, observations_high_deviation))
     plot_integrated = plot_world(world, "Integrated path")
@@ -971,7 +990,7 @@ end
 gif(ani, "imgs/robot_can_see.gif", fps=2)
 
 # %% [markdown]
-# Because the actual path deviates from the idealized integrated path, and the sensors are noisy, ***these data do not cohere***, and it is the robot's task to resolve this discrepancy by proposing a better guess of a path.
+# But it produces atypical likelihoods when the true motion noise is high.
 
 # %% [markdown]
 # ## Inference: main idea
@@ -1021,21 +1040,26 @@ end
 
 function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particles = 10)
     drift_step_factor = 1/3.
-    traces, _ = particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, drift_proposal, (drift_step_factor,))
-    return traces[1]
+    traces, log_weights = particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, drift_proposal, (drift_step_factor,))
+
+    weights = exp.(log_weights .- maximum(log_weights))
+    weights = weights ./ sum(weights)
+    index = categorical(weights)
+    return traces[index]
 end;
 
 # %%
 # Visualize distributions over traces.
 
-function frame_from_traces(world, title, path_actual, traces; show_clutters=false)
+function frame_from_traces(world, title, path_actual, traces, trace_label; show_clutters=false)
     the_plot = plot_world(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
     for trace in traces
         poses = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)]
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=nothing, color=:green, alpha=0.3)
         plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
-              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
+              label=trace_label, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
+        trace_label = nothing
     end
     return the_plot
 end;
@@ -1044,24 +1068,34 @@ end;
 N_samples = 10
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", path_actual, traces)
+prior_plot = frame_from_traces(world, "Prior on robot paths", path_low_deviation, traces, "prior samples")
 
-# constraints = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations)]
-# constraints2 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations_low_deviation)]
-# constraints3 = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations_high_deviation)]
+constraints_low_deviation = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations_low_deviation)]
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation; N_MH=10, N_particles=10) for _ in 1:N_samples]
+posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_low_deviation, traces, "posterior samples")
 
-constraints = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations)]
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints; N_MH=10, N_particles=10) for _ in 1:N_samples]
-posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_actual, traces)
+the_plot = plot(prior_plot, posterior_plot; size=(1000,500), plot_title="Low deviation case")
+savefig("imgs/prior_posterior")
+the_plot
 
-the_plot = plot(prior_plot, posterior_plot, size=(1000,500))
+# %%
+N_samples = 10
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", path_high_deviation, traces, "prior samples")
+
+constraints_high_deviation = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations_high_deviation)]
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation; N_MH=10, N_particles=10) for _ in 1:N_samples]
+posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_high_deviation, traces, "posterior samples")
+
+the_plot = plot(prior_plot, posterior_plot, size=(1000,500), plot_title="High deviation case")
 savefig("imgs/prior_posterior")
 the_plot
 
 # %% [markdown]
 # Mathematically, we describe inference as follows.
 #
-# Recall that our `model_full_1` generative function defined a probability distribution $P_\text{full}(\textbf{z}_{0:T}, \textbf{o}_{0:T})$.
+# Recall that our `model_full` generative function defined a probability distribution $P_\text{full}(\textbf{z}_{0:T}, \textbf{o}_{0:T})$.
 #
 # When the robot actually travels through the world, its sensors pick up a collection of measurements $\textbf{o}_{0:T}^*$.
 #
