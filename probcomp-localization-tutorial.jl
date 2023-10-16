@@ -139,8 +139,9 @@ function load_world(file_name)
     y_max = maximum(p[2] for p in all_points)
     bounding_box = (x_min, x_max, y_min, y_max)
     box_size = max(x_max - x_min, y_max - y_min)
+    center_point = [(x_min + x_max) / 2.0, (y_min + y_max) / 2.0]
     T = length(controls)
-    return ((walls=walls, clutters=clutters, walls_clutters=walls_clutters, bounding_box=bounding_box, box_size=box_size),
+    return ((walls=walls, clutters=clutters, walls_clutters=walls_clutters, bounding_box=bounding_box, box_size=box_size, center_point=center_point),
             (start=start, controls=controls),
             T)
 end;
@@ -938,7 +939,7 @@ path_actual_high_deviation = [trace_high_deviation[prefix_address(i, :pose)] for
 observations_high_deviation = [[trace_high_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:(2 * sensor_settings.num_angles + 1)] for i in 1:(T+1)];
 
 # %% [markdown]
-# We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.  Because the actual path and the sensors are both noisy, these data do not cohere, and it is the robot's task to resolve this discrepancy by proposing a better guess of a path.
+# We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.
 
 # %%
 function plot_bare_sensors(world, title, readings, sensor_settings)
@@ -951,8 +952,7 @@ function plot_bare_sensors(world, title, readings, sensor_settings)
         ylim         = (world.bounding_box[3]-border, world.bounding_box[4]+border),
         title        = title,
         legend       = :bottomleft)
-    center_point = [(world.bounding_box[1] + world.bounding_box[2])/2., (world.bounding_box[3] + world.bounding_box[4])/2.]
-    plot_sensors!(Pose(center_point, 0.), :black, readings, "sensor readings", sensor_settings)
+    plot_sensors!(Pose(world.center_point, 0.), :black, readings, "sensor readings", sensor_settings)
     return the_plot
 end;
 
@@ -962,11 +962,16 @@ for (t, (pose, readings_low, readings_high)) in enumerate(zip(path_integrated, o
     plot_integrated = plot_world(world, "Integrated path")
     plot!(path_integrated[1:t]; color=:green, label="path from integrating controls")
     plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, sensor_settings)
+    plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
     plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, sensor_settings)
-    the_frame = plot(plot_integrated, plot_low, plot_high; size=(1500,500), layout=grid(1,4), plot_title="Data available to robot")
+    plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
+    the_frame = plot(plot_integrated, plot_low, plot_high; size=(1500,500), layout=grid(1,3), plot_title="<— Data available to robot —>")
     frame(ani, the_frame)
 end
 gif(ani, "imgs/robot_can_see.gif", fps=2)
+
+# %% [markdown]
+# Because the actual path deviates from the idealized integrated path, and the sensors are noisy, ***these data do not cohere***, and it is the robot's task to resolve this discrepancy by proposing a better guess of a path.
 
 # %% [markdown]
 # ## Inference: main idea
