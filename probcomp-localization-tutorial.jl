@@ -977,9 +977,6 @@ end
 gif(ani, "imgs/robot_can_see.gif", fps=2)
 
 # %% [markdown]
-# Because the actual path deviates from the idealized integrated path, and the sensors are noisy, ***these data do not cohere***, and it is the robot's task to resolve this discrepancy by proposing a better guess of a path.
-
-# %% [markdown]
 # ## Why we need inference
 #
 # The path obtained by integrating the controls serves as a proposal for the true path, but it is unsatisfactory, especially in the high motion deviation case.  The picture gives an intuitive sense of the fit:
