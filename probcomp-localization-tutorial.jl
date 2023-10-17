@@ -924,7 +924,7 @@ frames_low = frames_from_full_trace(world, "Low motion deviation", trace_low_dev
 frames_high = frames_from_full_trace(world, "High motion deviation", trace_high_deviation)
 ani = Animation()
 for (low, high) in zip(frames_low, frames_high)
-    frame_plot = plot(low, high; size=(1000,500), plot_title="Synthetic data")
+    frame_plot = plot(low, high; size=(1000,500), plot_title="Fixed synthetic data")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/the_data.gif", fps=2)
@@ -945,7 +945,7 @@ observations_high_deviation = [[trace_high_deviation[prefix_address(i, :sensor =
 # We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.
 
 # %%
-function plot_bare_sensors(world, title, readings, sensor_settings)
+function plot_bare_sensors(world, title, readings, label, sensor_settings)
     border = world.box_size * (3.)/19.
     the_plot = plot(
         size         = (500, 500),
@@ -955,7 +955,7 @@ function plot_bare_sensors(world, title, readings, sensor_settings)
         ylim         = (world.bounding_box[3]-border, world.bounding_box[4]+border),
         title        = title,
         legend       = :bottomleft)
-    plot_sensors!(Pose(world.center_point, 0.), :black, readings, "sensor readings", sensor_settings)
+    plot_sensors!(Pose(world.center_point, 0.), :black, readings, label, sensor_settings)
     return the_plot
 end;
 
@@ -967,9 +967,9 @@ for (t, (pose, readings_low, readings_high)) in enumerate(zip(path_integrated, o
     plot_integrated = plot_world(world, "Startup data")
     plot!(path_integrated[1]; color=:green, label="start guess")
     if t > 1; annotate!(5, 2.5, "Control $(t-1):\n$(short_control(robot_inputs.controls[t-1]))") end
-    plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, sensor_settings)
+    plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, "fixed sensor data", sensor_settings)
     plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
-    plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, sensor_settings)
+    plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, "fixed sensor data", sensor_settings)
     plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
     the_frame = plot(plot_integrated, plot_low, plot_high; size=(1500,500), layout=grid(1,3), plot_title="<— Data available to robot —>")
     frame(ani, the_frame)
