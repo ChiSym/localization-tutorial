@@ -982,24 +982,30 @@ gif(ani, "imgs/robot_can_see.gif", fps=2)
 # %% [markdown]
 # ## Why we need inference
 #
-# The path obtained by integrating the controls serves as a proposal for the true path, but it is unsatisfactory, especially in the high motion deviation case.  One can see intuitively in the picture that the sensor measurements do not fit the walls very well:
+# The path obtained by integrating the controls serves as a proposal for the true path, but it is unsatisfactory, especially in the high motion deviation case.  The picture gives an intuitive sense of the fit:
 
 # %%
 ani = Animation()
-for (t, (pose, readings_low, readings_high)) in enumerate(zip(path_integrated, observations_low_deviation, observations_high_deviation))
-    plot_integrated = plot_world(world, "Integrated path")
-    plot!(path_integrated[1:t]; color=:green, label="path from integrating controls")
-    plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, sensor_settings)
-    plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
-    plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, sensor_settings)
-    plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
-    the_frame = plot(plot_integrated, plot_low, plot_high; size=(1500,500), layout=grid(1,3), plot_title="<— Data available to robot —>")
-    frame(ani, the_frame)
+for (pose, readings_low, readings_high) in zip(path_integrated, observations_low_deviation, observations_high_deviation)
+    low_plot = frame_from_sensors(
+        world, "Low motion deviation",
+        path_integrated, :green2, "path from integrating controls",
+        pose, readings_low, "fixed sensor data",
+        sensor_settings)
+    high_plot = frame_from_sensors(
+        world, "High motion deviation",
+        path_integrated, :green2, "path from integrating controls",
+        pose, readings_high, "fixed sensor data",
+        sensor_settings)
+    frame_plot = plot(low_plot, high_plot; size=(1000,500), plot_title="Integrated path as explanation of sensor data")
+    frame(ani, frame_plot)
 end
-gif(ani, "imgs/robot_can_see.gif", fps=2)
+gif(ani, "imgs/need.gif", fps=1)
 
 # %% [markdown]
-# But it produces atypical likelihoods when the true motion noise is high.
+# It would seem that the fit is reasonable in low motion deviation, but really breaks down in high motion deviation.
+#
+# We are not limited to intuitive judgments here: the model can quantitatively tell us how good a fit it is for the data.  The idea is to compare the likelihood of the data under the model to the distribution of likelihoods of data under typical samples from the model.
 
 # %% [markdown]
 # ## Inference: main idea
