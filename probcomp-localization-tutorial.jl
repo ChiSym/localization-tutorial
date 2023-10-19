@@ -1005,7 +1005,39 @@ gif(ani, "imgs/need.gif", fps=1)
 # %% [markdown]
 # It would seem that the fit is reasonable in low motion deviation, but really breaks down in high motion deviation.
 #
-# We are not limited to intuitive judgments here: the model can quantitatively tell us how good a fit it is for the data.  The idea is to compare the likelihood of the data under the model to the distribution of likelihoods of data under typical samples from the model.
+# We are not limited to intuitive judgments here: the model can quantitatively tell us how good a fit it is for the data.  Namely, we can compare the likelihood of the data under the model to the distribution of likelihoods of data under typical samples from the model.
+
+# %%
+# Encode sensor readings into choice map.
+
+constraint_from_sensors(t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
+    choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
+constraint_from_sensors(tuple :: Tuple) = constraint_from_sensors(tuple...);
+
+# %%
+N_samples = 200
+
+selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
+traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
+hist_typical = histogram(log_likelihoods; label=nothing, bins=20, title="typical data")
+
+constraints_low_deviation = constraint_from_sensors.(enumerate(observations_low_deviation))
+merged_constraints_low_deviation = reduce(merge, constraints_low_deviation)
+log_likelihoods_low_deviation_data = [generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)[2] for _ in 1:N_samples]
+hist_low_deviation = histogram(log_likelihoods_low_deviation_data; label=nothing, bins=20, title="low dev data")
+
+constraints_high_deviation = constraint_from_sensors.(enumerate(observations_high_deviation))
+merged_constraints_high_deviation = reduce(merge, constraints_high_deviation)
+log_likelihoods_high_deviation_data = [generate(full_model, (T, full_model_args...), merged_constraints_high_deviation)[2] for _ in 1:N_samples]
+hist_high_deviation = histogram(log_likelihoods_high_deviation_data; label=nothing, bins=20, title="high dev data")
+
+the_plot = plot(hist_typical, hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Log likelihood of observations under the model")
+savefig("imgs/likelihoods")
+the_plot
+
+# %% [markdown]
+# Note the differences in scales along the bottom.
 
 # %% [markdown]
 # ## Inference: main idea
@@ -1019,10 +1051,7 @@ gif(ani, "imgs/need.gif", fps=1)
 # %%
 # The code in this cell is the black box!
 
-# Encode sensor reading into choice map.
 
-constraint_from_sensors(cm :: ChoiceMap, t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
-    choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
 
 # Propose a move for MH.
 
