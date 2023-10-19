@@ -1118,19 +1118,24 @@ function frame_from_traces(world, title, path_actual, traces, trace_label; show_
     return the_plot
 end;
 
+# %% [markdown]
+# Here is a visual comparison.
+
 # %%
 N_samples = 10
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", path_low_deviation, traces, "prior samples")
+traces_prior = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+plot_typical = frame_from_traces(world, "Prior on robot paths", path_low_deviation, traces, "prior samples")
 
-constraints_low_deviation = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations_low_deviation)]
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation; N_MH=10, N_particles=10) for _ in 1:N_samples]
+traces_low_deviation = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation; N_MH=10, N_particles=10)[1] for _ in 1:N_samples]
 posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_low_deviation, traces, "posterior samples")
 
 the_plot = plot(prior_plot, posterior_plot; size=(1000,500), plot_title="Low deviation case")
 savefig("imgs/prior_posterior")
 the_plot
+
+# %% [markdown]
+# And here is the comparison with high motion deviation.
 
 # %%
 N_samples = 10
@@ -1138,8 +1143,7 @@ N_samples = 10
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", path_high_deviation, traces, "prior samples")
 
-constraints_high_deviation = [constraint_from_sensors(choicemap(), t, readings) for (t, readings) in enumerate(observations_high_deviation)]
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation; N_MH=10, N_particles=10) for _ in 1:N_samples]
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation; N_MH=10, N_particles=10)[1] for _ in 1:N_samples]
 posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_high_deviation, traces, "posterior samples")
 
 the_plot = plot(prior_plot, posterior_plot, size=(1000,500), plot_title="High deviation case")
