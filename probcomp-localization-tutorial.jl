@@ -650,15 +650,15 @@ Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`
 """
 sensor_angle(sensor_settings :: NamedTuple, j :: Int64) =
-    sensor_settings.fov * (j - sensor_settings.num_angles) / (2. * sensor_settings.num_angles)
+    sensor_settings.fov * (j - (sensor_settings.num_angles - 1) / 2.) / (sensor_settings.num_angles - 1)
 
 """
 Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
 """
 function ideal_sensor(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
-    readings = Vector{Float64}(undef, 2 * sensor_settings.num_angles + 1)
-    for j in 1:(2 * sensor_settings.num_angles + 1)
+    readings = Vector{Float64}(undef, sensor_settings.num_angles)
+    for j in 1:sensor_settings.num_angles
         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
         readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
     end
@@ -688,7 +688,7 @@ function frame_from_sensors(world, title, poses, poses_color, poses_label, pose,
 end;
 
 # %%
-sensor_settings = (fov = 2π*(2/3), num_angles = 20, box_size = world.box_size)
+sensor_settings = (fov = 2π*(2/3), num_angles = 41, box_size = world.box_size)
 
 ani = Animation()
 for pose in path_integrated
@@ -712,7 +712,7 @@ Assumes
 * `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
 """
 @gen function sensor_model(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
-    for j in 1:(2 * sensor_settings.num_angles + 1)
+    for j in 1:sensor_settings.num_angles
         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
         {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
     end
@@ -720,7 +720,7 @@ end
 
 function noisy_sensor(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
     trace = simulate(sensor_model, (pose, walls, sensor_settings))
-    return [trace[j => :distance] for j in 1:(2 * sensor_settings.num_angles + 1)]
+    return [trace[j => :distance] for j in 1:sensor_settings.num_angles]
 end;
 
 # %% [markdown]
@@ -733,9 +733,9 @@ trace = simulate(sensor_model, (robot_inputs.start, world.walls, sensor_settings
 get_selected(get_choices(trace), select((1:5)...))
 
 # %% [markdown]
-# The mathematical picture is as follows.  Given the parameters of a pose $z$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(z, w, \nu)$ over the traces of `sensor_model`.  It samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{2J+1})$, where $J = \nu_\text{num\_angles}$, each $o^{(j)}$ following a certain normal distribution depending on the parameters (notably, distance from the pose to the nearest wall).  Thus the density of $o$ factors into a product of the form
+# The mathematical picture is as follows.  Given the parameters of a pose $z$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(z, w, \nu)$ over the traces of `sensor_model`.  It samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{(J)})$, where $J := \nu_\text{num\_angles}$, each $o^{(j)}$ following a certain normal distribution depending on the parameters (notably, distance from the pose to the nearest wall).  Thus the density of $o$ factors into a product of the form
 # $$
-# P_\text{sensor}(o; z, w, \nu) = \prod\nolimits_{j=1}^{2J+1} P_\text{normal}(o^{(j)}; \ldots).
+# P_\text{sensor}(o; z, w, \nu) = \prod\nolimits_{j=1}^J P_\text{normal}(o^{(j)}; \ldots).
 # $$
 #
 # Visualizing the traces of the model is probably more useful for orientation, so we do this now.
@@ -743,7 +743,7 @@ get_selected(get_choices(trace), select((1:5)...))
 # %%
 # TODO: Add settings/(hyper)params display code.
 function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
-    readings = [trace[j => :distance] for j in 1:(2 * sensor_settings.num_angles + 1)]
+    readings = [trace[j => :distance] for j in 1:sensor_settings.num_angles]
     return frame_from_sensors(world, title, poses, poses_color, poses_label, pose,
                              readings, "trace sensors", get_args(trace)[3];
                              show_clutters=show_clutters)
@@ -836,7 +836,7 @@ function frames_from_full_trace(world, title, trace; show_clutters=false, std_de
     poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
     settings = get_args(trace)[4]
-    sensor_readings = [[trace[prefix_address(t, :sensor => j => :distance)] for j in 1:(2 * settings.sensor_settings.num_angles + 1)] for t in 1:(T+1)]
+    sensor_readings = [[trace[prefix_address(t, :sensor => j => :distance)] for j in 1:settings.sensor_settings.num_angles] for t in 1:(T+1)]
     sensor_settings = get_args(trace)[4].sensor_settings
     plots = Vector{Plots.Plot}(undef, 2*(T+1))
     for t in 1:(T+1)
@@ -938,8 +938,8 @@ path_low_deviation = [trace_low_deviation[prefix_address(i, :pose)] for i in 1:(
 path_high_deviation = [trace_high_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
 
 # ...using these data.
-observations_low_deviation = [[trace_low_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:(2 * sensor_settings.num_angles + 1)] for i in 1:(T+1)]
-observations_high_deviation = [[trace_high_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:(2 * sensor_settings.num_angles + 1)] for i in 1:(T+1)];
+observations_low_deviation = [[trace_low_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:sensor_settings.num_angles] for i in 1:(T+1)]
+observations_high_deviation = [[trace_high_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:sensor_settings.num_angles] for i in 1:(T+1)];
 
 # %% [markdown]
 # We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.
