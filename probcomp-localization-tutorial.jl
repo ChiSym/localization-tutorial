@@ -1099,7 +1099,7 @@ function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particl
     weights = exp.(log_weights .- maximum(log_weights))
     weights = weights ./ sum(weights)
     index = categorical(weights)
-    return traces[index]
+    return traces[index], log_weights[index]
 end;
 
 # %%
