@@ -84,7 +84,7 @@ struct Segment
     dp :: Vector{Float64}
     Segment(p1 :: Vector{Float64}, p2 :: Vector{Float64}) = new(p1, p2, p2-p1)
 end
-Segment(t :: Tuple) = Segment(t...)
+Segment(tuple :: Tuple) = Segment(tuple...)
 Base.show(io :: IO, s :: Segment) = print(io, "Segment($(s.p1), $(s.p2))")
 
 struct Pose
@@ -94,7 +94,7 @@ struct Pose
     Pose(p :: Vector{Float64}, hd :: Float64) = new(p, rem2pi(hd, RoundNearest), [cos(hd), sin(hd)])
 end
 Pose(p :: Vector{Float64}, dp :: Vector{Float64}) = Pose(p, atan(dp[2], dp[1]))
-Pose(t :: Tuple) = Pose(t...)
+Pose(tuple :: Tuple) = Pose(tuple...)
 Base.show(io :: IO, p :: Pose) = print(io, "Pose($(p.p), $(p.hd))")
 
 step_along_pose(p :: Pose, s :: Float64) :: Vector{Float64} = p.p + s * p.dp
@@ -107,7 +107,7 @@ struct Control
     ds  :: Float64
     dhd :: Float64
 end
-Control(t :: Tuple) = Control(t...)
+Control(tuple :: Tuple) = Control(tuple...)
 
 function create_segments(verts :: Vector{Vector{Float64}}; loop_around=false) :: Vector{Segment}
     segs = Segment.(zip(verts[1:end-1], verts[2:end]))
