@@ -1213,9 +1213,8 @@ function basic_SIR(model, args, constraints, N_SIR)
 
     weights = exp.(log_weights .- maximum(log_weights))
     weights = weights ./ sum(weights)
-
     index = categorical(weights)
-    return traces[index], weights[index]
+    return traces[index], log_weights[index]
 end
 
 # This is a generic algorithm, so there is a library version.
