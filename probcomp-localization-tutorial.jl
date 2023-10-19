@@ -404,7 +404,7 @@ get_retval(trace)
 #
 # Finally, the return values of these models are obtained from $\text{trace}$ by reducing $\theta$ modulo $2\pi$, and in the second case applying collision physics (relative to $w$) to the path from $z_\text p$ to $p$.  (We invite the reader to imagine if PropComp required us to compute the marginal density of the return value in the latter case!)
 #
-# Our beliefs about the robot's positions at the times $t$ are encoded in pose-valued random variables $z_t$ for $t=0,\ldots,T$.  These variables have the form $z_t = \text{retval}(\text{trace}_t)$, where $\text{retval}$ is the function that extracts the return value from a trace.  One first posits a random variable $\text{trace}_0 \sim \text{start}(r_0, \nu)$. and then, for each $t=1,\ldots,T$, one posits the random variable $\text{trace}_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$.  Identifying $\text{trace}_t$ with a pair $(p_t, \theta_t)$, we have the following closed forms:
+# Our beliefs about the robot's positions at the times $t$ are encoded in pose-valued random variables $\mathbf z_t$ for $t=0,\ldots,T$ as follows.  One first posits a random variable $\mathbf{trace}_0 \sim \text{start}(r_0, \nu)$, and then, for each $t=1,\ldots,T$, one posits the random variable $\mathbf{trace}_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$.  Finally, one sets $\mathbf z_t = \text{retval}(\mathbf{trace}_t)$, where $\text{retval}$ is the function that extracts the return value from a trace.  For a particular value $\text{trace}_t$ identified with a pair $(p_t, \theta_t)$, we have the following closed form for its density:
 # $$
 # P_\text{init}(\text{trace}_0; r_0, \nu)
 # = P_\text{mvnormal}(p_0; y_0, \nu_\text p^2 I) \cdot P_\text{normal}(\theta_0; \eta_0, \nu_\text{hd}) \\
@@ -472,9 +472,9 @@ get_selected(get_choices(trace), select((prefix_address(t, :pose) for t in 1:6).
 # Moreover, when the source code of a GF applies the `~` operator not to a primitive distribution but to some other generative function, the latter's choice map is included as a subtree rooted at the corresponding node.  That is, the choice map captures the recursive structure of the stochastic locations of the control flow.
 
 # %% [markdown]
-# The corresponding mathematical picture is as follows.  We write $x_{[a:b]} = (x_a, x_{a+1}, \ldots, x_b)$ to gather items $x_t$ into a vector.  Then `path_model` corresponds to a distribution over traces denoted $\text{path}$, and we have a random variable $\text{trace}_{[0:T]} \sim \text{path}(r_{[0:T]}, w, \nu)$.  Here we have identified the trace with a vector $\text{trace}_{[0:T]}$, where $\text{trace}_0 \sim \text{init}(r_0, \nu)$, and $\text{trace}_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$ for each $t=1,\ldots,T$, and each $z_t = \text{retval}(\text{trace}_t)$.  The density of $\text{trace}$ is
+# The corresponding mathematical picture is as follows.  We write $x_{a:b} = (x_a, x_{a+1}, \ldots, x_b)$ to gather items $x_t$ into a vector.  Then `path_model` corresponds to a distribution over traces denoted $\text{path}$, and we have a random variable $\mathbf{trace}_{0:T} \sim \text{path}(r_{0:T}, w, \nu)$.  Here we have identified a trace with a vector where $\text{trace}_0 \sim \text{init}(r_0, \nu)$ and $\text{trace}_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$ for $t=1,\ldots,T$; as before, each $z_t = \text{retval}(\text{trace}_t)$.  The density of a particular sample $\text{trace}_{0:T}$ is
 # $$
-# P_\text{path}(\text{trace}; r_{[0:T]}, w, \nu)
+# P_\text{path}(\text{trace}_{0:T}; r_{0:T}, w, \nu)
 # = P_\text{init}(\text{trace}_0; r_0, \nu) \cdot \prod\nolimits_{t=1}^T P_\text{step}(\text{trace}_t; z_{t-1}, r_t, w, \nu)
 # $$
 # where each term, in turn, factors into a product of two (multivariate) normal densities as described above.
@@ -733,10 +733,11 @@ trace = simulate(sensor_model, (robot_inputs.start, world.walls, sensor_settings
 get_selected(get_choices(trace), select((1:5)...))
 
 # %% [markdown]
-# The mathematical picture is as follows.  Given the parameters of a pose $z$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(z, w, \nu)$ over the traces of `sensor_model`.  It samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{(J)})$, where $J := \nu_\text{num\_angles}$, each $o^{(j)}$ following a certain normal distribution depending on the parameters (notably, distance from the pose to the nearest wall).  Thus the density of $o$ factors into a product of the form
+# The mathematical picture is as follows.  Given the parameters of a pose $z$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(z, w, \nu)$ over the traces of `sensor_model`.  It samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{(J)})$, where $J := \nu_\text{num\_angles}$, each $o^{(j)}$ following a certain normal distribution (depending, notably, on the distance from the pose to the nearest wall).  Thus the density of $o$ factors into a product of the form
 # $$
-# P_\text{sensor}(o; z, w, \nu) = \prod\nolimits_{j=1}^J P_\text{normal}(o^{(j)}; \ldots).
+# P_\text{sensor}(o) = \prod\nolimits_{j=1}^J P_\text{normal}(o^{(j)})
 # $$
+# where we begin a habit of omitting the parameters to distributions that are implied by the code.
 #
 # Visualizing the traces of the model is probably more useful for orientation, so we do this now.
 
@@ -821,11 +822,13 @@ selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t
 get_selected(get_choices(trace), selection)
 
 # %% [markdown]
-# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(\text{trace}_{[0:T]}, o_{[0:T]})$ where $\text{trace}_{[0:T]} \sim \text{path}(\ldots)$ as above, giving rise to $z_{[0:T]}$, and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
-# $$
-# P_\text{full}((\text{trace}_{0:T}, o_{0:T}); \ldots)
-# = P_\text{path}(\text{trace}_{[0:T]}; \ldots) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots).
-# $$
+# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(\text{trace}_{0:T}, o_{0:T})$ where $\text{trace}_{0:T} \sim \text{path}(\ldots)$ as above, giving rise to $z_{0:T}$, and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
+# $$\begin{align*}
+# P_\text{full}(\text{trace}_{0:T}, o_{0:T})
+# &= P_\text{path}(\text{trace}_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
+# &= \big(P_\text{init}(\text{trace}_0)\ P_\text{sensor}(o_0)\big)
+#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(\text{trace}_t)\ P_\text{sensor}(o_t)\big).
+# \end{align*}$$
 #
 # By this point, visualization is essential.
 
