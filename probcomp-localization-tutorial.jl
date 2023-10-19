@@ -581,6 +581,8 @@ end;
 
 # %% [markdown]
 # The models `path_model_loop` and `path_model` have been arranged to produce identically structured traces with the same frequencies and return values, and to correspond to identical distributions over traces in the mathematical picture, thereby yielding the same weights.  They give rise to identical computations under `Gen.simulate`, whereas the new model is sometimes more efficient under `Gen.update`.  Here we illustrate the efficiency gain.
+#
+# (The following cell may need to be rerun to fix a Julia garbage collection artifacts.)
 
 # %%
 N_repeats = 100
