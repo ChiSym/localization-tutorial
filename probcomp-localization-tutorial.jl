@@ -1175,9 +1175,11 @@ savefig("imgs/likelihoods")
 the_plot
 
 # %% [markdown]
-# ## Strategies for inference
+# ## Generic strategies for inference
 #
-# We now spell out some strategies for conditioning the ouputs of our model towards the observed sensor data.  These metaprograms employ the following richer aspects of generative functions.
+# We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.
+#
+# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency becomes possible as we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
 #
 # ### Deeper functionality of GFs
 #
