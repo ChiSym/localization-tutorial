@@ -1154,32 +1154,34 @@ the_plot
 # Numerical comparison
 
 # %%
-N_samples = 200
+# # REPLACE WITH POSTERIOR SAMPLES
 
-selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
-log_likelihoods_typical = [project(simulate(full_model, (T, full_model_args...)), selection) for _ in 1:N_samples]
-hist_typical = histogram(log_likelihoods; label=nothing, bins=20, title="typical data")
+# N_samples = 200
 
-constraints_low_deviation = constraint_from_sensors.(enumerate(observations_low_deviation))
-merged_constraints_low_deviation = reduce(merge, constraints_low_deviation)
-log_likelihoods_low_deviation_data = [generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)[2] for _ in 1:N_samples]
-hist_low_deviation = histogram(log_likelihoods_low_deviation_data; label=nothing, bins=20, title="low dev data")
+# selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
+# log_likelihoods_typical = [project(simulate(full_model, (T, full_model_args...)), selection) for _ in 1:N_samples]
+# hist_typical = histogram(log_likelihoods; label=nothing, bins=20, title="typical data")
 
-constraints_high_deviation = constraint_from_sensors.(enumerate(observations_high_deviation))
-merged_constraints_high_deviation = reduce(merge, constraints_high_deviation)
-log_likelihoods_high_deviation_data = [generate(full_model, (T, full_model_args...), merged_constraints_high_deviation)[2] for _ in 1:N_samples]
-hist_high_deviation = histogram(log_likelihoods_high_deviation_data; label=nothing, bins=20, title="high dev data")
+# constraints_low_deviation = constraint_from_sensors.(enumerate(observations_low_deviation))
+# merged_constraints_low_deviation = reduce(merge, constraints_low_deviation)
+# log_likelihoods_low_deviation_data = [generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)[2] for _ in 1:N_samples]
+# hist_low_deviation = histogram(log_likelihoods_low_deviation_data; label=nothing, bins=20, title="low dev data")
 
-the_plot = plot(hist_typical, hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Log likelihood of observations under the model")
-savefig("imgs/likelihoods")
-the_plot
+# constraints_high_deviation = constraint_from_sensors.(enumerate(observations_high_deviation))
+# merged_constraints_high_deviation = reduce(merge, constraints_high_deviation)
+# log_likelihoods_high_deviation_data = [generate(full_model, (T, full_model_args...), merged_constraints_high_deviation)[2] for _ in 1:N_samples]
+# hist_high_deviation = histogram(log_likelihoods_high_deviation_data; label=nothing, bins=20, title="high dev data")
+
+# the_plot = plot(hist_typical, hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Log likelihood of observations under the model")
+# savefig("imgs/likelihoods")
+# the_plot
 
 # %% [markdown]
 # ## Generic strategies for inference
 #
 # We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.
 #
-# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency becomes possible as we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
+# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency will become possible as we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
 #
 # ### Deeper functionality of GFs
 #
