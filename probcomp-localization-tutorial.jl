@@ -1042,16 +1042,26 @@ the_plot
 # %% [markdown]
 # ## Inference: main idea
 #
-# In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In other words, *generative functions induce distributions on traces*, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
-#
-# There is no free lunch in this game: generic inference recipies are inefficient.  Rather, efficiency becomes possible as we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
-#
-# To picture this, here are the paths produced by the model in aggregate, to get an approximate sense of the prior as a distribution.  Next to it is a similar picture of what the posterior, our goal, looks like.  (The inference process is a *black box* for this moment, and will be approached through the rest of this notebook.)
+# In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In other words, as generative functions induce distributions on traces, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
+
+# %% [markdown]
+# Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
+# $$
+# P_\text{full}(o_{0:T})
+# := \int P_\text{full}(\text{tr}_{0:T}, o_{0:T}) \, d\mathrm{tr}_{0:T}
+#  = \mathbf{E}_{\mathrm{tr}_{0:T} \sim \text{path}}\big[P_\text{full}(\text{tr}_{0:T}, o_{0:T})\big],
+# $$
+# and then the *conditional distribution* has density
+# $$
+# P_\text{full}(\text{trace}_{0:T} | o_{0:T}) := \frac{P_\text{full}(\text{trace}_{0:T}, o_{0:T})}{P_\text{full}(o_{0:T})}.
+# $$
+# The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to the latter distribution.
+
+# %% [markdown]
+# Let's show what we mean with a picture.  The following short code, which we treat as a *black box* for the present purposes, very mildly exploits the model structure to bring the samples much closer to the true path.
 
 # %%
 # The code in this cell is the black box!
-
-
 
 # Propose a move for MH.
 
@@ -1137,32 +1147,6 @@ savefig("imgs/prior_posterior")
 the_plot
 
 # %% [markdown]
-# Mathematically, we describe inference as follows.
-#
-# Recall that our `model_full` generative function defined a probability distribution $P_\text{full}(\textbf{z}_{0:T}, \textbf{o}_{0:T})$.
-#
-# When the robot actually travels through the world, its sensors pick up a collection of measurements $\textbf{o}_{0:T}^*$.
-#
-# The goal of inference is to characterize the _posterior_ probability distribution
-# $
-# P_\text{full}(\textbf{z}_{0:T} | \textbf{o}^*_{0:T})
-# $.
-# This is the probability distribution defined such that
-# $$
-# P_\text{full}(\textbf{z}_{0:T} | \textbf{o}_{0:T}) := \frac{
-#     P_\text{full}(\textbf{z}_{0:T}, \textbf{o}_{0:T})
-# }{
-#     P_\text{full}(\textbf{o}_{0:T})
-# }
-# $$
-#
-# The posterior distribution is a distribution over the space of latent trajectories $\textbf{z}_{0:T}$.  The posterior distribution answers the question: after observing observation sequence $\textbf{o}^*_{0:T}$, what would an optimal agent _believe_ about the latent trajectory?  The answer is: its belief is characterized by the distribution $P_\text{full}(\textbf{z}_{0:T} | \textbf{o}^*_{0:T})$.
-#
-# In the definition of the posterior distribution, we used the term $P_\text{full}(\textbf{o}_{0:T})$.  This is the _marginal distribution over the observations_.  This is defined by
-# $$
-# P_\text{full}(\textbf{o}_{0:T}) := \int P_\text{full}(\textbf{z}_{0:T}, \textbf{o}_{0:T}) d\textbf{z}_{0:T}
-# $$
-# It describes the agent's prior belief about how likely a given observation sequence is to occur, given the controls that are used.
 
 # %% [markdown]
 # ## Strategies for inference
