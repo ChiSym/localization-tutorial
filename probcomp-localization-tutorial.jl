@@ -1023,12 +1023,12 @@ log_likelihoods_typical = [project(trace, selection) for trace in traces_typical
 hist_typical = histogram(log_likelihoods; label=nothing, bins=20, title="typical data")
 
 constraints_low_deviation = constraint_from_sensors.(enumerate(observations_low_deviation))
-merged_constraints_low_deviation = reduce(merge, constraints_low_deviation)
+merged_constraints_low_deviation = merge(constraints_low_deviation...)
 log_likelihoods_low_deviation_data = [generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)[2] for _ in 1:N_samples]
 hist_low_deviation = histogram(log_likelihoods_low_deviation_data; label=nothing, bins=20, title="low dev data")
 
 constraints_high_deviation = constraint_from_sensors.(enumerate(observations_high_deviation))
-merged_constraints_high_deviation = reduce(merge, constraints_high_deviation)
+merged_constraints_high_deviation = merge(constraints_high_deviation...)
 log_likelihoods_high_deviation_data = [generate(full_model, (T, full_model_args...), merged_constraints_high_deviation)[2] for _ in 1:N_samples]
 hist_high_deviation = histogram(log_likelihoods_high_deviation_data; label=nothing, bins=20, title="high dev data")
 
@@ -1246,13 +1246,11 @@ the_plot
 # **Summary:** SIR generates possible samples without considering the observations $\textbf{o}_{0:T}^*$, but attempts to ultimately output a sub-collection of these randomly generated samples which are consistent with the observations.  It does this by computing the weights $w^i$.
 
 # %%
-function basic_SIR(model, args, constraints, N_SIR)
-    constraints_merged = merge(constraints...)
-
+function basic_SIR(model, args, merged_constraints, N_SIR)
     traces = Vector{Trace}(undef, N_SIR)
     log_weights = Vector{Float64}(undef, N_SIR)
     for i in 1:N_SIR
-        traces[i], log_weights[i] = generate(model, args, constraints_merged)
+        traces[i], log_weights[i] = generate(model, args, merged_constraints)
     end
 
     weights = exp.(log_weights .- maximum(log_weights))
@@ -1269,7 +1267,7 @@ end
 # preceding weights.)
 # To obtain the above from the library version, one would define:
 
-basic_SIR_library(model, args, constraints, N_SIR) = importance_resampling(model, args, merge(constraints...), N_SIR);
+basic_SIR_library(model, args, merged_constraints, N_SIR) = importance_resampling(model, args, merged_constraints, N_SIR);
 
 # %% [markdown]
 # Let us first consider a shorter robot path, but, to keep it interesting, allow a higher deviation from the ideal.
@@ -1331,10 +1329,8 @@ the_plot
 # Earlier samples may occur with too high absolute frequency, but over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
 
 # %%
-function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_ITERS)
-    constraints_merged = merge(constraints...)
-    
-    C = (N_burn_in > 0) ? maximum(generate(model, args, constraints_merged)[2] for _ in 1:N_burn_in) : -Inf
+function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_ITERS)
+    C = (N_burn_in > 0) ? maximum(generate(model, args, merged_constraints)[2] for _ in 1:N_burn_in) : -Inf
     println("C set to $C")
 
     n_iters = 0
@@ -1351,7 +1347,7 @@ function rejection_sample(model, args, constraints, N_burn_in, N_particles, MAX_
         while reject && n_iters < MAX_ITERS
             n_iters += 1
             
-            y, w = generate(model, args, constraints_merged)
+            y, w = generate(model, args, merged_constraints)
             
             if w > C
                 reject = false
