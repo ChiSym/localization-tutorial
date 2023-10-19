@@ -1128,10 +1128,10 @@ end;
 # %%
 N_samples = 10
 
-traces_prior = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-plot_typical = frame_from_traces(world, "Prior on robot paths", path_low_deviation, traces, "prior samples")
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", path_low_deviation, traces, "prior samples")
 
-traces_low_deviation = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation; N_MH=10, N_particles=10)[1] for _ in 1:N_samples]
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation; N_MH=10, N_particles=10)[1] for _ in 1:N_samples]
 posterior_plot = frame_from_traces(world, "Posterior on robot paths", path_low_deviation, traces, "posterior samples")
 
 the_plot = plot(prior_plot, posterior_plot; size=(1000,500), plot_title="Low deviation case")
