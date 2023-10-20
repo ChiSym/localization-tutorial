@@ -1096,14 +1096,17 @@ end
 
 # Run PF and return one of its particles.
 
-function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particles = 10)
-    drift_step_factor = 1/3.
-    traces, log_weights = particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, drift_proposal, (drift_step_factor,))
-
+function choose_by_log_weight(items, log_weights)
     weights = exp.(log_weights .- maximum(log_weights))
     weights = weights ./ sum(weights)
     index = categorical(weights)
-    return traces[index], log_weights[index]
+    return items[index], log_weights[index]
+end
+
+function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particles = 10)
+    drift_step_factor = 1/3.
+    traces, log_weights = particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, drift_proposal, (drift_step_factor,))
+    return choose_by_log_weight(traces, log_weights)
 end;
 
 # %%
@@ -1255,11 +1258,7 @@ function basic_SIR(model, args, merged_constraints, N_SIR)
     for i in 1:N_SIR
         traces[i], log_weights[i] = generate(model, args, merged_constraints)
     end
-
-    weights = exp.(log_weights .- maximum(log_weights))
-    weights = weights ./ sum(weights)
-    index = categorical(weights)
-    return traces[index], log_weights[index]
+    return choose_by_log_weight(traces, log_weight)
 end
 
 # This is a generic algorithm, so there is a library version.
