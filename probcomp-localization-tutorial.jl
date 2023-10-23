@@ -1658,7 +1658,7 @@ function particle_filter_grid_rejuv_with_checkpoints(model, T, args, constraints
     # end
     
     for t in 1:T
-        t % 5 == 0 && @info "t = $t"
+        # t % 5 == 0 && @info "t = $t"
 
         lnormwts = log_weights .- logsumexp(log_weights)
         if Gen.effective_sample_size(lnormwts) < 1 + N_particles / 10
@@ -1856,9 +1856,9 @@ function particle_filter_grid_smcp3_with_checkpoints(model, T, args, constraints
     push!(checkpoints, (get_path.(traces), copy(log_weights)))
 
     for t in 1:T
-        if t % 5 == 1
-            @info "t = $t"
-        end
+        # if t % 5 == 1
+        #     @info "t = $t"
+        # end
 
         lnormwts = log_weights .- logsumexp(log_weights)
         if Gen.effective_sample_size(lnormwts) < 1 + N_particles/10
@@ -2105,9 +2105,9 @@ function controlled_particle_filter_with_checkpoints(model, T, args, constraints
 
     n_rejuv = 0
     for t in 1:T
-        if t % 5 == 0
-            @info "t = $t"
-        end
+        # if t % 5 == 0
+        #     @info "t = $t"
+        # end
 
         lnormwts = log_weights .- logsumexp(log_weights)
         if Gen.effective_sample_size(lnormwts) < 1 + N_particles / 10
@@ -2185,9 +2185,9 @@ function controlled_particle_filter_with_checkpoints_v2(model, T, args, constrai
 
     n_rejuv = 0
     for t in 1:T
-        if t % 5 == 0
-            @info "t = $t"
-        end
+        # if t % 5 == 0
+        #     @info "t = $t"
+        # end
 
         lnormwts = log_weights .- logsumexp(log_weights)
         if Gen.effective_sample_size(lnormwts) < 1 + N_particles / 10
