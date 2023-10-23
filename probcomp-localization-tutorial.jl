@@ -579,7 +579,7 @@ end;
 # %% [markdown]
 # The models `path_model_loop` and `path_model` have been arranged to produce identically structured traces with the same frequencies and return values, and to correspond to identical distributions over traces in the mathematical picture, thereby yielding the same weights.  They give rise to identical computations under `Gen.simulate`, whereas the new model is sometimes more efficient under `Gen.update`.  Here we illustrate the efficiency gain.
 #
-# (The following cell may need to be rerun to fix a Julia garbage collection artifacts.)
+# (The following cell may need to be rerun to fix Julia garbage collection artifacts.)
 
 # %%
 N_repeats = 100
@@ -971,10 +971,13 @@ for (t, (pose, readings_low, readings_high)) in enumerate(zip(path_integrated, o
     plot_integrated = plot_world(world, "Startup data")
     plot!(path_integrated[1]; color=:green, label="start guess")
     if t > 1; annotate!(5, 2.5, "Control $(t-1):\n$(short_control(robot_inputs.controls[t-1]))") end
+
     plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, "fixed sensor data", sensor_settings)
     plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
+
     plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, "fixed sensor data", sensor_settings)
     plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
+
     the_frame = plot(plot_integrated, plot_low, plot_high; size=(1500,500), layout=grid(1,3), plot_title="<— Data available to robot —>")
     frame(ani, the_frame)
 end
