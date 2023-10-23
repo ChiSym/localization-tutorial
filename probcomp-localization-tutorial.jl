@@ -1090,7 +1090,7 @@ the_plot
     new_hd = {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
 
     # Form expected by `mh_step`, further below.
-    return (choicemap((prefix_address(t, :pose => :p), new_p), (prefix_address(t, :pose => :hd), new_hd))
+    return (choicemap((prefix_address(t, :pose => :p), new_p), (prefix_address(t, :pose => :hd), new_hd)),
             choicemap((prefix_address(t, :pose => :p), p), (prefix_address(t, :pose => :hd), hd)))
 end
 
