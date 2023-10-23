@@ -1860,7 +1860,7 @@ t1 = now()
 checkpointss =
     [particle_filter_grid_rejuv_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-       full_model, T, full_model_args, constraints, N_particles, grid_schedule)
+       full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = now()
 
@@ -1873,7 +1873,7 @@ for checkpoints in checkpointss
 end
 merged_weight_list = merged_weight_list .- log(length(checkpointss))
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF + Grid MH Rejuv", path_actual, merged_traj_list, merged_weight_list)
+frame_from_weighted_trajectories(world, "PF + Grid MH Rejuv", path_low_deviation, merged_traj_list, merged_weight_list)
 
 # %% [markdown]
 # This is just a first step.  We'll improve it below by improving the quality of the particle weights (and, in turn, the resampling).
