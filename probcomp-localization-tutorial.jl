@@ -943,7 +943,7 @@ path_high_deviation = get_path(trace_high_deviation)
 
 # ...using these data.
 observations_low_deviation = get_sensors(trace_low_deviation)
-observations_high_deviation = get_sensors(trace_high_deviation)
+observations_high_deviation = get_sensors(trace_high_deviation);
 
 # %% [markdown]
 # We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.
