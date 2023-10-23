@@ -1139,10 +1139,10 @@ N_samples = 10
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, traces, "prior samples")
 
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation; N_MH=10, N_particles=10)[1] for _ in 1:N_samples]
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation)[1] for _ in 1:N_samples]
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, traces, "posterior samples")
 
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation; N_MH=10, N_particles=10)[1] for _ in 1:N_samples]
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation)[1] for _ in 1:N_samples]
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, traces, "posterior samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. posteriors")
