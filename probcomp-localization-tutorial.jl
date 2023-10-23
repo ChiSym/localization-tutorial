@@ -1082,8 +1082,13 @@ the_plot
     p = trace[prefix_address(t, :pose => :p)]
     hd = trace[prefix_address(t, :pose => :hd)]
 
-    {prefix_address(t, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
-    {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
+    # Form expected by `mh` in library code, immediately following.
+    new_p = {prefix_address(t, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
+    new_hd = {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
+
+    # Form expected by `mh_step`, further below.
+    return (choicemap((prefix_address(t, :pose => :p), new_p), (prefix_address(t, :pose => :hd), new_hd))
+            choicemap((prefix_address(t, :pose => :p), p), (prefix_address(t, :pose => :hd), hd)))
 end
 
 # PF with rejuvenation, using `GenParticleFilters` library code for the generic parts.
@@ -1419,6 +1424,184 @@ savefig("imgs/SIR")
 the_plot
 
 # %% [markdown]
+# ## Sequential Monte Carlo (SMC) techniques
+#
+# We now begin to exploit the structure of the problem in significant ways to construct good candidate traces for the posterior.  Especially, we use the Markov chain structure to construct these traces step-by-step.  While generic algorithms like SIR and rejection sampling must first construct full paths $\text{trace}_{0:T}$ and then sift among them using the observations $o_{0:T}$, we may instead generate one $\text{trace}_t$ at a time, taking into account the datum $o_t$.  Since then one is working with only a few dimensions any one time step, more intelligent searches become computationally feasible.
+
+# %% [markdown]
+# ### Particle filter
+#
+# One of the simplest manifestations of the preceding strategy is called a particle filter, which, roughly speaking, looks like a kind of incremental SIR.  One constructs a population of traces in parallel; upon constructing each new step of the traces, one assesses how well they fit the data, discarding the worse ones and keeping more copies of the better ones.
+#
+# More precisely:
+#
+# In the initial step, we draw $N$ samples $\text{trace}_0^1, \text{trace}_0^2, \ldots, \text{trace}_0^N$ from the distribution $\text{start}$, which we call *particles*, and we *resample* them as follows.  Each particle is assigned a *weight*
+# $$
+# w_0^i := \frac{P_\text{full}(\text{trace}_{0:0}, o_{0:0})}{P_\text{path}(\text{trace}_{0:0})},
+# $$
+# and the normalized weights $\hat w_0^i := w_0^i / \sum_{j=1}^n w_0^j$ define a categorical distribution on indices $i = 1, \ldots, N$.  For each index $i$, sample a new index $a^i$ accordingly.  Then replace the above list of particles with the reindexed list $\text{trace}_0^{a^1}, \text{trace}_0^{a^2}, \ldots \text{trace}_0^{a^N}$.
+#
+# Now for the iterative step.  Suppose we have constructed particles $\text{trace}_{0:t-1}^i$ for $i = 1,\ldots,N$.  Extend each particle $\text{trace}_{0:t-1}^i$ to a particle of the form $\text{trace}_{0:t}^i$ by drawing a sample $\text{trace}_t^i$ from $\text{step}(z_{t-1}^i, \ldots)$.  Resample them in the following similar manner.  Compute weights
+# $$
+# w_t^i := \frac{P_\text{full}(\text{trace}_{0:t}, o_{0:t})}{P_\text{path}(\text{trace}_{0:t})},
+# $$
+# whose renormalized forms $\hat w_t^i$ give a categorical distribution on indices.  Sample new indices $a^i$, then replace the $\text{trace}_{0:t}^i$ with the $\text{trace}_{0:t}^{a^i}$.
+
+# %% [markdown]
+# WHY DOES `Gen.generate` GIVE THE SAME WEIGHTS AS ABOVE?
+#
+# EFFECTIVE SAMPLE SIZE?!
+
+# %%
+function resample!(items, log_weights, target)
+    weights = exp.(log_weights .- maximum(log_weights))
+    weights = weights ./ sum(weights)
+    for i in 1:length(items)
+        target[i] = items[categorical(weights)]
+    end
+    return target, items
+end
+
+function particle_filter(model, T, args, constraints, N_particles)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    resample_traces = Vector{Trace}(undef, N_particles)
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    traces, resample_traces = resample!(traces, log_weights, resample_traces)
+    
+    for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weights[i], _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+        end
+        traces, resample_traces = resample!(traces, log_weights, resample_traces)
+    end
+
+    return traces, log_weights
+end
+;
+# # Alternatively, using library calls: `particle_filter_rejuv_library` from the black box above!
+
+# %% [markdown]
+# Pictures and discussion of the drawbacks.
+
+# %% [markdown]
+# ### MCMC rejuvenation
+#
+# Two issues: particle diversity after resampling, and quality of these samples.
+
+# %%
+function mh_step(trace, MH_proposal, MH_proposal_args)
+    _, fwd_MH_weight, (fwd_model_update, bwd_MH_choice) = propose(grid_proposal, (trace, MH_proposal_args...))
+    new_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
+    bwd_MH_weight, _ = assess(MH_proposal, (new_trace, MH_proposal_args...), bwd_MH_choice)
+    return (log(rand()) < model_weight_diff - fwd_MH_weight + bwd_MH_weight) ? new_trace : trace
+end;
+
+# %% [markdown]
+# Then PF+Rejuv code.
+
+# %%
+# Alternatively, using library calls: `particle_filter_rejuv_library` from the
+# black box above performs exactly this algorithm!
+
+function particle_filter_MH_rejuv(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    resample_traces = Vector{Trace}(undef, N_particles)
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    
+    traces, resample_traces = resample!(traces, log_weights, resample_traces)
+
+    for i in 1:N_particles
+        for _ = 1:N_MH
+            traces[i] = mh_step(traces[i], MH_proposal, MH_proposal_args)
+        end
+    end
+        
+    for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weights[i], _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+        end
+
+        traces, resample_traces = resample!(traces, log_weights, resample_traces)
+
+        for i in 1:N_particles
+            for _ = 1:N_MH
+                traces[i] = mh_step(traces[i], MH_proposal, MH_proposal_args)
+            end
+        end
+    end
+
+    return traces, log_weights
+end;
+
+# %% [markdown]
+# More exploration with drift proposal?
+
+# %% [markdown]
+# ### Grid proposal for MH
+#
+# Instead of a random walk strategy to improve next steps, the search space is small enough that we very well could search a small nearby area for improvement.
+
+# %%
+"""
+    vs = vector_grid(v0, k, r)
+
+Returns grid of vectors, given a grid center, number of grid points
+along each dimension and the resolution along each dimension.
+"""
+function vector_grid(v0::Vector{Float64}, k::Vector{Int}, r::Vector{Float64})
+    offset = v0 - (r + k.*r)/2
+    return map(I -> [Tuple(I)...].*r + offset, CartesianIndices(Tuple(k)))
+end
+
+function grid_index(x, v0, k, r)
+    offset = v0 - (r + k.*r)/2
+    I = Int.(floor.((x .+ r./2 .- offset)./r))
+    return LinearIndices(Tuple(k))[I...]
+end
+
+@gen function grid_proposal(
+        tr,
+        n_steps, # (n_x_steps, n_y_steps, n_hd_steps),
+        step_sizes # (x_step_size, y_step_size, hd_step_size)
+    )
+    t = get_args(tr)[1] + 1
+
+    p_noise = get_args(tr)[4].motion_settings.p_noise
+    hd_noise = get_args(tr)[4].motion_settings.hd_noise
+
+    p = tr[prefix_address(t, :pose => :p)]
+    hd = tr[prefix_address(t, :pose => :hd)]
+
+    pose_grid = reshape(vector_grid([p..., hd], n_steps, step_sizes), (:,))
+    
+    # Collection of choicemaps which would update the trace to have each pose
+    # in the grid
+    chmap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]),
+                            (prefix_address(t, :pose => :hd), h))
+                  for (x, y, h) in pose_grid]
+    
+    # Get the score under the model for each grid point
+    pose_scores = [Gen.update(tr, ch)[2] for ch in chmap_grid]
+        
+    pose_probs = exp.(pose_scores .- logsumexp(pose_scores))
+    j ~ categorical(pose_probs)
+    new_p = pose_grid[j][1:2]
+    new_hd = pose_grid[j][3]
+
+    inverting_j = grid_index([p..., hd], [new_p..., new_hd], n_steps, step_sizes)
+
+    return (chmap_grid[j], choicemap((:j, inverting_j)))
+end;
+
+# %% [markdown]
 # # Particle filter with MCMC Rejuvenation
 #
 # However, it is possible to use Gen to write more sophisticated inference algorithms which scale much better in the path lengths.
@@ -1512,75 +1695,23 @@ the_plot
 # ## Grid Rejuvenation via MH
 
 # %%
-### UTILS for gridding
-
-function sortperm_them!(vals, vecs...)
-    perm = sortperm(vals)
-    id   = 1:length(vals)
-    for v in [vals, vecs...]
-        v[id] = v[perm]
-    end
-end;
-
-argdiffs(bs::Array{T,1}) where T <: Real = Tuple(map(b -> Bool(b) ? UnknownChange() : NoChange(), bs));
-
 """
-Discretize into bins of diameter r, bin-centers lie 
-at `z - k*r` for intergers `k`.
-"""
-quantize(x, r; zero=0) = Int.(floor.((x .+ r./2 .- zero)./r))
+    vs = vector_grid(v0, k, r)
 
-"""
-    get_offset(v0, k, r)
-
-Computes the offset to move the center 
-of the grid to `v0`.
-"""
-function get_offset(v0, k, r)
-    center = (r + k.*r)/2
-    return v0 - center
-end
-
-function first_grid_vec(v0::Vector{Real}, k::Vector{Int}, r::Vector{Real})
-    return r + get_offset(v0, k, r) 
-end
-
-"""
-    vs, ls = vector_grid(v0, k, r)
-
-Returns grid of vectors and their linear indices, given 
-a grid center, numnber of grid points along each dimension and
-the resolution along each dimension.
+Returns grid of vectors, given a grid center, number of grid points
+along each dimension and the resolution along each dimension.
 """
 function vector_grid(v0::Vector{Float64}, k::Vector{Int}, r::Vector{Float64})
-    # Todo: Does it make sense to get a CUDA version of this?
-    offset = get_offset(v0, k, r)
-    
-    shape = Tuple(k)
-    cs = CartesianIndices(shape)
-    ls = LinearIndices(shape)
-    vs = map(I -> [Tuple(I)...].*r + offset, cs);
-    return (vs=vs, linear_indices=ls)
+    offset = v0 - (r + k.*r)/2
+    return map(I -> [Tuple(I)...].*r + offset, CartesianIndices(Tuple(k)))
 end
 
-function grid_index(x, v0, k, r; linear=false)
-    I = quantize(x, r, zero=get_offset(v0, k, r));
-    if linear
-        if any(map(x -> x == 0, I))
-            println("I = $I")
-        end
-        try
-            shape = Tuple(k)
-            I = LinearIndices(shape)[I...]
-        catch e
-            println("I = $I ; k = $k")
-            error(e)
-        end
-    end
-    return I
-end;
+function grid_index(x, v0, k, r)
+    offset = v0 - (r + k.*r)/2
+    I = Int.(floor.((x .+ r./2 .- offset)./r))
+    return LinearIndices(Tuple(k))[I...]
+end
 
-# %%
 @gen function grid_proposal(
         tr,
         n_steps, # (n_x_steps, n_y_steps, n_hd_steps),
@@ -1594,7 +1725,7 @@ end;
     p = tr[prefix_address(t, :pose => :p)]
     hd = tr[prefix_address(t, :pose => :hd)]
 
-    pose_grid = reshape(vector_grid([p..., hd], n_steps, step_sizes).vs, (:,))
+    pose_grid = reshape(vector_grid([p..., hd], n_steps, step_sizes), (:,))
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
@@ -1610,9 +1741,9 @@ end;
     new_p = pose_grid[j][1:2]
     new_hd = pose_grid[j][3]
 
-    inverting_j = grid_index([p..., hd], [new_p..., new_hd], n_steps, step_sizes; linear=true)
+    inverting_j = grid_index([p..., hd], [new_p..., new_hd], n_steps, step_sizes)
 
-    return (j, chmap_grid[j], inverting_j)
+    return (chmap_grid[j], choicemap((:j, inverting_j)))
 end;
 
 # %%
@@ -1761,7 +1892,7 @@ frame_from_weighted_trajectories(world, "PF + Grid MH Rejuv", path_actual, merge
     p = tr[prefix_address(t, :pose => :p)]
     hd = tr[prefix_address(t, :pose => :hd)]
 
-    pose_grid = reshape(vector_grid([p..., hd], n_steps, step_sizes).vs, (:,))
+    pose_grid = reshape(vector_grid([p..., hd], n_steps, step_sizes), (:,))
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
@@ -1777,7 +1908,7 @@ frame_from_weighted_trajectories(world, "PF + Grid MH Rejuv", path_actual, merge
     new_p = pose_grid[j][1:2]
     new_hd = pose_grid[j][3]
 
-    inverting_j = grid_index([p..., hd], [new_p..., new_hd], n_steps, step_sizes; linear=true)
+    inverting_j = grid_index([p..., hd], [new_p..., new_hd], n_steps, step_sizes)
 
     return (j, chmap_grid[j], inverting_j)
 end
@@ -1792,7 +1923,7 @@ end
     new_p = updated_tr[prefix_address(t, :pose => :p)]
     new_hd = updated_tr[prefix_address(t, :pose => :hd)]
 
-    pose_grid = reshape(vector_grid([new_p..., new_hd], n_steps, step_sizes).vs, (:,))
+    pose_grid = reshape(vector_grid([new_p..., new_hd], n_steps, step_sizes), (:,))
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
@@ -1821,7 +1952,7 @@ end
     old_p = pose_grid[j][1:2]
     old_hd = pose_grid[j][3]
 
-    inverting_j = grid_index([new_p..., new_hd], [old_p..., old_hd], n_steps, step_sizes; linear=true)
+    inverting_j = grid_index([new_p..., new_hd], [old_p..., old_hd], n_steps, step_sizes)
 
     return (j, chmap_grid[j], inverting_j)
 end;
