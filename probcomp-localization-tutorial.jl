@@ -1326,17 +1326,11 @@ the_plot
 # %%
 function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_ITERS)
     C = (N_burn_in > 0) ? maximum(generate(model, args, merged_constraints)[2] for _ in 1:N_burn_in) : -Inf
-    println("C set to $C")
 
     n_iters = 0
 
     particles = []
     for i in 1:N_particles
-        
-        # Uncomment this for more information about the algorithm's
-        # progression:
-        # println("Particle $i ; n_iters = $n_iters | C = $C")
-        
         reject = true
         compute = 0
         while reject && n_iters < MAX_ITERS
