@@ -1090,10 +1090,12 @@ end
 
 function particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
     state = pf_initialize(model, (0, args...), constraints[1], N_particles)
+    pf_resample!(state)
+    pf_rejuvenate!(state, mh, (MH_proposal, MH_proposal_args), N_MH)
     for t in 1:T
+        pf_update!(state, (t, args...), (UnknownChange(),), constraints[t+1])
         pf_resample!(state)
         pf_rejuvenate!(state, mh, (MH_proposal, MH_proposal_args), N_MH)
-        pf_update!(state, (t, args...), (UnknownChange(),), constraints[t+1])
     end
     return state.traces, state.log_weights
 end
