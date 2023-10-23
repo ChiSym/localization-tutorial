@@ -1401,7 +1401,7 @@ gif(ani, "imgs/RS.gif", fps=1)
 # The runtime of this algorithm varies wildly! 
 
 # %% [markdown]
-# ## SIR and Adaptive Rejection Sampling scale poorly
+# ### SIR and Adaptive Rejection Sampling scale poorly
 #
 # SIR does not scale because for longer paths, the search space is too large, and the results are only modestly closer to the posterior.
 #
