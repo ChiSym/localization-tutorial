@@ -805,7 +805,12 @@ Assumes
 @gen (static) function full_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
     initial ~ full_model_initial(robot_inputs, world_inputs.walls, full_settings)
     steps ~ full_model_chain(T, initial, robot_inputs, world_inputs, full_settings)
-end;
+end
+
+get_sensors(trace) =
+    [[trace[prefix_address(t, :sensor => j => :distance)]
+      for j in 1:get_args(trace)[4].sensor_settings.num_angles]
+     for t in 1:(get_args(trace)[1]+1)];
 
 # %% [markdown]
 # Again, the trace of the full model contains many choices, so we just show a subset of them: the initial pose plus 2 timesteps, and 5 sensor readings from each.
@@ -836,8 +841,7 @@ function frames_from_full_trace(world, title, trace; show_clutters=false, std_de
     poses = get_path(trace)
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
     settings = get_args(trace)[4]
-    sensor_readings = [[trace[prefix_address(t, :sensor => j => :distance)] for j in 1:settings.sensor_settings.num_angles] for t in 1:(T+1)]
-    sensor_settings = get_args(trace)[4].sensor_settings
+    sensor_readings = get_sensors(trace)
     plots = Vector{Plots.Plot}(undef, 2*(T+1))
     for t in 1:(T+1)
         frame_plot = plot_world(world, title; show_clutters=show_clutters)
@@ -851,7 +855,7 @@ function frames_from_full_trace(world, title, trace; show_clutters=false, std_de
             world, title,
             poses[1:t], :black, nothing,
             poses[t], sensor_readings[t], nothing,
-            sensor_settings; show_clutters=show_clutters)
+            settings.sensor_settings; show_clutters=show_clutters)
     end
     return plots
 end;
@@ -938,8 +942,8 @@ path_low_deviation = get_path(trace_low_deviation)
 path_high_deviation = get_path(trace_high_deviation)
 
 # ...using these data.
-observations_low_deviation = [[trace_low_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:sensor_settings.num_angles] for i in 1:(T+1)]
-observations_high_deviation = [[trace_high_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:sensor_settings.num_angles] for i in 1:(T+1)];
+observations_low_deviation = get_sensors(trace_low_deviation)
+observations_high_deviation = get_sensors(trace_high_deviation)
 
 # %% [markdown]
 # We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.
