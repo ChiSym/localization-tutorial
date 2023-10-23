@@ -1015,6 +1015,11 @@ constraint_from_sensors(t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
     choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
 constraint_from_sensors(tuple :: Tuple) = constraint_from_sensors(tuple...);
 
+# %% [markdown]
+# WE FIRST USE `Gen.generate` HERE:
+#
+# CHECK that `generate` samples a path according to `path`, then extends to a full trace by adjoining the observations, so one gets a comparable distribution..
+
 # %%
 N_samples = 200
 
