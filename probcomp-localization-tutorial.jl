@@ -1915,7 +1915,7 @@ for checkpoints in checkpointss2
     merged_traj_list2 = [merged_traj_list2..., trajs...]
     merged_weight_list2 = [merged_weight_list2..., lwts...]
 end
-merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2));
+merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv", path_actual, merged_traj_list2, merged_weight_list2)
@@ -1967,7 +1967,7 @@ for checkpoints in checkpointss4
     merged_traj_list4 = [merged_traj_list4..., trajs...]
     merged_weight_list4 = [merged_weight_list4..., lwts...]
 end
-merged_weight_list4 = merged_weight_list4 .- log(length(checkpointss4));
+merged_weight_list4 = merged_weight_list4 .- log(length(checkpointss4))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion noise", path_actual_low_deviation, merged_traj_list4, merged_weight_list4)
@@ -2017,7 +2017,7 @@ for checkpoints in checkpointss5
     merged_traj_list5 = [merged_traj_list5..., trajs...]
     merged_weight_list5 = [merged_weight_list5..., lwts...]
 end
-merged_weight_list5 = merged_weight_list5 .- log(length(checkpointss5));
+merged_weight_list5 = merged_weight_list5 .- log(length(checkpointss5))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "PF - motion noise:(model:low)(data:high)", path_actual_high_deviation, merged_traj_list5, merged_weight_list5)
@@ -2044,7 +2044,7 @@ for checkpoints in checkpointss6
     merged_traj_list6 = [merged_traj_list6..., trajs...]
     merged_weight_list6 = [merged_weight_list6..., lwts...]
 end
-merged_weight_list6 = merged_weight_list6 .- log(length(checkpointss6));
+merged_weight_list6 = merged_weight_list6 .- log(length(checkpointss6))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "PF - motion noise:(model:high)(data:high)", path_actual_high_deviation, merged_traj_list6, merged_weight_list6)
@@ -2076,7 +2076,7 @@ for checkpoints in checkpointss7
     merged_traj_list7 = [merged_traj_list7..., trajs...]
     merged_weight_list7 = [merged_weight_list7..., lwts...]
 end
-merged_weight_list7 = merged_weight_list7 .- log(length(checkpointss7));
+merged_weight_list7 = merged_weight_list7 .- log(length(checkpointss7))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv - motion noise:high", path_actual_high_deviation, merged_traj_list7, merged_weight_list7)
