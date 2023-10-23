@@ -18,15 +18,24 @@
 # %% [markdown]
 # # TODO
 #
+# * Explanation of `Gen.generate`, what frequencies/weights to expect, and why they are correct ones to use in context.
+# * How much detail to step into SMC:
+#   * bare PF
+#   * ESS
+#   * rejuv MH/drift
+#   * rejuv MH/grid
+#   * rejuv SMCP3
+#   * ...
+#
 # * "Score" versus "weight" versus...?!
 #
 # * Not just a graph of slower (un-Unfold) loop, but perhaps debugging statements showing the reexectution.
 #   * Julia @debug macro not compatible with static DSL!
+#
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
 # * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
 # * label all (hyper)parameters in visualizations
 # * fix docstrings, image filenames
-# * Consolidate (3?) MH proposals.  PF w/o Rejuv.  Consolidate PF+MH-Rejuvs.  PF+SMCP3-Rejuv.  Else?
 # * Hierarchical (sensor) model?
 #
 # Rif comments:
