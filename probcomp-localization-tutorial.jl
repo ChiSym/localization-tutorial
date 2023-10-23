@@ -1161,7 +1161,7 @@ the_plot
 # Numerical comparison
 
 # %%
-N_samples = 200
+N_samples = 100
 
 selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
 traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
