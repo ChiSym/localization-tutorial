@@ -456,8 +456,8 @@ Assumes
     end
 end
 
-# Handle asymmetry in the trace address structures.
-prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest);
+prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
+get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
 
 # %% [markdown]
 # A trace of `path_model_loop` is more interesting than the ones for `start_pose_prior` and `step_model`.  Let's take a look.  (To reduce notebook clutter, we just show the start pose plus the initial 5 timesteps.)
@@ -483,13 +483,10 @@ get_selected(get_choices(trace), select((prefix_address(t, :pose) for t in 1:6).
 # As our truncation of the example trace above might suggest, visualization is an essential practice in ProbComp.  We could very pass the output of the above `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit: writing interpretive code for GFs in terms of their traces rather than their return values.  This enables the programmer include the parameters of the model in the display for clarity.
 
 # %%
-plot_path!(trace, color, label) =
-    plot!([trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)]; color=color, label=label)
-
 function frames_from_motion_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
     T = get_args(trace)[1]
     robot_inputs = get_args(trace)[2]
-    poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+    poses = get_path(trace)
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
     motion_settings = get_args(trace)[4]
     plots = Vector{Plots.Plot}(undef, T+1)
@@ -534,8 +531,8 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ =
            (T, robot_inputs, world_inputs, motion_settings), (NoChange(), NoChange(), NoChange(), NoChange()),
            choicemap((:steps => 1 => :pose => :hd, π/2.)))
 the_plot = plot_world(world, "Modifying a heading")
-plot_path!(trace, :green, "Some path")
-plot_path!(rotated_first_step, :red, "With heading at first step modified")
+plot!(get_path(trace); color=:green, label="Some path")
+plot!(get_path(rotated_first_step); color=:red, label="With heading at first step modified")
 savefig("imgs/modify_trace_1")
 the_plot
 
@@ -628,9 +625,7 @@ Assumes
 * `motion_settings` contains fields: `p_noise`, `hd_noise`
 """
 function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
-    T = length(robot_inputs.controls)
-    trace = simulate(path_model, (T, robot_inputs, world_inputs, motion_settings))
-    return [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+    return get_path(simulate(path_model, (length(robot_inputs.controls), robot_inputs, world_inputs, motion_settings)))
 end;
 
 # %% [markdown]
@@ -838,7 +833,7 @@ get_selected(get_choices(trace), selection)
 function frames_from_full_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
     T = get_args(trace)[1]
     robot_inputs = get_args(trace)[2]
-    poses = [trace[prefix_address(t, :pose)] for t in 1:(T+1)]
+    poses = get_path(trace)
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
     settings = get_args(trace)[4]
     sensor_readings = [[trace[prefix_address(t, :sensor => j => :distance)] for j in 1:settings.sensor_settings.num_angles] for t in 1:(T+1)]
@@ -939,8 +934,8 @@ gif(ani, "imgs/the_data.gif", fps=2)
 
 # %%
 # These are are what we hope to recover...
-path_low_deviation = [trace_low_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
-path_high_deviation = [trace_high_deviation[prefix_address(i, :pose)] for i in 1:(T+1)]
+path_low_deviation = get_path(trace_low_deviation)
+path_high_deviation = get_path(trace_high_deviation)
 
 # ...using these data.
 observations_low_deviation = [[trace_low_deviation[prefix_address(i, :sensor => j => :distance)] for j in 1:sensor_settings.num_angles] for i in 1:(T+1)]
@@ -1116,7 +1111,7 @@ function frame_from_traces(world, title, path_actual, traces, trace_label; show_
     the_plot = plot_world(world, title; show_clutters=show_clutters)
     if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
     for trace in traces
-        poses = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)]
+        poses = get_path(trace)
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=nothing, color=:green, alpha=0.3)
         plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
               label=trace_label, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
@@ -1631,8 +1626,6 @@ function grid_mh(tr, n_steps, step_sizes)
 end;
 
 # %%
-get_trajectory(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1] + 1)]
-
 function particle_filter_grid_rejuv_with_checkpoints(model, T, args, constraints, N_particles, MH_arg_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1644,7 +1637,7 @@ function particle_filter_grid_rejuv_with_checkpoints(model, T, args, constraints
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
 
-    push!(checkpoints, (get_trajectory.(traces), copy(log_weights)))
+    push!(checkpoints, (get_path.(traces), copy(log_weights)))
 
     # for t in 1:T
         
@@ -1688,7 +1681,7 @@ function particle_filter_grid_rejuv_with_checkpoints(model, T, args, constraints
             log_weights[i] += wt
         end
 
-        push!(checkpoints, (get_trajectory.(traces), copy(log_weights)))
+        push!(checkpoints, (get_path.(traces), copy(log_weights)))
     end
 
     return checkpoints
@@ -1860,7 +1853,7 @@ function particle_filter_grid_smcp3_with_checkpoints(model, T, args, constraints
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
 
-    push!(checkpoints, (get_trajectory.(traces), copy(log_weights)))
+    push!(checkpoints, (get_path.(traces), copy(log_weights)))
 
     for t in 1:T
         if t % 5 == 1
@@ -1889,7 +1882,7 @@ function particle_filter_grid_smcp3_with_checkpoints(model, T, args, constraints
             log_weights[i] += wt
         end
 
-        push!(checkpoints, (get_trajectory.(traces), copy(log_weights)))
+        push!(checkpoints, (get_path.(traces), copy(log_weights)))
     end
 
     return checkpoints
@@ -2107,7 +2100,7 @@ function controlled_particle_filter_with_checkpoints(model, T, args, constraints
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
 
-    push!(checkpoints, (msg="init", t=0, traj=get_trajectory.(traces), wts=copy(log_weights)))
+    push!(checkpoints, (msg="init", t=0, traj=get_path.(traces), wts=copy(log_weights)))
     prev_total_weight = 0.
 
     n_rejuv = 0
@@ -2124,7 +2117,7 @@ function controlled_particle_filter_with_checkpoints(model, T, args, constraints
             end
             log_weights .= logsumexp(log_weights) - log(N_particles)
             traces, resample_traces = resample_traces, traces
-            push!(checkpoints, (msg="resample", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
+            push!(checkpoints, (msg="resample", t=t, traj=get_path.(traces), wts=copy(log_weights)))
         end
 
         nr = 0
@@ -2146,7 +2139,7 @@ function controlled_particle_filter_with_checkpoints(model, T, args, constraints
                     end
                 end
             end
-            push!(checkpoints, (msg="rejuvenate (nr = $nr)", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
+            push!(checkpoints, (msg="rejuvenate (nr = $nr)", t=t, traj=get_path.(traces), wts=copy(log_weights)))
 
             nsteps, sizes = arg_schedule[1]
             # increase the range and resolution of the grid search
@@ -2167,7 +2160,7 @@ function controlled_particle_filter_with_checkpoints(model, T, args, constraints
             traces[i], wt, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
             log_weights[i] += wt
         end
-        push!(checkpoints, (msg="update", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
+        push!(checkpoints, (msg="update", t=t, traj=get_path.(traces), wts=copy(log_weights)))
     end
 
     @info "Rejuvenated $n_rejuv of $T steps."
@@ -2187,7 +2180,7 @@ function controlled_particle_filter_with_checkpoints_v2(model, T, args, constrai
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
 
-    push!(checkpoints, (msg="Initializing", t=0, traj=get_trajectory.(traces), wts=copy(log_weights)))
+    push!(checkpoints, (msg="Initializing", t=0, traj=get_path.(traces), wts=copy(log_weights)))
     prev_total_weight = 0.
 
     n_rejuv = 0
@@ -2204,7 +2197,7 @@ function controlled_particle_filter_with_checkpoints_v2(model, T, args, constrai
             end
             log_weights .= logsumexp(log_weights) - log(N_particles)
             traces, resample_traces = resample_traces, traces
-            push!(checkpoints, (msg="Resampling", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
+            push!(checkpoints, (msg="Resampling", t=t, traj=get_path.(traces), wts=copy(log_weights)))
         end
 
         nr = 0
@@ -2226,14 +2219,14 @@ function controlled_particle_filter_with_checkpoints_v2(model, T, args, constrai
                     end
                 end
             end
-            push!(checkpoints, (msg="Rejuvenating (repeats: $(nr))", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
+            push!(checkpoints, (msg="Rejuvenating (repeats: $(nr))", t=t, traj=get_path.(traces), wts=copy(log_weights)))
 
             # If it still looks bad, try re-generating from the previous timestep
             if logsumexp(log_weights) - prev_total_weight < (-1 * 10^5)/20 && t > 1 && nr != MAX_REJUV
                 traces = copy(prev_traces)
                 log_weights = copy(prev_log_weights)
 
-                push!(checkpoints, (msg="Reverting", t=t-1, traj=get_trajectory.(traces), wts=copy(log_weights)))
+                push!(checkpoints, (msg="Reverting", t=t-1, traj=get_path.(traces), wts=copy(log_weights)))
                 
                 for i in 1:N_particles
                     traces[i], wt, _, _ = update(traces[i], (t - 1, args...), (UnknownChange(),), constraints[t])
@@ -2249,7 +2242,7 @@ function controlled_particle_filter_with_checkpoints_v2(model, T, args, constrai
                     log_weights .= logsumexp(log_weights) - log(N_particles)
                     traces, resample_traces = resample_traces, traces
 
-                    push!(checkpoints, (msg="Resampling", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
+                    push!(checkpoints, (msg="Resampling", t=t, traj=get_path.(traces), wts=copy(log_weights)))
                 end
             end
 
@@ -2272,7 +2265,7 @@ function controlled_particle_filter_with_checkpoints_v2(model, T, args, constrai
             traces[i], wt, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
             log_weights[i] += wt
         end
-        push!(checkpoints, (msg="Extending", t=t, traj=get_trajectory.(traces), wts=copy(log_weights)))
+        push!(checkpoints, (msg="Extending", t=t, traj=get_path.(traces), wts=copy(log_weights)))
     end
 
     @info "Rejuvenated $n_rejuv of $T steps."
