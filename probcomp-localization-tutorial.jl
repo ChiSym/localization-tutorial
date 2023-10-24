@@ -1461,13 +1461,11 @@ the_plot
 # EFFECTIVE SAMPLE SIZE?!
 
 # %%
-function resample!(items, log_weights, target)
-    weights = exp.(log_weights .- maximum(log_weights))
-    weights = weights ./ sum(weights)
-    for i in 1:length(items)
-        target[i] = items[categorical(weights)]
-    end
-    return target, items
+function resample!(items, target, log_weights)
+    log_total_weight = logsumexp(log_weights)
+    norm_weights = exp.(log_weights .- log_total_weight)
+    target[:] = items[[categorical(norm_weights) for _ in 1:length(items)]]
+    return target, items, fill(log_total_weight - log(N_particles), length(log_weights))
 end
 
 function particle_filter(model, T, args, constraints, N_particles)
