@@ -1471,18 +1471,19 @@ end
 function particle_filter(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    resample_traces = Vector{Trace}(undef, N_particles)
+    resample_buffer = Vector{Trace}(undef, N_particles)
     
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    traces, resample_traces = resample!(traces, log_weights, resample_traces)
+    traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
     
     for t in 1:T
         for i in 1:N_particles
-            traces[i], log_weights[i], _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            traces[i], weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            log_weights[i] += weight_increment
         end
-        traces, resample_traces = resample!(traces, log_weights, resample_traces)
+        traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
     end
 
     return traces, log_weights
