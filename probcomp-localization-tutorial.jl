@@ -27,7 +27,7 @@
 #   * rejuv SMCP3
 #   * ...
 #
-# * "Score" versus "weight" versus...?!
+# * Color sensor reading picture lines via when unexpectedly low likelihood.
 #
 # * Not just a graph of slower (un-Unfold) loop, but perhaps debugging statements showing the reexectution.
 #   * Julia @debug macro not compatible with static DSL!
