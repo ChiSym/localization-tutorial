@@ -1786,24 +1786,6 @@ function particle_filter_grid_rejuv_with_checkpoints(model, T, args, constraints
     end
 
     push!(checkpoints, (get_path.(traces), copy(log_weights)))
-
-    # for t in 1:T
-        
-    #     for i in 1:N_particles
-    #         resample_traces[i] = traces[categorical(weights)]
-    #     end
-    #     traces, resample_traces = resample_traces, traces
-
-    #     for i in 1:N_particles
-    #         for proposal_args in MH_arg_schedule
-    #             traces[i] = grid_mh(traces[i], proposal_args...)
-    #         end
-    #     end
-
-    #     for i in 1:N_particles
-    #         traces[i], log_weights[i], _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
-    #     end
-    # end
     
     for t in 1:T
         # t % 5 == 0 && @info "t = $t"
