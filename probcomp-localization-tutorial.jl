@@ -1610,6 +1610,22 @@ grid_args_schedule = ...
 grid_mh_kernel = mh_kernel(grid_proposal)
 particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_mh_kernel, grid_args_schedule)
 
+# %% [markdown]
+# ### SMCP3 rejuvenation
+#
+# Takes the following shape:
+
+# %%
+function smcp3_step(trace, fwd_proposal, bwd_proposal, proposal_args)
+    _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap) = propose(fwd_proposal, (trace, proposal_args...))
+    proposed_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
+    bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_trace, proposal_args...), bwd_proposal_choicemap)
+    log_weight_increment = model_weight_diff + bwd_proposal_weight - fwd_proposal_logprob
+    return (proposed_trace, log_weight_increment)
+end;
+function smcp3_kernel(fwd_proposal, bwd_proposal) =
+    (trace, proposal_args) -> smcp3_step(step, fwd_proposal, bwd_proposal, proposal_args);
+
 end;
 
 # %% [markdown]
