@@ -1626,7 +1626,40 @@ end;
 function smcp3_kernel(fwd_proposal, bwd_proposal) =
     (trace, proposal_args) -> smcp3_step(step, fwd_proposal, bwd_proposal, proposal_args);
 
+# %% [markdown]
+# Let us write the corresponding backward transformation for the grid proposal.
+
+# %%
+@gen function bwd_grid_proposal(fwd_trace, grid_n_points, grid_sizes)
+    prev_t, robot_inputs, world_inputs, settings = get_args(fwd_trace)
+    t = prev_t + 1
+    fwd_p = fwd_trace[prefix_address(t, :pose => :p)]
+    fwd_hd = fwd_trace[prefix_address(t, :pose => :hd)]
+
+    pose_grid = vector_grid([fwd_p[1], fwd_p[2], fwd_hd], grid_n_points, grid_sizes)
+    chmap_grid = [choicemap((:p, [x, y]), (:hd, h)) for (x, y, h) in pose_grid]
+
+    if t == 1
+        assess_model = start_pose_prior
+        assess_args = (robot_inputs.start, settings.motion_settings)
+    else
+        assess_model = step_model
+        prev_p = fwd_trace[prefix_address(prev_t, :pose => :p)]
+        prev_hd = fwd_trace[prefix_address(prev_t, :pose => :hd)]
+        assess_args = (Pose(prev_p, prev_hd), robot_inputs.controls[prev_t], world_inputs, settings.motion-settings)
+    end
+    pose_log_weights = [assess(assess_model, assess_args, ch)[1] for ch in chmap_grid]
+    pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
+    j ~ categorical(pose_norm_weights)
+
+    # bwd_j = grid_index([fwd_p[1], fwd_p[2], fwd_hd], pose_grid[j], grid_n_points, grid_sizes)
+
+    # return (chmap_grid[j], choicemap(:j, bwd_j))
 end;
+
+# %%
+grid_smcp3_kernel = smcp3_kernel(grid_proposal, bwd_grid_proposal)
+particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_smcp3_kernel, grid_args_schedule)
 
 # %% [markdown]
 # # Particle filter with MCMC Rejuvenation
