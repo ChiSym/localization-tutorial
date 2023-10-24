@@ -1341,29 +1341,25 @@ the_plot
 # Earlier samples may occur with too high absolute frequency, but over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
 
 # %%
-function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_ITERS)
-    C = (N_burn_in > 0) ? maximum(generate(model, args, merged_constraints)[2] for _ in 1:N_burn_in) : -Inf
-
-    n_iters = 0
-
+function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_attempts)
     particles = []
-    for i in 1:N_particles
-        reject = true
-        compute = 0
-        while reject && n_iters < MAX_ITERS
-            n_iters += 1
-            
-            y, w = generate(model, args, merged_constraints)
-            
-            if w > C
-                reject = false
-                prt, C = y, w
-                push!(particles, prt)
-            elseif w > C + log(rand())
-                reject = false
-                prt = y
-                push!(particles, prt)
+    C = maximum(generate(model, args, merged_constraints)[2] for _ in 1:N_burn_in; init=-Inf)
+
+    for _ in 1:N_particles
+        attempts = 0
+        while attempts < MAX_attempts
+
+            particle, weight = generate(model, args, merged_constraints)
+            if weight > C
+                C = weight
+                push!(particles, particle)
+                break
+            elseif weight > C + log(rand())
+                push!(particles, particle)
+                break
             end
+
+            attempts += 1
         end
     end
 
@@ -1378,7 +1374,7 @@ constraints_RS = constraints[1:(T_RS+1)];
 # %%
 N_burn_in = 0 # omit burn-in to illustrate early behavior
 N_particles = 20
-compute_bound = 5_000
+compute_bound = 5000
 traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
@@ -1391,7 +1387,7 @@ gif(ani, "imgs/RS.gif", fps=1)
 # %%
 N_burn_in = 100
 N_particles = 20
-compute_bound = 5_000
+compute_bound = 5000
 traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
@@ -1402,9 +1398,9 @@ end
 gif(ani, "imgs/RS.gif", fps=1)
 
 # %%
-N_burn_in = 1_000
+N_burn_in = 1000
 N_particles = 20
-compute_bound = 5_000
+compute_bound = 5000
 traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
@@ -1415,7 +1411,7 @@ end
 gif(ani, "imgs/RS.gif", fps=1)
 
 # %% [markdown]
-# The runtime of this algorithm varies wildly! 
+# The performance of this algorithm varies wildly!  Without the `MAX_attempts` way out, it may take a long time to run; and with, it may produce few samples.
 
 # %% [markdown]
 # ### SIR and Adaptive Rejection Sampling scale poorly
