@@ -1488,9 +1488,7 @@ function particle_filter(model, T, args, constraints, N_particles)
     end
 
     return traces, log_weights
-end
-;
-# # Alternatively, using library calls: `particle_filter_rejuv_library` from the black box above!
+end;
 
 # %% [markdown]
 # Pictures and discussion of the drawbacks.
