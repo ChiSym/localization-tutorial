@@ -1498,12 +1498,15 @@ end;
 # Two issues: particle diversity after resampling, and quality of these samples.
 
 # %%
-function mh_step(trace, MH_proposal, MH_proposal_args)
-    _, fwd_MH_weight, (fwd_model_update, bwd_MH_choice) = propose(grid_proposal, (trace, MH_proposal_args...))
-    new_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
-    bwd_MH_weight, _ = assess(MH_proposal, (new_trace, MH_proposal_args...), bwd_MH_choice)
-    return (log(rand()) < model_weight_diff - fwd_MH_weight + bwd_MH_weight) ? new_trace : trace
-end;
+function mh_step(trace, proposal, proposal_args)
+    _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap) = propose(proposal, (trace, proposal_args...))
+    proposed_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
+    bwd_proposal_weight, _ = assess(proposal, (proposed_trace, proposal_args...), bwd_proposal_choicemap)
+    log_weight_increment = model_weight_diff + bwd_proposal_weight - fwd_proposal_logprob
+    return (log(rand()) < log_weight_increment ? proposed_trace : trace), 0.
+end
+mh_kernel(proposal) =
+    (trace, proposal_args) -> mh_step(trace, proposal, proposal_args);
 
 # %% [markdown]
 # Then PF+Rejuv code.
