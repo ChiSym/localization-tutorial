@@ -1515,39 +1515,54 @@ mh_kernel(proposal) =
 # Alternatively, using library calls: `particle_filter_rejuv_library` from the
 # black box above performs exactly this algorithm!
 
-function particle_filter_MH_rejuv(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
+function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    resample_traces = Vector{Trace}(undef, N_particles)
+    resample_buffer = Vector{Trace}(undef, N_particles)
     
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    
-    traces, resample_traces = resample!(traces, log_weights, resample_traces)
+    traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
 
     for i in 1:N_particles
-        for _ = 1:N_MH
-            traces[i] = mh_step(traces[i], MH_proposal, MH_proposal_args)
+        for rejuv_args in rejuv_args_schedule
+            traces[i], log_weight_increment = rejuv_kernel(traces[i], rejuv_args)
+            log_weights[i] += log_weight_increment
         end
     end
         
     for t in 1:T
         for i in 1:N_particles
-            traces[i], log_weights[i], _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            traces[i], weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            log_weights[i] += weight_increment
         end
-
-        traces, resample_traces = resample!(traces, log_weights, resample_traces)
+        traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
 
         for i in 1:N_particles
-            for _ = 1:N_MH
-                traces[i] = mh_step(traces[i], MH_proposal, MH_proposal_args)
+            for rejuv_args in rejuv_args_schedule
+                traces[i], log_weight_increment = rejuv_kernel(traces[i], rejuv_args)
+                log_weights[i] += log_weight_increment
             end
         end
     end
 
     return traces, log_weights
 end;
+
+# %% [markdown]
+# Note usage with drift proposal:
+
+# %%
+drift_step_factor = 1/3.
+drift_proposal_args = (drift_step_factor,)
+N_MH = 10
+drift_args_schedule = [drift_proposal_args for _ in 1:N_MH]
+drift_mh_kernel = mh_kernel(drift_proposal)
+particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, drift_mh_kernel, drift_args_schedule)
+
+# %% [markdown]
+# VISUALIZE
 
 # %% [markdown]
 # More exploration with drift proposal?
