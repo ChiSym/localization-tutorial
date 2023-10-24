@@ -1107,12 +1107,10 @@ end
 
 function particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
     state = pf_initialize(model, (0, args...), constraints[1], N_particles)
-    pf_resample!(state)
-    pf_rejuvenate!(state, mh, (MH_proposal, MH_proposal_args), N_MH)
     for t in 1:T
-        pf_update!(state, (t, args...), (UnknownChange(),), constraints[t+1])
         pf_resample!(state)
         pf_rejuvenate!(state, mh, (MH_proposal, MH_proposal_args), N_MH)
+        pf_update!(state, (t, args...), (UnknownChange(),), constraints[t+1])
     end
     return state.traces, state.log_weights
 end
@@ -1443,17 +1441,13 @@ the_plot
 #
 # More precisely:
 #
-# In the initial step, we draw $N$ samples $\text{trace}_0^1, \text{trace}_0^2, \ldots, \text{trace}_0^N$ from the distribution $\text{start}$, which we call *particles*, and we *resample* them as follows.  Each particle is assigned a *weight*
-# $$
-# w_0^i := \frac{P_\text{full}(\text{trace}_{0:0}, o_{0:0})}{P_\text{path}(\text{trace}_{0:0})},
-# $$
-# and the normalized weights $\hat w_0^i := w_0^i / \sum_{j=1}^n w_0^j$ define a categorical distribution on indices $i = 1, \ldots, N$.  For each index $i$, sample a new index $a^i$ accordingly.  Then replace the above list of particles with the reindexed list $\text{trace}_0^{a^1}, \text{trace}_0^{a^2}, \ldots \text{trace}_0^{a^N}$.
+# In the initial step, we draw $N$ samples $\text{trace}_0^1, \text{trace}_0^2, \ldots, \text{trace}_0^N$ from the distribution $\text{start}$, which we call *particles*.
 #
-# Now for the iterative step.  Suppose we have constructed particles $\text{trace}_{0:t-1}^i$ for $i = 1,\ldots,N$.  Extend each particle $\text{trace}_{0:t-1}^i$ to a particle of the form $\text{trace}_{0:t}^i$ by drawing a sample $\text{trace}_t^i$ from $\text{step}(z_{t-1}^i, \ldots)$.  Resample them in the following similar manner.  Compute weights
+# There are iterative steps for $t = 1, \ldots, T$.  In the $t$ th iterative step, we have already constructed $N$ particles of the form $\text{trace}_{0:{t-1}}^1, \text{trace}_{0:t-1}^2, \ldots, \text{trace}_{0:t-1}^N$.  First we *resample* them as follows.  Each particle is assigned a *weight*
 # $$
-# w_t^i := \frac{P_\text{full}(\text{trace}_{0:t}, o_{0:t})}{P_\text{path}(\text{trace}_{0:t})},
+# w^i := \frac{P_\text{full}(\text{trace}_{0:t-1}^i, o_{0:t-1})}{P_\text{path}(\text{trace}_{0:t-1}^i)}.
 # $$
-# whose renormalized forms $\hat w_t^i$ give a categorical distribution on indices.  Sample new indices $a^i$, then replace the $\text{trace}_{0:t}^i$ with the $\text{trace}_{0:t}^{a^i}$.
+# The normalized weights $\hat w^i := w^i / \sum_{j=1}^n w^j$ define a categorical distribution on indices $i = 1, \ldots, N$, and for each index $i$ we *sample* a new index $a^i$ accordingly.  We *replace* the list of particles with the reindexed list $\text{trace}_{0:t-1}^{a^1}, \text{trace}_{0:t-1}^{a^2}, \ldots \text{trace}_{0:t-1}^{a^N}$.  Finally, we *extend* each particle $\text{trace}_{0:t-1}^i$ to a particle of the form $\text{trace}_{0:t}^i$ by drawing a sample $\text{trace}_t^i$ from $\text{step}(z_{t-1}^i, \ldots)$.
 
 # %% [markdown]
 # WHY DOES `Gen.generate` GIVE THE SAME WEIGHTS AS ABOVE?
@@ -1476,14 +1470,14 @@ function particle_filter(model, T, args, constraints, N_particles)
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
     
     for t in 1:T
+        traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
+
         for i in 1:N_particles
             traces[i], weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
             log_weights[i] += weight_increment
         end
-        traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
     end
 
     return traces, log_weights
@@ -1523,20 +1517,8 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_k
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
 
-    for i in 1:N_particles
-        for rejuv_args in rejuv_args_schedule
-            traces[i], log_weight_increment = rejuv_kernel(traces[i], rejuv_args)
-            log_weights[i] += log_weight_increment
-        end
-    end
-        
     for t in 1:T
-        for i in 1:N_particles
-            traces[i], weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
-            log_weights[i] += weight_increment
-        end
         traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
 
         for i in 1:N_particles
@@ -1544,6 +1526,11 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_k
                 traces[i], log_weight_increment = rejuv_kernel(traces[i], rejuv_args)
                 log_weights[i] += log_weight_increment
             end
+        end
+
+        for i in 1:N_particles
+            traces[i], weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            log_weights[i] += weight_increment
         end
     end
 
