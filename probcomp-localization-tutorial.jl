@@ -1649,6 +1649,9 @@ grid_smcp3_kernel = smcp3_kernel(grid_proposal, bwd_grid_proposal)
 particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_smcp3_kernel, grid_args_schedule)
 
 # %% [markdown]
+# ### Adaptive grid controller
+
+# %% [markdown]
 # # Particle filter with MCMC Rejuvenation
 #
 # However, it is possible to use Gen to write more sophisticated inference algorithms which scale much better in the path lengths.
