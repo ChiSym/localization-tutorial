@@ -1573,55 +1573,43 @@ particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation,
 # Instead of a random walk strategy to improve next steps, the search space is small enough that we very well could search a small nearby area for improvement.
 
 # %%
-"""
-    vs = vector_grid(v0, k, r)
-
-Returns grid of vectors, given a grid center, number of grid points
-along each dimension and the resolution along each dimension.
-"""
-function vector_grid(v0::Vector{Float64}, k::Vector{Int}, r::Vector{Float64})
-    offset = v0 - (r + k.*r)/2
-    return map(I -> [Tuple(I)...].*r + offset, CartesianIndices(Tuple(k)))
+function vector_grid(center :: Vector{Float64}, grid_n_points :: Vector{Int}, grid_sizes :: Vector{Float64}) :: Vector{Vector{Float64}}
+    offset = center - (grid_sizes + grid_n_points .* grid_sizes)/2.
+    return reshape(map(I -> [Tuple(I)...] .* grid_sizes + offset, CartesianIndices(Tuple(grid_n_points))), (:,))
 end
 
-function grid_index(x, v0, k, r)
-    offset = v0 - (r + k.*r)/2
-    I = Int.(floor.((x .+ r./2 .- offset)./r))
-    return LinearIndices(Tuple(k))[I...]
+function grid_index(p, center, grid_n_points, grid_sizes)
+    offset = center - (grid_sizes + grid_n_points .* grid_sizes)/2.
+    I = Int.(floor.((p .+ grid_sizes./2. .- offset) ./ grid_sizes))
+    return LinearIndices(Tuple(grid_n_points))[I...]
 end
 
-@gen function grid_proposal(
-        tr,
-        n_steps, # (n_x_steps, n_y_steps, n_hd_steps),
-        step_sizes # (x_step_size, y_step_size, hd_step_size)
-    )
-    t = get_args(tr)[1] + 1
+@gen function grid_proposal(trace, grid_n_points, grid_sizes)
+    t = get_args(trace)[1] + 1
+    p = trace[prefix_address(t, :pose => :p)]
+    hd = trace[prefix_address(t, :pose => :hd)]
 
-    p_noise = get_args(tr)[4].motion_settings.p_noise
-    hd_noise = get_args(tr)[4].motion_settings.hd_noise
-
-    p = tr[prefix_address(t, :pose => :p)]
-    hd = tr[prefix_address(t, :pose => :hd)]
-
-    pose_grid = reshape(vector_grid([p..., hd], n_steps, step_sizes), (:,))
-    
-    # Collection of choicemaps which would update the trace to have each pose
-    # in the grid
-    chmap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]),
-                            (prefix_address(t, :pose => :hd), h))
+    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
+    chmap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]), (prefix_address(t, :pose => :hd), h))
                   for (x, y, h) in pose_grid]
     
-    # Get the score under the model for each grid point
-    pose_scores = [Gen.update(tr, ch)[2] for ch in chmap_grid]
-        
-    pose_probs = exp.(pose_scores .- logsumexp(pose_scores))
-    j ~ categorical(pose_probs)
-    new_p = pose_grid[j][1:2]
-    new_hd = pose_grid[j][3]
+    pose_log_weights = [update(trace, ch)[2] for ch in chmap_grid]
+    pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
+    j ~ categorical(pose_norm_weights)
 
-    inverting_j = grid_index([p..., hd], [new_p..., new_hd], n_steps, step_sizes)
+    bwd_j = grid_index([p[1], p[2], hd], pose_grid[j], grid_n_points, grid_sizes)
 
-    return (chmap_grid[j], choicemap((:j, inverting_j)))
+    return (chmap_grid[j], choicemap((:j, bwd_j)))
+end;
+
+# %% [markdown]
+# Should be able to:
+
+# %%
+grid_args_schedule = ...
+grid_mh_kernel = mh_kernel(grid_proposal)
+particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_mh_kernel, grid_args_schedule)
+
 end;
 
 # %% [markdown]
