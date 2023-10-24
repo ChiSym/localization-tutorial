@@ -1496,7 +1496,7 @@ end
 # Pictures and discussion of the drawbacks.
 
 # %% [markdown]
-# ### MCMC rejuvenation
+# ### MCMC (MH) rejuvenation
 #
 # Two issues: particle diversity after resampling, and quality of these samples.
 
