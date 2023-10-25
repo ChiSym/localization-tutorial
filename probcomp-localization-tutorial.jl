@@ -1443,11 +1443,11 @@ the_plot
 #
 # In the initial step, we draw $N$ samples $\text{trace}_0^1, \text{trace}_0^2, \ldots, \text{trace}_0^N$ from the distribution $\text{start}$, which we call *particles*.
 #
-# There are iterative steps for $t = 1, \ldots, T$.  In the $t$ th iterative step, we have already constructed $N$ particles of the form $\text{trace}_{0:{t-1}}^1, \text{trace}_{0:t-1}^2, \ldots, \text{trace}_{0:t-1}^N$.  First we *resample* them as follows.  Each particle is assigned a *weight*
+# There are iterative steps for $t = 1, \ldots, T$.  In the iterative step $t$, we have already constructed $N$ particles of the form $\text{trace}_{0:{t-1}}^1, \text{trace}_{0:t-1}^2, \ldots, \text{trace}_{0:t-1}^N$.  First we *resample* them as follows.  Each particle is assigned a *weight*
 # $$
 # w^i := \frac{P_\text{full}(\text{trace}_{0:t-1}^i, o_{0:t-1})}{P_\text{path}(\text{trace}_{0:t-1}^i)}.
 # $$
-# The normalized weights $\hat w^i := w^i / \sum_{j=1}^n w^j$ define a categorical distribution on indices $i = 1, \ldots, N$, and for each index $i$ we *sample* a new index $a^i$ accordingly.  We *replace* the list of particles with the reindexed list $\text{trace}_{0:t-1}^{a^1}, \text{trace}_{0:t-1}^{a^2}, \ldots \text{trace}_{0:t-1}^{a^N}$.  Finally, we *extend* each particle $\text{trace}_{0:t-1}^i$ to a particle of the form $\text{trace}_{0:t}^i$ by drawing a sample $\text{trace}_t^i$ from $\text{step}(z_{t-1}^i, \ldots)$.
+# The normalized weights $\hat w^i := w^i / \sum_{j=1}^n w^j$ define a categorical distribution on indices $i = 1, \ldots, N$, and for each index $i$ we *sample* a new index $a^i$ accordingly.  We *replace* the list of particles with the reindexed list $\text{trace}_{0:t-1}^{a^1}, \text{trace}_{0:t-1}^{a^2}, \ldots, \text{trace}_{0:t-1}^{a^N}$.  Finally, after the resampling, we *extend* each particle $\text{trace}_{0:t-1}^i$ to a particle of the form $\text{trace}_{0:t}^i$ by drawing a sample $\text{trace}_t^i$ from $\text{step}(z_{t-1}^i, \ldots)$.
 
 # %% [markdown]
 # WHY DOES `Gen.generate` GIVE THE SAME WEIGHTS AS ABOVE?
