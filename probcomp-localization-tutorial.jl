@@ -1346,6 +1346,7 @@ function rejection_sample(model, args, merged_constraints, N_burn_in, N_particle
     for _ in 1:N_particles
         attempts = 0
         while attempts < MAX_attempts
+            attempts += 1
 
             particle, weight = generate(model, args, merged_constraints)
             if weight > C
@@ -1356,8 +1357,6 @@ function rejection_sample(model, args, merged_constraints, N_burn_in, N_particle
                 push!(particles, particle)
                 break
             end
-
-            attempts += 1
         end
     end
 
@@ -1606,7 +1605,7 @@ function smcp3_step(trace, fwd_proposal, bwd_proposal, proposal_args)
     proposed_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
     bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_trace, proposal_args...), bwd_proposal_choicemap)
     log_weight_increment = model_weight_diff + bwd_proposal_weight - fwd_proposal_logprob
-    return (proposed_trace, log_weight_increment)
+    return proposed_trace, log_weight_increment
 end;
 function smcp3_kernel(fwd_proposal, bwd_proposal) =
     (trace, proposal_args) -> smcp3_step(trace, fwd_proposal, bwd_proposal, proposal_args);
