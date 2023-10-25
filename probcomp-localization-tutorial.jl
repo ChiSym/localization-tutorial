@@ -1117,11 +1117,11 @@ end
 
 # Run PF and return one of its particles.
 
-function resample(items, log_weights)
-    weights = exp.(log_weights .- maximum(log_weights))
-    weights = weights ./ sum(weights)
-    index = categorical(weights)
-    return items[index], log_weights[index]
+function resample(particles, log_weights)
+    log_total_weight = logsumexp(log_weights)
+    norm_weights = exp.(log_weights .- log_total_weight)
+    index = categorical(norm_weights)
+    return particles[index], log_weights[index]
 end
 
 function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particles = 10)
@@ -1455,28 +1455,27 @@ the_plot
 # EFFECTIVE SAMPLE SIZE?!
 
 # %%
-function resample!(items, log_weights, target)
+function resample!(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
-    target[:] = items[[categorical(norm_weights) for _ in 1:length(items)]]
-    return target, items, fill(log_total_weight - log(N_particles), length(log_weights))
+    particles[:] = [particles[categorical(norm_weights)] for _ in particles]
+    log_weights .= log_total_weight - log(length(log_weights))
 end
 
 function particle_filter(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    resample_buffer = Vector{Trace}(undef, N_particles)
     
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
     
     for t in 1:T
-        traces, resample_buffer, log_weights = resample!(traces, log_weights, resample_buffer)
+        resample!(traces, log_weights)
 
         for i in 1:N_particles
-            traces[i], weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
-            log_weights[i] += weight_increment
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            log_weights[i] += log_weight_increment
         end
     end
 
@@ -1512,14 +1511,13 @@ mh_kernel(proposal) =
 function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    resample_buffer = Vector{Trace}(undef, N_particles)
     
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
 
     for t in 1:T
-        traces, resample_buffer, log_weights = resample!(traces, log_weights, resample_buffer)
+        resample!(traces, log_weights)
 
         for i in 1:N_particles
             for rejuv_args in rejuv_args_schedule
@@ -1529,8 +1527,8 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_k
         end
 
         for i in 1:N_particles
-            traces[i], weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
-            log_weights[i] += weight_increment
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            log_weights[i] += log_weight_increment
         end
     end
 
