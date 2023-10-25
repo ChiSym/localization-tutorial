@@ -1611,7 +1611,7 @@ function smcp3_step(trace, fwd_proposal, bwd_proposal, proposal_args)
     return (proposed_trace, log_weight_increment)
 end;
 function smcp3_kernel(fwd_proposal, bwd_proposal) =
-    (trace, proposal_args) -> smcp3_step(step, fwd_proposal, bwd_proposal, proposal_args);
+    (trace, proposal_args) -> smcp3_step(trace, fwd_proposal, bwd_proposal, proposal_args);
 
 # %% [markdown]
 # Let us write the corresponding backward transformation for the grid proposal.
