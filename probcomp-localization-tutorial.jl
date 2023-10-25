@@ -1455,7 +1455,7 @@ the_plot
 # EFFECTIVE SAMPLE SIZE?!
 
 # %%
-function resample!(items, target, log_weights)
+function resample!(items, log_weights, target)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
     target[:] = items[[categorical(norm_weights) for _ in 1:length(items)]]
@@ -1472,7 +1472,7 @@ function particle_filter(model, T, args, constraints, N_particles)
     end
     
     for t in 1:T
-        traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
+        traces, resample_buffer, log_weights = resample!(traces, log_weights, resample_buffer)
 
         for i in 1:N_particles
             traces[i], weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
@@ -1519,7 +1519,7 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_k
     end
 
     for t in 1:T
-        traces, resample_buffer, log_weights = resample!(traces, resample_buffer, log_weights)
+        traces, resample_buffer, log_weights = resample!(traces, log_weights, resample_buffer)
 
         for i in 1:N_particles
             for rejuv_args in rejuv_args_schedule
@@ -1617,7 +1617,7 @@ function smcp3_kernel(fwd_proposal, bwd_proposal) =
 # Let us write the corresponding backward transformation for the grid proposal.
 
 # %%
-@gen function bwd_grid_proposal(fwd_trace, grid_n_points, grid_sizes)
+@gen function grid_bwd_proposal(fwd_trace, grid_n_points, grid_sizes)
     prev_t, robot_inputs, world_inputs, settings = get_args(fwd_trace)
     t = prev_t + 1
     fwd_p = fwd_trace[prefix_address(t, :pose => :p)]
@@ -1645,7 +1645,7 @@ function smcp3_kernel(fwd_proposal, bwd_proposal) =
 end;
 
 # %%
-grid_smcp3_kernel = smcp3_kernel(grid_proposal, bwd_grid_proposal)
+grid_smcp3_kernel = smcp3_kernel(grid_proposal, grid_bwd_proposal)
 particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_smcp3_kernel, grid_args_schedule)
 
 # %% [markdown]
