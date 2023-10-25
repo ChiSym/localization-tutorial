@@ -1095,11 +1095,11 @@ the_plot
     hd = trace[prefix_address(t, :pose => :hd)]
 
     # Form expected by `mh` in library code, immediately following.
-    new_p = {prefix_address(t, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
-    new_hd = {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
+    fwd_p = {prefix_address(t, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
+    fwd_hd = {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
 
     # Form expected by `mh_step`, further below.
-    return (choicemap((prefix_address(t, :pose => :p), new_p), (prefix_address(t, :pose => :hd), new_hd)),
+    return (choicemap((prefix_address(t, :pose => :p), fwd_p), (prefix_address(t, :pose => :hd), fwd_hd)),
             choicemap((prefix_address(t, :pose => :p), p), (prefix_address(t, :pose => :hd), hd)))
 end
 
@@ -1117,7 +1117,7 @@ end
 
 # Run PF and return one of its particles.
 
-function resample(particles, log_weights)
+function sample(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
     index = categorical(norm_weights)
@@ -1126,7 +1126,7 @@ end
 
 function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particles = 10)
     drift_step_factor = 1/3.
-    return resample(particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+    return sample(particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
 end;
 
 # %%
@@ -1266,7 +1266,7 @@ function basic_SIR(model, args, merged_constraints, N_SIR)
     for i in 1:N_SIR
         traces[i], log_weights[i] = generate(model, args, merged_constraints)
     end
-    return resample(traces, log_weight)
+    return sample(traces, log_weight)
 end
 
 # This is a generic algorithm, so there is a library version.
@@ -1457,7 +1457,7 @@ the_plot
 function resample!(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
-    particles[:] = [particles[categorical(norm_weights)] for _ in particles]
+    particles .= [particles[categorical(norm_weights)] for _ in particles]
     log_weights .= log_total_weight - log(length(log_weights))
 end
 
