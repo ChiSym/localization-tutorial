@@ -1653,7 +1653,7 @@ end
     bwd_j ~ categorical(pose_norm_weights)
     fwd_j = inverse_grid_index(grid_n_points, bwd_j)
 
-    return choicemap_grid[bwd_j], choicemap(:fwd_j, fwd_j)
+    return choicemap_grid[bwd_j], choicemap((:fwd_j, fwd_j))
 end;
 
 # %%
