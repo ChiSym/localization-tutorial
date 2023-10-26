@@ -1556,12 +1556,12 @@ particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation,
 
 # %%
 function vector_grid(center :: Vector{Float64}, grid_n_points :: Vector{Int}, grid_sizes :: Vector{Float64}) :: Vector{Vector{Float64}}
-    offset = center - (grid_sizes + grid_n_points .* grid_sizes)/2.
-    return reshape(map(I -> [Tuple(I)...] .* grid_sizes + offset, CartesianIndices(Tuple(grid_n_points))), (:,))
+    offset = center .- (grid_n_points .+ 1) .* grid_sizes ./ 2.
+    return reshape(map(I -> [Tuple(I)...] .* grid_sizes .+ offset, CartesianIndices(Tuple(grid_n_points))), (:,))
 end
 
 inverse_grid_index(grid_n_points, j) =
-    LinearIndices(Tuple(grid_n_points))[([grid_n_points...] .+ 1 - [Tuple(CartesianIndices(Tuple(grid_n_points))[j])...])...]
+    LinearIndices(Tuple(grid_n_points))[(grid_n_points .+ 1 .- [Tuple(CartesianIndices(Tuple(grid_n_points))[j])...])...]
 
 @gen function grid_proposal(trace, grid_n_points, grid_sizes)
     t = get_args(trace)[1] + 1
