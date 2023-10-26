@@ -557,11 +557,11 @@ rotated_first_step_weight_diff
 # One can also modify the arguments to the program.  In our example, we might have on hand a very long list of controls, and we wish to explore the space of paths incrementally in the timestep:
 
 # %%
+change_only_T = (UnknownChange(), NoChange(), NoChange(), NoChange())
+
 trace = simulate(path_model_loop, (0, robot_inputs, world_inputs, motion_settings))
 for t in 1:T
-    trace, _, _, _ = update(trace,
-                   (t, robot_inputs, world_inputs, motion_settings), (UnknownChange(), NoChange(), NoChange(), NoChange()),
-                   choicemap())
+    trace, _, _, _ = update(trace, (t, robot_inputs, world_inputs, motion_settings), change_only_T, choicemap())
     # ...
     # Do something with the trace of the partial path up to time t.
     # ...
@@ -600,9 +600,7 @@ time_ends_loop = Vector(undef, T * N_repeats)
 time_start = now()
 trace = simulate(path_model_loop, (0, robot_inputs_long, world_inputs, motion_settings))
 for t in 1:(T * N_repeats)
-    trace, _, _, _ = update(trace,
-                           (t, robot_inputs_long, world_inputs, motion_settings), (UnknownChange(), NoChange(), NoChange(), NoChange()),
-                           choicemap())
+    trace, _, _, _ = update(trace, (t, robot_inputs_long, world_inputs, motion_settings), change_only_T, choicemap())
     time_ends_loop[t] = now()
 end
 time_diffs_loop = dv.(time_ends_loop - [time_start, time_ends_loop[1:end-1]...])
@@ -612,9 +610,7 @@ time_ends_chain = Vector(undef, T * N_repeats)
 time_start = now()
 trace = simulate(path_model, (0, robot_inputs_long, world_inputs, motion_settings))
 for t in 1:(T * N_repeats)
-    trace, _, _, _ = update(trace,
-                           (t, robot_inputs_long, world_inputs, motion_settings), (UnknownChange(), NoChange(), NoChange(), NoChange()),
-                            choicemap())
+    trace, _, _, _ = update(trace, (t, robot_inputs_long, world_inputs, motion_settings), change_only_T, choicemap())
     time_ends_chain[t] = now()
 end
 time_diffs_chain = dv.(time_ends_chain - [time_start, time_ends_chain[1:end-1]...])
@@ -1112,7 +1108,7 @@ function particle_filter_rejuv_library(model, T, args, constraints, N_particles,
     for t in 1:T
         pf_resample!(state)
         pf_rejuvenate!(state, mh, (MH_proposal, MH_proposal_args), N_MH)
-        pf_update!(state, (t, args...), (UnknownChange(),), constraints[t+1])
+        pf_update!(state, (t, args...), change_only_T, constraints[t+1])
     end
     return state.traces, state.log_weights
 end
@@ -1475,7 +1471,7 @@ function particle_filter(model, T, args, constraints, N_particles)
         resample!(traces, log_weights)
 
         for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
             log_weights[i] += log_weight_increment
         end
     end
@@ -1528,7 +1524,7 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_k
         end
 
         for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
             log_weights[i] += log_weight_increment
         end
     end
@@ -1740,7 +1736,7 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, N_MH, M
         end
 
         for i in 1:N_particles
-            traces[i], log_weights[i], _, _ = update(traces[i], (t, args...), (UnknownChange(),), constraints[t+1])
+            traces[i], log_weights[i], _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
         end
     end
 
