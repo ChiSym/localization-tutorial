@@ -1597,6 +1597,11 @@ grid_mh_kernel = mh_kernel(grid_proposal)
 particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_mh_kernel, grid_args_schedule)
 
 # %% [markdown]
+# ### Properly weighted samples
+#
+# Improve later resampling / end-to-end quality.
+
+# %% [markdown]
 # ### SMCP3 rejuvenation
 #
 # Takes the following shape:
@@ -1646,11 +1651,6 @@ end;
 # %%
 grid_smcp3_kernel = smcp3_kernel(grid_proposal, grid_bwd_proposal)
 particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_smcp3_kernel, grid_args_schedule)
-
-# %% [markdown]
-# ### Properly weighted samples
-#
-# Improve later resampling / end-to-end quality.
 
 # %% [markdown]
 # ### Adaptive inference controller
