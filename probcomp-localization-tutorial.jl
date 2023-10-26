@@ -1560,11 +1560,8 @@ function vector_grid(center :: Vector{Float64}, grid_n_points :: Vector{Int}, gr
     return reshape(map(I -> [Tuple(I)...] .* grid_sizes + offset, CartesianIndices(Tuple(grid_n_points))), (:,))
 end
 
-function grid_index(p, center, grid_n_points, grid_sizes)
-    offset = center - (grid_sizes + grid_n_points .* grid_sizes)/2.
-    I = Int.(floor.((p .+ grid_sizes./2. .- offset) ./ grid_sizes))
-    return LinearIndices(Tuple(grid_n_points))[I...]
-end
+reverse_grid_index(grid_n_points, j) =
+    LinearIndices(Tuple(grid_n_points))[([grid_n_points...] .+ 1 - [Tuple(CartesianIndices(Tuple(grid_n_points))[j])...])...]
 
 @gen function grid_proposal(trace, grid_n_points, grid_sizes)
     t = get_args(trace)[1] + 1
@@ -1577,11 +1574,11 @@ end
     
     pose_log_weights = [update(trace, cm)[2] for cm in choicemap_grid]
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
+
     j ~ categorical(pose_norm_weights)
+    rev_j = reverse_grid_index(grid_n_points, j)
 
-    bwd_j = grid_index([p[1], p[2], hd], pose_grid[j], grid_n_points, grid_sizes)
-
-    return (choicemap_grid[j], choicemap((:j, bwd_j)))
+    return (choicemap_grid[j], choicemap((:j, rev_j)))
 end;
 
 # %% [markdown]
@@ -1630,7 +1627,7 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
 
     fwd_j ~ categorical(pose_norm_weights)
-    bwd_j = grid_index([p[1], p[2], hd], pose_grid[fwd_j], grid_n_points, grid_sizes)
+    bwd_j = reverse_grid_index(grid_n_points, fwd_j)
 
     return (choicemap_grid[fwd_j], choicemap((:bwd_j, bwd_j)))
 end
@@ -1659,7 +1656,7 @@ end
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
 
     bwd_j ~ categorical(pose_norm_weights)
-    fwd_j = grid_index([p[1], p[2], hd], pose_grid[bwd_j], grid_n_points, grid_sizes)
+    fwd_j = reverse_grid_index(grid_n_points, bwd_j)
 
     return (choicemap_grid[bwd_j], choicemap(:fwd_j, fwd_j))
 end;
