@@ -1448,7 +1448,7 @@ the_plot
 # $$
 # w^i := \frac{P_\text{full}(z_{0:t-1}^i, o_{0:t-1})}{P_\text{path}(z_{0:t-1}^i)}.
 # $$
-# The normalized weights $\hat w^i := w^i / \sum_{j=1}^n w^j$ define a categorical distribution on indices $i = 1, \ldots, N$, and for each index $i$ we *sample* a new index $a^i$ accordingly.  We *replace* the list of particles with the reindexed list $z_{0:t-1}^{a^1}, z_{0:t-1}^{a^2}, \ldots, z_{0:t-1}^{a^N}$.  Finally, after the resampling, we *extend* each particle $z_{0:t-1}^i$ to a particle of the form $z_{0:t}^i$ by drawing a sample $z_t^i$ from $\text{step}(z_{t-1}^i, \ldots)$.
+# The normalized weights $\hat w^i := w^i / \sum_{j=1}^n w^j$ define a categorical distribution on indices $i = 1, \ldots, N$, and for each index $i$ we *sample* a new index $a^i$ accordingly.  We *replace* the list of particles with the reindexed list $z_{0:t-1}^{a^1}, z_{0:t-1}^{a^2}, \ldots, z_{0:t-1}^{a^N}$.  Finally, having resampled thusly, we *extend* each particle $z_{0:t-1}^i$ to a particle of the form $z_{0:t}^i$ by drawing a sample $z_t^i$ from $\text{step}(z_{t-1}^i, \ldots)$.
 
 # %% [markdown]
 # WHY DOES `Gen.generate` GIVE THE SAME WEIGHTS AS ABOVE?
