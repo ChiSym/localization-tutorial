@@ -1576,16 +1576,16 @@ end
     hd = trace[prefix_address(t, :pose => :hd)]
 
     pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
-    chmap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]), (prefix_address(t, :pose => :hd), h))
-                  for (x, y, h) in pose_grid]
+    choicemap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]), (prefix_address(t, :pose => :hd), h))
+                      for (x, y, h) in pose_grid]
     
-    pose_log_weights = [update(trace, ch)[2] for ch in chmap_grid]
+    pose_log_weights = [update(trace, cm)[2] for cm in choicemap_grid]
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
     j ~ categorical(pose_norm_weights)
 
     bwd_j = grid_index([p[1], p[2], hd], pose_grid[j], grid_n_points, grid_sizes)
 
-    return (chmap_grid[j], choicemap((:j, bwd_j)))
+    return (choicemap_grid[j], choicemap((:j, bwd_j)))
 end;
 
 # %% [markdown]
