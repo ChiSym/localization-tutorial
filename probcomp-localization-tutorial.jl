@@ -1636,8 +1636,8 @@ end
 
     # TODO: Would be more intuitive if these same weights were obtained by restricting `trace` to `prev_t`,
     # then updating it back out to `t` with these steps.
-    choicemap_grid = [choicemap((:p, [px, py]), (:hd, hd))
-                      for (px, py, hd) in vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)]
+    choicemap_grid = [choicemap((:p, [x, y]), (:hd, h))
+                      for (x, y, h) in vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)]
     if prev_t == 0
         assess_model = start_pose_prior
         assess_args = (robot_inputs.start, settings.motion_settings)
