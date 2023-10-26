@@ -1568,10 +1568,8 @@ reverse_grid_index(grid_n_points, j) =
     p = trace[prefix_address(t, :pose => :p)]
     hd = trace[prefix_address(t, :pose => :hd)]
 
-    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
     choicemap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]), (prefix_address(t, :pose => :hd), h))
-                      for (x, y, h) in pose_grid]
-    
+                      for (x, y, h) in vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)]
     pose_log_weights = [update(trace, cm)[2] for cm in choicemap_grid]
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
 
@@ -1619,10 +1617,8 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
     p = trace[prefix_address(t, :pose => :p)]
     hd = trace[prefix_address(t, :pose => :hd)]
 
-    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
     choicemap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]), (prefix_address(t, :pose => :hd), h))
-                      for (x, y, h) in pose_grid]
-    
+                      for (x, y, h) in vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)]
     pose_log_weights = [update(trace, cm)[2] for cm in choicemap_grid]
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
 
@@ -1638,11 +1634,10 @@ end
     p = trace[prefix_address(t, :pose => :p)]
     hd = trace[prefix_address(t, :pose => :hd)]
 
-    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
-    choicemap_grid = [choicemap((:p, [x, y]), (:hd, h)) for (x, y, h) in pose_grid]
-
     # TODO: Would be more intuitive if these same weights were obtained by restricting `trace` to `prev_t`,
     # then updating it back out to `t` with these steps.
+    choicemap_grid = [choicemap((:p, [px, py]), (:hd, hd))
+                      for (px, py, hd) in vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)]
     if t == 1
         assess_model = start_pose_prior
         assess_args = (robot_inputs.start, settings.motion_settings)
