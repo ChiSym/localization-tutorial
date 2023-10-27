@@ -1474,7 +1474,7 @@ function mh_step(trace, proposal, proposal_args)
     _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap) = propose(proposal, (trace, proposal_args...))
     proposed_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
     bwd_proposal_weight, _ = assess(proposal, (proposed_trace, proposal_args...), bwd_proposal_choicemap)
-    log_weight_increment = model_weight_diff + bwd_proposal_weight - fwd_proposal_logprob
+    log_weight_increment = model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
     return (log(rand()) < log_weight_increment ? proposed_trace : trace), 0.
 end
 mh_kernel(proposal) =
