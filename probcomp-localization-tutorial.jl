@@ -1130,7 +1130,7 @@ function sample(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
     index = categorical(norm_weights)
-    return particles[index], log_weights[index]
+    return particles[index]
 end
 
 function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particles = 10)
@@ -1163,13 +1163,13 @@ N_samples = 10
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, traces, "prior samples")
 
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation)[1] for _ in 1:N_samples]
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, traces, "posterior samples")
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation) for _ in 1:N_samples]
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation)[1] for _ in 1:N_samples]
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, traces, "posterior samples")
+traces = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation) for _ in 1:N_samples]
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "posterior samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. posteriors")
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. approximate posteriors")
 savefig("imgs/prior_posterior")
 the_plot
 
@@ -1184,11 +1184,11 @@ traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_sam
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
 hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data under prior")
 
-traces_posterior_low_deviation = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation; N_MH=10, N_particles=10)[1] for _ in 1:N_samples]
+traces_posterior_low_deviation = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation; N_MH=10, N_particles=10) for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_posterior_low_deviation]
 hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="typical data under posterior: low dev data")
 
-traces_posterior_high_deviation = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation; N_MH=10, N_particles=10)[1] for _ in 1:N_samples]
+traces_posterior_high_deviation = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation; N_MH=10, N_particles=10) for _ in 1:N_samples]
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_posterior_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="typical data under posterior: high dev data")
 
@@ -1202,21 +1202,6 @@ the_plot
 # We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.
 #
 # There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency will later become possible when we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
-
-# %% [markdown]
-# ### Deeper functionality of GFs
-#
-# Rif asks: maybe these discussions are too simplified?
-#
-# Traced execution of generative functions, via `Gen.simulate` as seen above, is a straightforward alternative semantic interpretation.  A more refined operation, `Gen.generate`, allows two deeper features.
-#
-# 1. It proposes traces satisfying optional *constraints*.  
-# Note that the `get_choices(trace)` returns a tree with nodes at all invokations of `~` to sample from generative functions.  The *leaf* nodes correspond to *primitive choices* coming from honest *distributions*.  Presently, Gen only works with constraints upon these *primitive* choices.  The constraints are recorded in structures called *choice maps*, as modified in the black box code cell above.
-#
-# 2. It returns the proposed trace along with a *(log) weight*, which we then use in our inference strategies.  
-# The meaning of this weight is complex:  The trace proposal code need not produce traces with frequencies according to the "actual" distribution represented by the function—it is allowed to do something simpler and more computationally efficient.  The weight represents any difference between the proposal frequencies and the "actual" frequencies, plus contributions arising from any imposed constraints.
-#
-# Along the same lines, given a trace, one may perform simple modifications of it using `Gen.update` without rerunning the entire GF, and it returns along with the new trace the difference in weights.
 
 # %% [markdown]
 # ### Sampling / importance resampling
@@ -1286,38 +1271,7 @@ end
 # preceding weights.)
 # To obtain the above from the library version, one would define:
 
-basic_SIR_library(model, args, merged_constraints, N_SIR) = importance_resampling(model, args, merged_constraints, N_SIR);
-
-# %% [markdown]
-# Let us first consider a shorter robot path, but, to keep it interesting, allow a higher deviation from the ideal.
-
-# %%
-T_short = 4
-
-robot_inputs_short = (robot_inputs..., controls=robot_inputs.controls[1:T_short])
-full_model_args_short = (robot_inputs_short, world_inputs, full_settings)
-
-path_integrated_short = path_integrated[1:(T_short+1)]
-path_actual_short = path_actual[1:(T_short+1)]
-observations_short = observations[1:(T_short+1)]
-constraints_short = constraints[1:(T_short+1)]
-
-ani = Animation()
-for (pose_actual, pose_integrated, readings) in zip(path_actual_short, path_integrated_short, observations_short)
-    actual_plot = frame_from_sensors(
-        world, "Actual data",
-        path_actual_short, :brown, "actual path",
-        pose_actual, readings, "actual sensors",
-        sensor_settings)
-    integrated_plot = frame_from_sensors(
-        world, "Apparent data",
-        path_integrated_short, :green2, "path from integrating controls",
-        pose_integrated, readings, "actual sensors",
-        sensor_settings)
-    frame_plot = plot(actual_plot, integrated_plot, size=(1000,500), plot_title="Problem data\n(shortened path)")
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/discrepancy_short.gif", fps=1)
+basic_SIR_library(model, args, merged_constraints, N_SIR) = importance_resampling(model, args, merged_constraints, N_SIR)[1];
 
 # %% [markdown]
 # For such a shorter path, SIR can find a somewhat noisy fit without too much effort.
@@ -1326,11 +1280,13 @@ gif(ani, "imgs/discrepancy_short.gif", fps=1)
 # > In `traces = ...` below, are you running SIR `N_SAMPLES` times and getting one sample each time? Why not run it once and get `N_SAMPLES`? Talk about this?
 
 # %%
+T_short = 6
+
 N_samples = 10
 N_SIR = 500
-traces = [basic_SIR_library(full_model, (T_short, full_model_args_short...), constraints_short, N_SIR)[1] for _ in 1:N_samples]
+traces = [basic_SIR_library(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
 
-the_plot = frame_from_traces(world, "SIR (short path)", path_actual_short, traces)
+the_plot = frame_from_traces(world, "SIR (short path)", path_low_deviation[1:(T_short+1)], "path to fit", traces, "SIR samples")
 savefig("imgs/SIR_short")
 the_plot
 
@@ -1373,19 +1329,14 @@ function rejection_sample(model, args, merged_constraints, N_burn_in, N_particle
 end;
 
 # %%
-T_RS = 9
-path_actual_RS = path_actual[1:(T_RS+1)]
-constraints_RS = constraints[1:(T_RS+1)];
-
-# %%
 N_burn_in = 0 # omit burn-in to illustrate early behavior
 N_particles = 20
 compute_bound = 5000
-traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_actual_RS, traces[1:i])
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)], "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS.gif", fps=1)
@@ -1394,27 +1345,27 @@ gif(ani, "imgs/RS.gif", fps=1)
 N_burn_in = 100
 N_particles = 20
 compute_bound = 5000
-traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_actual_RS, traces[1:i])
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)], "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
-gif(ani, "imgs/RS.gif", fps=1)
+gif(ani, "imgs/RS_2.gif", fps=1)
 
 # %%
 N_burn_in = 1000
 N_particles = 20
 compute_bound = 5000
-traces = rejection_sample(full_model, (T_RS, full_model_args...), constraints_RS, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_actual_RS, traces[1:i])
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)], "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
-gif(ani, "imgs/RS.gif", fps=1)
+gif(ani, "imgs/RS_3.gif", fps=1)
 
 # %% [markdown]
 # The performance of this algorithm varies wildly!  Without the `MAX_attempts` way out, it may take a long time to run; and with, it may produce few samples.
@@ -1431,10 +1382,10 @@ gif(ani, "imgs/RS.gif", fps=1)
 # %%
 N_samples = 10
 N_SIR = 500
-traces = [basic_SIR_library(full_model, (T, full_model_args...), constraints, N_SIR)[1] for _ in 1:N_samples]
+traces = [basic_SIR_library(full_model, (T, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
 
-the_plot = frame_from_traces(world, "SIR (original path)", path_actual, traces)
-savefig("imgs/SIR")
+the_plot = frame_from_traces(world, "SIR (original path)", path_low_deviation, "path to fit", traces, "RS samples")
+savefig("imgs/SIR_final")
 the_plot
 
 # %% [markdown]
