@@ -1525,6 +1525,17 @@ mh_kernel(proposal) =
 # Then PF+Rejuv code.
 
 # %%
+function resample!(particles, log_weights, ESS_threshold)
+    log_total_weight = logsumexp(log_weights)
+    log_norm_weights = log_weights .- log_total_weight
+    if effective_sample_size(log_norm_weights) < ESS_threshold
+        norm_weights = exp.(log_norm_weights)
+        particles .= [particles[categorical(norm_weights)] for _ in particles]
+        log_weights .= log_total_weight - log(length(log_weights))
+    end
+end
+
+
 # Compare with the source code for the library calls used by `particle_filter_rejuv_library`!
 
 function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule, ESS_threshold=Inf)
@@ -1536,10 +1547,7 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_k
     end
 
     for t in 1:T
-        log_norm_weights = log_weights .- logsumexp(log_weights)
-        if effective_sample_size(log_norm_weights) < ESS_threshold
-            resample!(traces, log_weights)
-        end
+        resample!(traces, log_weights, ESS_threshold)
 
         for i in 1:N_particles
             for rejuv_args in rejuv_args_schedule
@@ -1702,10 +1710,7 @@ function controlled_particle_filter_rejuv(model, T, args, constraints, N_particl
     end
 
     for t in 1:T
-        log_norm_weights = log_weights .- logsumexp(log_weights)
-        if effective_sample_size(log_norm_weights) < ESS_threshold
-            resample!(traces, log_weights)
-        end
+        resample!(traces, log_weights, ESS_threshold)
 
         rejuv_count = 0
         temp_args_schedule = rejuv_args_schedule
@@ -1724,10 +1729,7 @@ function controlled_particle_filter_rejuv(model, T, args, constraints, N_particl
                     log_weights[i] += log_weight_increment
                 end
 
-                log_norm_weights = log_weights .- logsumexp(log_weights)
-                if effective_sample_size(log_norm_weights) < ESS_threshold
-                    resample!(traces, log_weights)
-                end
+                resample!(traces, log_weights, ESS_threshold)
             end
 
             rejuv_count += 1
