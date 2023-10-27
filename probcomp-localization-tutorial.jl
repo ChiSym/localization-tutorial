@@ -1592,9 +1592,24 @@ end;
 # Should be able to:
 
 # %%
-grid_args_schedule = ...
+grid_n_points_start = [3, 3, 3]
+grid_sizes_start = [.7, .7, π/10]
+grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
+
 grid_mh_kernel = mh_kernel(grid_proposal)
-particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_mh_kernel, grid_args_schedule; ESS_threshold=ESS_threshold)
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, traces, "prior samples")
+
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_mh_kernel, grid_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, grid_mh_kernel, grid_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Grid")
+savefig("imgs/PF_MH_grid")
+the_plot
 
 # %% [markdown]
 # ### Properly weighted samples
