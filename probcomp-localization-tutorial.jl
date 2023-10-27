@@ -985,6 +985,9 @@ gif(ani, "imgs/robot_can_see.gif", fps=2)
 
 # %% [markdown]
 # ## Why we need inference
+
+# %% [markdown]
+# ### In a picture
 #
 # The path obtained by integrating the controls serves as a proposal for the true path, but it is unsatisfactory, especially in the high motion deviation case.  The picture gives an intuitive sense of the fit:
 
@@ -1009,7 +1012,23 @@ gif(ani, "imgs/need.gif", fps=1)
 # %% [markdown]
 # It would seem that the fit is reasonable in low motion deviation, but really breaks down in high motion deviation.
 #
-# We are not limited to intuitive judgments here: the model can quantitatively tell us how good a fit it is for the data.  Namely, we can compare the likelihood of the data under the model to the distribution of likelihoods of data under typical samples from the model.
+# We are not limited to intuitive judgments here: the model can quantitatively tell us how good a fit it is for the data.  Namely, we can compare the likelihoods of the observation data in typical samples produced by the model, to the likelihoods of our fixed observation data under samples from the model agreeing these data.
+#
+# In order to do this, we detour to explain how to produce samples from our model that agree with the fixed observation data.
+
+# %% [markdown]
+# ### Generating samples with constraints
+#
+# We have seen how `Gen.simulate` performs traced execution of a generative function: as the program runs, it draws stochastic choices from all required primitive distributions, and records them in a choice map.
+#
+# The operation `Gen.generate` performs a generalization of this process.  One also provides a choice map of *constraints* that declare fixed values for some of these primitive choices.  As the program runs, any primitive choice that has been named by the constraints is deterministically given the specified value, and otherwise it is drawn stochastically as in `Gen.simulate`.
+#
+# The trace resulting from a call to `Gen.generate` is indistinguishable from `Gen.simulate`, having the same kind of choice map, in turn having the same assignments of densities to its nodes according to the primitive distributions.  But there is a key situational difference: the total density is *no longer equal to* the frequency with which the trace stochastically occurs under the model.
+#
+# RATIO IS THE IMPORTANCE WEIGHT, EQUALS PROJECT OF CONSTRAINT ADDRESSES IN RESULTING TRACE, AND IS ALSO RETURNED.
+
+# %% [markdown]
+# ### Picturing generated samples
 
 # %%
 # Encode sensor readings into choice map.
@@ -1017,11 +1036,6 @@ gif(ani, "imgs/need.gif", fps=1)
 constraint_from_sensors(t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
     choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
 constraint_from_sensors(tuple :: Tuple) = constraint_from_sensors(tuple...);
-
-# %% [markdown]
-# WE FIRST USE `Gen.generate` HERE:
-#
-# CHECK that `generate` samples a path according to `path`, then extends to a full trace by adjoining the observations, so one gets a comparable distribution..
 
 # %%
 N_samples = 200
