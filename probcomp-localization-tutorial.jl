@@ -1525,8 +1525,7 @@ mh_kernel(proposal) =
 # Then PF+Rejuv code.
 
 # %%
-# Alternatively, using library calls: `particle_filter_rejuv_library` from the
-# black box above performs exactly this algorithm!
+# Compare with the source code for the library calls used by `particle_filter_rejuv_library`!
 
 function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
@@ -1632,7 +1631,7 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
     (trace, proposal_args) -> smcp3_step(trace, fwd_proposal, bwd_proposal, proposal_args);
 
 # %% [markdown]
-# Let us write the corresponding backward transformation for the grid proposal.
+# Let us write the forward and backward transformations for the grid proposal.
 
 # %%
 @gen function grid_fwd_proposal(trace, grid_n_points, grid_sizes)
