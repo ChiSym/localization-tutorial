@@ -1729,8 +1729,15 @@ function controlled_particle_filter_rejuv(model, T, args, constraints, N_particl
 
             if logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count != MAX_rejuv
                 for i in 1:N_particles
-                    traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
+                    # Produce entirely new extensions to the last time step by first backing out and then readvancing.
+                    traces[i], log_weight_increment, _, _ = update(trace[i], (t-2, args...), change_only_T)
                     log_weights[i] += log_weight_increment
+                    traces[i], log_weight_increment, _, _ = update(trace[i], (t-1, args...), change_only_T, constraints[t])
+                    log_weights[i] += log_weight_increment
+
+                    # By the way, the following commented line would accomplish the same.  You can read about it...
+                    # traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
+                    # log_weights[i] += log_weight_increment
                 end
 
                 resample!(traces, log_weights, ESS_threshold)
@@ -1751,6 +1758,7 @@ end;
 # %%
 weight_change_bound = (-1. * 10^5)/20
 
+# TODO: FIXME
 grid_args_schedule_modifier(args_schedule, rejuv_count) =
     (rejuv_count % 1 == 0) ? [(nsteps, sizes .* 0.75) for (nsteps, sizes) in args_schedule]
                            : [(nsteps + 2, sizes)     for (nsteps, sizes) in args_schedule];
