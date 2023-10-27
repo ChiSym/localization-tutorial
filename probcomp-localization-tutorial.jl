@@ -27,6 +27,9 @@
 #   * rejuv SMCP3
 #   * ...
 #
+# * Comment on roles of fwd/bwd proposals in SMCP3.
+# * Visualize grids somehow.
+#
 # * Color sensor reading picture lines via when unexpectedly low likelihood.
 #
 # * Not just a graph of slower (un-Unfold) loop, but perhaps debugging statements showing the reexectution.
@@ -1448,8 +1451,6 @@ the_plot
 
 # %% [markdown]
 # WHY DOES `Gen.generate` GIVE THE SAME WEIGHTS AS ABOVE?
-#
-# EFFECTIVE SAMPLE SIZE?!
 
 # %%
 function resample!(particles, log_weights)
