@@ -1527,7 +1527,7 @@ mh_kernel(proposal) =
 # %%
 # Compare with the source code for the library calls used by `particle_filter_rejuv_library`!
 
-function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule)
+function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule, ESS_threshold=Inf)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     
@@ -1536,7 +1536,10 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_k
     end
 
     for t in 1:T
-        resample!(traces, log_weights)
+        log_norm_weights = log_weights .- logsumexp(log_weights)
+        if effective_sample_size(log_norm_weights) < ESS_threshold
+            resample!(traces, log_weights)
+        end
 
         for i in 1:N_particles
             for rejuv_args in rejuv_args_schedule
@@ -1558,12 +1561,14 @@ end;
 # Note usage with drift proposal:
 
 # %%
+ESS_threshold =  1. + N_particles / 10.
+
 drift_step_factor = 1/3.
 drift_proposal_args = (drift_step_factor,)
 N_MH = 10
 drift_args_schedule = [drift_proposal_args for _ in 1:N_MH]
 drift_mh_kernel = mh_kernel(drift_proposal)
-particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, drift_mh_kernel, drift_args_schedule)
+particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, drift_mh_kernel, drift_args_schedule; ESS_threshold=ESS_threshold)
 
 # %% [markdown]
 # VISUALIZE
@@ -1607,7 +1612,7 @@ end;
 # %%
 grid_args_schedule = ...
 grid_mh_kernel = mh_kernel(grid_proposal)
-particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_mh_kernel, grid_args_schedule)
+particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_mh_kernel, grid_args_schedule; ESS_threshold=ESS_threshold)
 
 # %% [markdown]
 # ### Properly weighted samples
@@ -1680,7 +1685,7 @@ end;
 
 # %%
 grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal)
-particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_smcp3_kernel, grid_args_schedule)
+particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_smcp3_kernel, grid_args_schedule; ESS_threshold=ESS_threshold)
 
 # %% [markdown]
 # ### Adaptive inference controller
