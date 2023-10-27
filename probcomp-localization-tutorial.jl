@@ -1756,8 +1756,9 @@ weight_change_bound = (-1. * 10^5)/20
 
 # TODO: FIXME
 grid_args_schedule_modifier(args_schedule, rejuv_count) =
-    (rejuv_count % 1 == 0) ? [(nsteps, sizes .* 0.75) for (nsteps, sizes) in args_schedule]
-                           : [(nsteps + 2, sizes)     for (nsteps, sizes) in args_schedule];
+    (rejuv_count % 1 == 0) ?
+        [(nsteps, sizes .* 0.75) for (nsteps, sizes) in args_schedule] :
+        [(nsteps + 2, sizes)     for (nsteps, sizes) in args_schedule];
 
 # %% [markdown]
 # # Particle filter with MCMC Rejuvenation
