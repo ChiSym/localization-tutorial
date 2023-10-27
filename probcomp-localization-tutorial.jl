@@ -560,7 +560,9 @@ for t in 1:T
     # ...
     @assert has_value(get_choices(trace), :steps => t => :pose => :p)
     @assert !has_value(get_choices(trace), :steps => (t+1) => :pose => :p)
-end;
+end
+
+println("Success");
 
 # %% [markdown]
 # This is a good opportunity to introduce some computational complexity considerations.
@@ -1026,6 +1028,8 @@ gif(ani, "imgs/need.gif", fps=1)
 # The trace resulting from a call to `Gen.generate` is indistinguishable from `Gen.simulate`, having the same kind of choice map, in turn having the same assignments of densities to its nodes according to the primitive distributions.  But there is a key situational difference: the total density is *no longer equal to* the frequency with which the trace stochastically occurs under the model.
 #
 # RATIO IS THE IMPORTANCE WEIGHT, EQUALS PROJECT OF CONSTRAINT ADDRESSES IN RESULTING TRACE, AND IS ALSO RETURNED.
+#
+# Frequency times importance weight equals getscore; extreme cases.
 
 # %% [markdown]
 # ### Picturing generated samples
@@ -1719,7 +1723,6 @@ function controlled_particle_filter_rejuv(model, T, args, constraints, N_particl
         rejuv_count = 0
         temp_args_schedule = rejuv_args_schedule
         while logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count <= MAX_rejuv
-
             for i in 1:N_particles
                 for rejuv_args in rejuv_args_schedule
                     traces[i], log_weight_increment = rejuv_kernel(traces[i], rejuv_args)
