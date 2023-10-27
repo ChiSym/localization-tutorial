@@ -1497,7 +1497,7 @@ end
 
 # Compare with the source code for the library calls used by `particle_filter_rejuv_library`!
 
-function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule, ESS_threshold=Inf)
+function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule, ESS_threshold)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     
@@ -1528,6 +1528,7 @@ end;
 # Note usage with drift proposal:
 
 # %%
+N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
 drift_step_factor = 1/3.
@@ -1535,7 +1536,21 @@ drift_proposal_args = (drift_step_factor,)
 N_MH = 10
 drift_args_schedule = [drift_proposal_args for _ in 1:N_MH]
 drift_mh_kernel = mh_kernel(drift_proposal)
-particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, drift_mh_kernel, drift_args_schedule; ESS_threshold=ESS_threshold)
+
+N_samples = 10
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, traces, "prior samples")
+
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, drift_mh_kernel, drift_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, drift_mh_kernel, drift_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Drift")
+savefig("imgs/PF_MH_drift")
+the_plot
 
 # %% [markdown]
 # VISUALIZE
