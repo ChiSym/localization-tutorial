@@ -1690,6 +1690,65 @@ particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation,
 # %% [markdown]
 # ### Adaptive inference controller
 
+# %%
+function controlled_particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
+                                          ESS_threshold=Inf, MAX_rejuv=3)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+
+    prev_total_weight = 0.
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+
+    for t in 1:T
+        log_norm_weights = log_weights .- logsumexp(log_weights)
+        if effective_sample_size(log_norm_weights) < ESS_threshold
+            resample!(traces, log_weights)
+        end
+
+        rejuv_count = 0
+        temp_args_schedule = rejuv_args_schedule
+        while logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count <= MAX_rejuv
+
+            for i in 1:N_particles
+                for rejuv_args in rejuv_args_schedule
+                    traces[i], log_weight_increment = rejuv_kernel(traces[i], rejuv_args)
+                    log_weights[i] += log_weight_increment
+                end
+            end
+
+            if logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count != MAX_rejuv
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
+                    log_weights[i] += log_weight_increment
+                end
+
+                log_norm_weights = log_weights .- logsumexp(log_weights)
+                if effective_sample_size(log_norm_weights) < ESS_threshold
+                    resample!(traces, log_weights)
+                end
+            end
+
+            rejuv_count += 1
+            temp_args_schedule = args_schedule_modifier(temp_args_schedule, rejuv_count)
+        end
+
+        prev_total_weight = logsumexp(log_weights)
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+    end
+end;
+
+# %%
+weight_change_bound = (-1. * 10^5)/20
+
+grid_args_schedule_modifier(args_schedule, rejuv_count) =
+    (rejuv_count % 1 == 0) ? [(nsteps, sizes .* 0.75) for (nsteps, sizes) in args_schedule]
+                           : [(nsteps + 2, sizes)     for (nsteps, sizes) in args_schedule];
+
 # %% [markdown]
 # # Particle filter with MCMC Rejuvenation
 #
