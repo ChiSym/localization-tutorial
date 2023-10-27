@@ -1141,9 +1141,9 @@ end;
 # %%
 # Visualize distributions over traces.
 
-function frame_from_traces(world, title, path_actual, traces, trace_label; show_clutters=false)
+function frame_from_traces(world, title, path, path_label, traces, trace_label; show_clutters=false)
     the_plot = plot_world(world, title; show_clutters=show_clutters)
-    if !isnothing(path_actual); plot!(path_actual; label="actual path", color=:brown) end
+    if !isnothing(path); plot!(path; label=path_label, color=:brown) end
     for trace in traces
         poses = get_path(trace)
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=nothing, color=:green, alpha=0.3)
@@ -1801,7 +1801,7 @@ grid_args_schedule_modifier(args_schedule, rejuv_count) =
 # This adds a step to the particle filter after resampling, which iteratively tweaks the values $\textbf{z}_t^{a^i_t}$ to make them more consistent observations.
 
 # %%
-function particle_filter_rejuv(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
+function particle_filter_MH_rejuv(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     resample_traces = Vector{Trace}(undef, N_particles)
@@ -1836,9 +1836,8 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, N_MH, M
     end
 
     return traces, log_weights
-end
-;
-# # Alternatively, using library calls: `particle_filter_rejuv_library` from the black box above!
+end;
+
 
 # %%
 drift_step_factor = 1/3.
@@ -1846,13 +1845,22 @@ drift_step_factor = 1/3.
 N_samples = 6
 N_particles = 10
 N_MH = 5
+
 t1 = now()
-traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints, N_particles,
-                                N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
+traces_low_deviation = [particle_filter_MH_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles,
+                                                 N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
 t2 = now()
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+plot_low_deviation = frame_from_traces(world, "low dev", path_low_deviation, "path to be fit", traces_low_deviation, "samples")
 
-the_plot = frame_from_traces(world, "PF+Drift Rejuv", path_actual, traces)
+t1 = now()
+traces_high_deviation = [particle_filter_MH_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles,
+                                                  N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
+t2 = now()
+println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+plot_high_deviation = frame_from_traces(world, "high dev", path_high_deviation, "path to be fit", traces_high_deviation, "samples")
+
+the_plot = plot(plot_low_deviation, plot_high_deviation; size=(1000,500), plot_title="PF+Drift Rejuv")
 savefig("imgs/PF_rejuv")
 the_plot
 
@@ -1861,12 +1869,12 @@ the_plot
 
 # %%
 """
-    vs = vector_grid(v0, k, r)
+    vs = vector_grid_old(v0, k, r)
 
 Returns grid of vectors, given a grid center, number of grid points
 along each dimension and the resolution along each dimension.
 """
-function vector_grid(v0::Vector{Float64}, k::Vector{Int}, r::Vector{Float64})
+function vector_grid_old(v0::Vector{Float64}, k::Vector{Int}, r::Vector{Float64})
     offset = v0 - (r + k.*r)/2
     return map(I -> [Tuple(I)...].*r + offset, CartesianIndices(Tuple(k)))
 end
@@ -1877,7 +1885,7 @@ function grid_index(x, v0, k, r)
     return LinearIndices(Tuple(k))[I...]
 end
 
-@gen function grid_proposal(
+@gen function grid_proposal_old(
         tr,
         n_steps, # (n_x_steps, n_y_steps, n_hd_steps),
         step_sizes # (x_step_size, y_step_size, hd_step_size)
@@ -1890,7 +1898,7 @@ end
     p = tr[prefix_address(t, :pose => :p)]
     hd = tr[prefix_address(t, :pose => :hd)]
 
-    pose_grid = reshape(vector_grid([p..., hd], n_steps, step_sizes), (:,))
+    pose_grid = reshape(vector_grid_old([p..., hd], n_steps, step_sizes), (:,))
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
@@ -1908,15 +1916,15 @@ end
 
     inverting_j = grid_index([p..., hd], [new_p..., new_hd], n_steps, step_sizes)
 
-    return (chmap_grid[j], choicemap((:j, inverting_j)))
+    return (j, chmap_grid[j], inverting_j)
 end;
 
 # %%
 function grid_mh(tr, n_steps, step_sizes)
     (proposal_choicemap, fwd_proposal_logprob, (j, chmap, inv_j)) =
-        Gen.propose(grid_proposal, (tr, n_steps, step_sizes))
+        Gen.propose(grid_proposal_old, (tr, n_steps, step_sizes))
     (new_tr, model_log_probratio, _, _) = Gen.update(tr, chmap)
-    (bwd_proposal_logprob, (_, _, j2)) = Gen.assess(grid_proposal, (new_tr, n_steps, step_sizes), choicemap((:j, inv_j)))
+    (bwd_proposal_logprob, (_, _, j2)) = Gen.assess(grid_proposal_old, (new_tr, n_steps, step_sizes), choicemap((:j, inv_j)))
     @assert j2 == j # Quick reversibility check
     log_acc_prob = model_log_probratio + bwd_proposal_logprob - fwd_proposal_logprob
     if log(rand()) <= log_acc_prob
@@ -2002,25 +2010,47 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 N_samples = 6
 N_particles = 10
+checkpointss = [[], []]
 
 t1 = now()
-checkpointss =
+checkpointss[1] =
     [particle_filter_grid_rejuv_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
        full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = now()
-
 merged_traj_list = []
 merged_weight_list = []
-for checkpoints in checkpointss
+for checkpoints in checkpointss[1]
     (trajs, lwts) = checkpoints[end]
     merged_traj_list = [merged_traj_list..., trajs...]
     merged_weight_list = [merged_weight_list..., lwts...]
 end
-merged_weight_list = merged_weight_list .- log(length(checkpointss))
+merged_weight_list = merged_weight_list .- log(length(checkpointss[1]))
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF + Grid MH Rejuv", path_low_deviation, merged_traj_list, merged_weight_list)
+plot_low_deviation = frame_from_weighted_trajectories(world, "low dev", path_low_deviation, merged_traj_list, merged_weight_list)
+
+t1 = now()
+checkpointss[2] =
+    [particle_filter_grid_rejuv_with_checkpoints(
+       #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+       full_model, T, full_model_args, constraints_high_deviation, N_particles, grid_schedule)
+     for _=1:N_samples]
+t2 = now()
+merged_traj_list = []
+merged_weight_list = []
+for checkpoints in checkpointss[2]
+    (trajs, lwts) = checkpoints[end]
+    merged_traj_list = [merged_traj_list..., trajs...]
+    merged_weight_list = [merged_weight_list..., lwts...]
+end
+merged_weight_list = merged_weight_list .- log(length(checkpointss[2]))
+println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+plot_high_deviation = frame_from_weighted_trajectories(world, "high dev", path_high_deviation, merged_traj_list, merged_weight_list)
+
+the_plot = plot(plot_low_deviation, plot_high_deviation; size=(1000,500), plot_title="PF + Grid MH Rejuv")
+savefig("imgs/PF_grid")
+the_plot
 
 # %% [markdown]
 # This is just a first step.  We'll improve it below by improving the quality of the particle weights (and, in turn, the resampling).
@@ -2039,7 +2069,7 @@ frame_from_weighted_trajectories(world, "PF + Grid MH Rejuv", path_low_deviation
     p = tr[prefix_address(t, :pose => :p)]
     hd = tr[prefix_address(t, :pose => :hd)]
 
-    pose_grid = reshape(vector_grid([p..., hd], n_steps, step_sizes), (:,))
+    pose_grid = reshape(vector_grid_old([p..., hd], n_steps, step_sizes), (:,))
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
@@ -2070,7 +2100,7 @@ end
     new_p = updated_tr[prefix_address(t, :pose => :p)]
     new_hd = updated_tr[prefix_address(t, :pose => :hd)]
 
-    pose_grid = reshape(vector_grid([new_p..., new_hd], n_steps, step_sizes), (:,))
+    pose_grid = reshape(vector_grid_old([new_p..., new_hd], n_steps, step_sizes), (:,))
     
     # Collection of choicemaps which would update the trace to have each pose
     # in the grid
@@ -2178,26 +2208,47 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 N_samples = 6
 N_particles = 10
+checkpointss2 = [[], []]
 
 t1 = now()
-checkpointss2 =
+checkpointss2[1] =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-       full_model, T, full_model_args, constraints, N_particles, grid_schedule)
+       full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = now()
-
 merged_traj_list2 = []
 merged_weight_list2 = []
-for checkpoints in checkpointss2
+for checkpoints in checkpointss2[1]
     (trajs, lwts) = checkpoints[end]
     merged_traj_list2 = [merged_traj_list2..., trajs...]
     merged_weight_list2 = [merged_weight_list2..., lwts...]
 end
-merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2))
-
+merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2[1]))
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv", path_actual, merged_traj_list2, merged_weight_list2)
+plot_low_deviation = frame_from_weighted_trajectories(world, "low dev", path_low_deviation, merged_traj_list2, merged_weight_list2)
+
+t1 = now()
+checkpointss2[2] =
+    [particle_filter_grid_smcp3_with_checkpoints(
+       #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+       full_model, T, full_model_args, constraints_high_deviation, N_particles, grid_schedule)
+     for _=1:N_samples]
+t2 = now()
+merged_traj_list2 = []
+merged_weight_list2 = []
+for checkpoints in checkpointss2[2]
+    (trajs, lwts) = checkpoints[end]
+    merged_traj_list2 = [merged_traj_list2..., trajs...]
+    merged_weight_list2 = [merged_weight_list2..., lwts...]
+end
+merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2[2]))
+println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+plot_high_deviation = frame_from_weighted_trajectories(world, "high dev", path_high_deviation, merged_traj_list2, merged_weight_list2)
+
+the_plot = plot(plot_low_deviation, plot_high_deviation; size=(1000,500), plot_title="PF + Grid SMCP3 Rejuv")
+savefig("imgs/PF_smcp3")
+the_plot
 
 # %% [markdown]
 # That's already better.  We'll improve this algorithm even further below.
@@ -2211,10 +2262,10 @@ frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv", path_actual, me
 
 # %%
 ani = Animation()
-for (pose_actual, pose_integrated, readings) in zip(path_actual_low_deviation, path_integrated, observations_low_deviation)
+for (pose_actual, pose_integrated, readings) in zip(path_low_deviation, path_integrated, observations_low_deviation)
     actual_plot = frame_from_sensors(
         world, "Actual data",
-        path_actual_low_deviation, :brown, "actual path",
+        path_low_deviation, :brown, "actual path",
         pose_actual, readings, "actual sensors",
         sensor_settings)
     integrated_plot = frame_from_sensors(
@@ -2235,7 +2286,7 @@ t1 = now()
 checkpointss4 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
-       full_model, T, full_model_args, constraints2, N_particles, [])
+       full_model, T, full_model_args, constraints_low_deviation, N_particles, [])
      for _=1:N_samples]
 t2 = now()
 
@@ -2249,7 +2300,7 @@ end
 merged_weight_list4 = merged_weight_list4 .- log(length(checkpointss4))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion noise", path_actual_low_deviation, merged_traj_list4, merged_weight_list4)
+frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion noise", path_low_deviation, merged_traj_list4, merged_weight_list4)
 
 # %% [markdown]
 # ### The issue is when motion noise is higher
@@ -2258,10 +2309,10 @@ frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion
 
 # %%
 ani = Animation()
-for (pose_actual, pose_integrated, readings) in zip(path_actual_high_deviation, path_integrated, observations_high_deviation)
+for (pose_actual, pose_integrated, readings) in zip(path_high_deviation, path_integrated, observations_high_deviation)
     actual_plot = frame_from_sensors(
         world, "Actual data",
-        path_actual_high_deviation, :brown, "actual path",
+        path_high_deviation, :brown, "actual path",
         pose_actual, readings, "actual sensors",
         sensor_settings)
     integrated_plot = frame_from_sensors(
@@ -2285,7 +2336,7 @@ t1 = now()
 checkpointss5 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         observations, N_particles, grid)
-       full_model, T, full_model_args, constraints3, N_particles, [])
+       full_model, T, full_model_args, constraints_high_deviation, N_particles, [])
      for _=1:N_samples]
 t2 = now()
 
@@ -2299,7 +2350,7 @@ end
 merged_weight_list5 = merged_weight_list5 .- log(length(checkpointss5))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF - motion noise:(model:low)(data:high)", path_actual_high_deviation, merged_traj_list5, merged_weight_list5)
+frame_from_weighted_trajectories(world, "PF - motion noise:(model:low)(data:high)", path_high_deviation, merged_traj_list5, merged_weight_list5)
 
 # %% [markdown]
 # Conversely, if we run a no-rejuvenation particle filter with the higher model noise parameters, the runs are inconsistent.
@@ -2312,7 +2363,7 @@ t1 = now()
 checkpointss6 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
-       full_model, T, full_model_args, constraints3, N_particles, [])
+       full_model, T, full_model_args, constraints_high_deviation, N_particles, [])
      for _=1:N_samples]
 t2 = now()
 
@@ -2326,7 +2377,7 @@ end
 merged_weight_list6 = merged_weight_list6 .- log(length(checkpointss6))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF - motion noise:(model:high)(data:high)", path_actual_high_deviation, merged_traj_list6, merged_weight_list6)
+frame_from_weighted_trajectories(world, "PF - motion noise:(model:high)(data:high)", path_high_deviation, merged_traj_list6, merged_weight_list6)
 
 # %% [markdown]
 # However, if we add back in SMCP3 rejuvenation, performance is a lot better!
@@ -2344,7 +2395,7 @@ t1 = now()
 checkpointss7 =
     [particle_filter_grid_smcp3_with_checkpoints(
        #model,      T,   args,         constraints, N_particles, grid)
-       full_model, T, full_model_args, constraints3, N_particles, grid_schedule)
+       full_model, T, full_model_args, constraints_high_deviation, N_particles, grid_schedule)
      for _=1:N_samples]
 t2 = now()
 
@@ -2358,7 +2409,7 @@ end
 merged_weight_list7 = merged_weight_list7 .- log(length(checkpointss7))
 
 println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv - motion noise:high", path_actual_high_deviation, merged_traj_list7, merged_weight_list7)
+frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv - motion noise:high", path_high_deviation, merged_traj_list7, merged_weight_list7)
 
 # %% [markdown]
 # # Inference controller to automatically spend the right amount of compute for good accuracy
@@ -2565,44 +2616,79 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 
 N_samples = 6
 N_particles = 10
-checkpointss3 = []
+checkpointss3 = [[], []]
+
 t1 = now()
 for _=1:N_samples
-    push!(checkpointss3, controlled_particle_filter_with_checkpoints_v2(
+    push!(checkpointss3[1], controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-        full_model, T, full_model_args, constraints, N_particles, grid_schedule))
+        full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_schedule))
 end
 t2 = now()
-
 merged_traj_list3 = []
 merged_weight_list3 = []
-for checkpoints in checkpointss3
+for checkpoints in checkpointss3[1]
     (trajs, lwts) = checkpoints[end].traj, checkpoints[end].wts
     merged_traj_list3 = [merged_traj_list3..., trajs...]
     merged_weight_list3 = [merged_weight_list3..., lwts...]
 end
-merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3));
+merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3[1]));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, "Inference Controller (moderate noise)", path_actual, merged_traj_list3, merged_weight_list3)
+plot_low_deviation = frame_from_weighted_trajectories(world, "low dev", path_low_deviation, merged_traj_list3, merged_weight_list3)
+
+t1 = now()
+for _=1:N_samples
+    push!(checkpointss3[2], controlled_particle_filter_with_checkpoints_v2(
+        #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
+        full_model, T, full_model_args, constraints_high_deviation, N_particles, grid_schedule))
+end
+t2 = now()
+merged_traj_list3 = []
+merged_weight_list3 = []
+for checkpoints in checkpointss3[2]
+    (trajs, lwts) = checkpoints[end].traj, checkpoints[end].wts
+    merged_traj_list3 = [merged_traj_list3..., trajs...]
+    merged_weight_list3 = [merged_weight_list3..., lwts...]
+end
+merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3[2]));
+println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
+plot_high_deviation = frame_from_weighted_trajectories(world, "high dev", path_high_deviation, merged_traj_list3, merged_weight_list3)
+
+the_plot = plot(plot_low_deviation, plot_high_deviation; size=(1000,500), plot_title="Inference Controller (moderate noise)")
+savefig("imgs/controller")
+the_plot
 
 # %% [markdown]
 # **Animation showing the controller in action----**
 
 # %%
-ani = Animation()
+ani_low_deviation = Animation()
 
-checkpoints = checkpointss3[1]
+checkpoints = checkpointss3[1][1]
 for checkpoint in checkpoints
-    frame_plot = frame_from_weighted_trajectories(world, "t = $(checkpoint.t) | operation = $(checkpoint.msg)", path_actual, checkpoint.traj, checkpoint.wts; minalpha=0.08)
-    frame(ani, frame_plot)
+    frame_plot = frame_from_weighted_trajectories(world, "t = $(checkpoint.t) | operation = $(checkpoint.msg)", path_low_deviation, checkpoint.traj, checkpoint.wts; minalpha=0.08)
+    frame(ani_low_deviation, frame_plot)
 end
-gif(ani, "imgs/controller_animation.gif", fps=1)
+gif(ani_low_deviation, "imgs/controller_animation.gif", fps=1)
 
 # %% [markdown]
 # Slower version:
 
 # %%
-gif(ani, "imgs/controller_animation.gif", fps=1/3)
+gif(ani_low_deviation, "imgs/controller_animation.gif", fps=1/3)
+
+# %%
+ani_high_deviation = Animation()
+
+checkpoints = checkpointss3[2][1]
+for checkpoint in checkpoints
+    frame_plot = frame_from_weighted_trajectories(world, "t = $(checkpoint.t) | operation = $(checkpoint.msg)", path_low_deviation, checkpoint.traj, checkpoint.wts; minalpha=0.08)
+    frame(ani_high_deviation, frame_plot)
+end
+gif(ani_high_deviation, "imgs/controller_animation.gif", fps=1)
+
+# %%
+gif(ani_high_deviation, "imgs/controller_animation.gif", fps=1/3)
 
 # %%
 # let
@@ -2646,14 +2732,14 @@ grid_schedule = [(nsteps, sizes1 .* (2/3)^(j - 1)) for j=1:3]
 N_samples = 6
 N_particles = 10
 checkpointss9 = []
+
 t1 = now()
 for _=1:N_samples
     push!(checkpointss9, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-        full_model, T, full_model_args, constraints2, N_particles, grid_schedule))
+        full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_schedule))
 end
 t2 = now()
-
 merged_traj_list9 = []
 merged_weight_list9 = []
 for checkpoints in checkpointss9
@@ -2663,7 +2749,7 @@ for checkpoints in checkpointss9
 end
 merged_weight_list9 = merged_weight_list9 .- log(length(checkpointss9));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, "Inference controller (low motion noise)", path_actual_low_deviation, merged_traj_list9, merged_weight_list9)
+frame_from_weighted_trajectories(world, "Inference controller (low motion noise)", path_low_deviation, merged_traj_list9, merged_weight_list9)
 
 # %% [markdown]
 # ### Controller on HIGH NOISE TRAJECTORY
@@ -2682,7 +2768,7 @@ t1 = now()
 for _=1:N_samples
     push!(checkpointss10, controlled_particle_filter_with_checkpoints_v2(
         #model,      T,   args,         constraints, N_particles, MH_arg_schedule)
-        full_model, T, full_model_args, constraints3, N_particles, grid_schedule))
+        full_model, T, full_model_args, constraints_high_deviation, N_particles, grid_schedule))
 end
 t2 = now()
 
@@ -2695,4 +2781,4 @@ for checkpoints in checkpointss10
 end
 merged_weight_list10 = merged_weight_list10 .- log(length(checkpointss10));
 println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
-frame_from_weighted_trajectories(world, "Inference controller (high motion noise)", path_actual_high_deviation, merged_traj_list10, merged_weight_list10)
+frame_from_weighted_trajectories(world, "Inference controller (high motion noise)", path_high_deviation, merged_traj_list10, merged_weight_list10)
