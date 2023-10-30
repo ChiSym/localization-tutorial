@@ -135,9 +135,10 @@ function load_world(file_name)
     box_size = max(x_max - x_min, y_max - y_min)
     center_point = [(x_min + x_max) / 2.0, (y_min + y_max) / 2.0]
     T = length(controls)
-    return ((walls=walls, clutters=clutters, walls_clutters=walls_clutters, bounding_box=bounding_box, box_size=box_size, center_point=center_point),
-            (start=start, controls=controls),
-            T)
+    return (walls=walls, clutters=clutters, walls_clutters=walls_clutters,
+            bounding_box=bounding_box, box_size=box_size, center_point=center_point),
+           (start=start, controls=controls),
+           T
 end;
 
 # %%
@@ -1119,8 +1120,8 @@ the_plot
     fwd_hd = {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
 
     # Form expected by `mh_step`, further below.
-    return (choicemap((prefix_address(t, :pose => :p), fwd_p), (prefix_address(t, :pose => :hd), fwd_hd)),
-            choicemap((prefix_address(t, :pose => :p), p), (prefix_address(t, :pose => :hd), hd)))
+    return choicemap((prefix_address(t, :pose => :p), fwd_p), (prefix_address(t, :pose => :hd), fwd_hd)),
+           choicemap((prefix_address(t, :pose => :p), p), (prefix_address(t, :pose => :hd), hd))
 end
 
 # Use `GenParticleFilters` library code for the generic parts.
