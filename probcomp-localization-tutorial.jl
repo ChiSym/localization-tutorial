@@ -1371,10 +1371,10 @@ end;
 # %%
 N_burn_in = 0 # omit burn-in to illustrate early behavior
 N_particles = 20
-compute_bound = 5000
+MAX_attempts = 5000
 
 t1 = now()
-traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
 t2 = now()
 println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (Total: $(dv(t2 - t1)) ms.)")
 
@@ -1388,10 +1388,10 @@ gif(ani, "imgs/RS.gif", fps=1)
 # %%
 N_burn_in = 100
 N_particles = 20
-compute_bound = 5000
+MAX_attempts = 5000
 
 t1 = now()
-traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
 t2 = now()
 println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (Total: $(dv(t2 - t1)) ms.)")
 
@@ -1405,10 +1405,10 @@ gif(ani, "imgs/RS_2.gif", fps=1)
 # %%
 N_burn_in = 1000
 N_particles = 20
-compute_bound = 5000
+MAX_attempts = 5000
 
 t1 = now()
-traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
+traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
 t2 = now()
 println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (Total: $(dv(t2 - t1)) ms.)")
 
