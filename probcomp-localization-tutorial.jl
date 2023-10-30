@@ -1634,16 +1634,15 @@ the_plot
 
 # %%
 function frame_from_weighted_traces(world, title, path, path_label, traces, log_weights, trace_label; show_clutters=false, min_alpha=0.03)
-    t = get_args(traces[1])[1]
     the_plot = plot_world(world, title; show_clutters=show_clutters)
 
-    if !isnothing(path_actual)
+    if !isnothing(path)
         plot!(path; label=path_label, color=:brown)
-        plot!(path[t]; label=nothing, color=:black)
+        plot!(path[get_args(traces[1])[1]+1]; label=nothing, color=:black)
     end
 
     norm_weights = exp.(log_weights .- logsumexp(log_weights))
-    for (trace, weight) in zip(traces, normalized_weights)
+    for (trace, weight) in zip(traces, norm_weights)
         alpha = max(min_alpha, 0.6*sqrt(weight))
         poses = get_path(trace)
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=trace_label, color=:green, alpha=alpha)
