@@ -327,7 +327,12 @@ motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
 N_samples = 50
 pose_samples = [start_pose_prior(robot_inputs.start, motion_settings) for _ in 1:N_samples]
 
+std_devs_radius = 2.
+
 the_plot = plot_world(world, "Start pose prior (samples)")
+plot!([robot_inputs.start.p[1]], [robot_inputs.start.p[2]];
+      color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
+      markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
 plot!(pose_samples; color=:red, label=nothing)
 savefig("imgs/start_prior")
 the_plot
@@ -336,8 +341,6 @@ the_plot
 N_samples = 50
 noiseless_step = robot_inputs.start.p + robot_inputs.controls[1].ds * robot_inputs.start.dp
 step_samples = [step_model(robot_inputs.start, robot_inputs.controls[1], world_inputs, motion_settings) for _ in 1:N_samples]
-
-std_devs_radius = 2
 
 the_plot = plot_world(world, "Motion step model model (samples)")
 plot!(robot_inputs.start; color=:black, label="step from here")
