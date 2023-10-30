@@ -1630,10 +1630,31 @@ savefig("imgs/PF_MH_drift")
 the_plot
 
 # %% [markdown]
-# VISUALIZE
+# ### More viz
 
-# %% [markdown]
-# More exploration with drift proposal?
+# %%
+function frame_from_weighted_traces(world, title, path, path_label, traces, log_weights, trace_label; show_clutters=false, min_alpha=0.03)
+    t = get_args(traces[1])[1]
+    the_plot = plot_world(world, title; show_clutters=show_clutters)
+
+    if !isnothing(path_actual)
+        plot!(path; label=path_label, color=:brown)
+        plot!(path[t]; label=nothing, color=:black)
+    end
+
+    norm_weights = exp.(log_weights .- logsumexp(log_weights))
+    for (trace, weight) in zip(traces, normalized_weights)
+        alpha = max(min_alpha, 0.6*sqrt(weight))
+        poses = get_path(trace)
+        plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=trace_label, color=:green, alpha=alpha)
+        plot!(poses[end]; color=:green, alpha=alpha, label=nothing)       
+        plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
+              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=alpha)
+        trace_label = nothing
+    end
+
+    return the_plot
+end;
 
 # %% [markdown]
 # ### Grid proposal for MH
