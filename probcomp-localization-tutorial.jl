@@ -406,7 +406,7 @@ get_retval(trace)
 #
 # The return values $\text{retval}(z)$ of these models are obtained from traces $z$ by reducing $z_\text{hd}$ modulo $2\pi$, and in the second case applying collision physics (relative to $w$) to the path from $y_\text p$ to $z_\text p$.  (We invite the reader to imagine if PropComp required us to compute the marginal density of the return value here!)  We have the following closed form for the density functions:
 # $$\begin{align*}
-# P_\text{init}(z; y, \nu)
+# P_\text{start}(z; y, \nu)
 # &= P_\text{mvnormal}(z_\text p; y_\text p, \nu_\text p^2 I)
 # \cdot P_\text{normal}(z_\text{hd}; y_\text{hd}, \nu_\text{hd}), \\
 # P_\text{step}(z; y, (s, \eta), w, \nu)
@@ -476,10 +476,10 @@ get_selected(get_choices(trace), select((prefix_address(t, :pose) for t in 1:6).
 # %% [markdown]
 # The corresponding mathematical picture is as follows.  We write $x_{a:b} = (x_a, x_{a+1}, \ldots, x_b)$ to gather items $x_t$ into a vector.
 #
-# In addition to the previous data, we are given an estimated start pose $r_0$ and controls $r_t = (s_t, \eta_t)$ for $t=1,\ldots,T$.  Then `path_model` corresponds to a distribution over traces denoted $\text{path}$; these traces are identified with vectors, namely, $z_{0:T} \sim \text{path}(r_{0:T}, w, \nu)$ is the same as $z_0 \sim \text{init}(r_0, \nu)$ and $z_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$ for $t=1,\ldots,T$.  Here and henceforth we use the shorthand $\text{step}(z, \ldots) := \text{step}(\text{retval}(z), \ldots)$.  The density function is
+# In addition to the previous data, we are given an estimated start pose $r_0$ and controls $r_t = (s_t, \eta_t)$ for $t=1,\ldots,T$.  Then `path_model` corresponds to a distribution over traces denoted $\text{path}$; these traces are identified with vectors, namely, $z_{0:T} \sim \text{path}(r_{0:T}, w, \nu)$ is the same as $z_0 \sim \text{start}(r_0, \nu)$ and $z_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$ for $t=1,\ldots,T$.  Here and henceforth we use the shorthand $\text{step}(z, \ldots) := \text{step}(\text{retval}(z), \ldots)$.  The density function is
 # $$
 # P_\text{path}(z_{0:T}; r_{0:T}, w, \nu)
-# = P_\text{init}(z_0; r_0, \nu) \cdot \prod\nolimits_{t=1}^T P_\text{step}(z_t; z_{t-1}, r_t, w, \nu)
+# = P_\text{start}(z_0; r_0, \nu) \cdot \prod\nolimits_{t=1}^T P_\text{step}(z_t; z_{t-1}, r_t, w, \nu)
 # $$
 # where each term, in turn, factors into a product of two (multivariate) normal densities as described above.
 
@@ -830,7 +830,7 @@ get_selected(get_choices(trace), selection)
 # $$\begin{align*}
 # P_\text{full}(z_{0:T}, o_{0:T})
 # &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
-# &= \big(P_\text{init}(z_0)\ P_\text{sensor}(o_0)\big)
+# &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
 #   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
 # \end{align*}$$
 #
