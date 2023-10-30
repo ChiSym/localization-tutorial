@@ -1410,7 +1410,7 @@ traces = [basic_SIR_library(full_model, (T, full_model_args...), merged_constrai
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
-the_plot = frame_from_traces(world, "SIR (original path)", path_low_deviation, "path to fit", traces, "RS samples")
+the_plot = frame_from_traces(world, "SIR (low dev)", path_low_deviation, "path to fit", traces, "RS samples")
 savefig("imgs/SIR_final")
 the_plot
 
