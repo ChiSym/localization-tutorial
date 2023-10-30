@@ -1581,7 +1581,43 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_thr
     end
 
     return traces, log_weights
-end;
+end
+
+function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    vizs = Vector{NamedTuple}(undef, N_particles)
+    infos = []
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    push!(infos, (type = :initial, traces = copy(traces), log_weights = copy(log_weights)))
+
+    for t in 1:T
+        resample!(traces, log_weights, ESS_threshold)
+        push!(infos, (type = :resample, traces = copy(traces), log_weights = copy(log_weights)))
+
+        for i in 1:N_particles
+            for rejuv_args in rejuv_args_schedule
+                traces[i], log_weight_increment, viz = rejuv_kernel(traces[i], rejuv_args)
+                log_weights[i] += log_weight_increment
+                vizs[i] = viz
+            end
+        end
+        push!(infos, (type = :rejuv, traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+        push!(infos, (type = :update, traces = copy(traces), log_weights = copy(log_weights)))
+    end
+
+    return infos
+end
+
+final_particles(infos) = (infos[end].traces, infos[end].log_weights);
 
 # %% [markdown]
 # Note usage with drift proposal:
@@ -1835,6 +1871,74 @@ function controlled_particle_filter_rejuv(model, T, args, constraints, N_particl
     end
 
     return traces, log_weights
+end
+
+function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
+                                                MAX_rejuv=3)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    vizs = Vector{NamedTuple}(undef, N_particles)
+    infos = []
+
+    prev_total_weight = 0.
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    push!(infos, (type = :initial, traces = copy(traces), log_weights = copy(log_weights)))
+
+    for t in 1:T
+        resample!(traces, log_weights, ESS_threshold)
+        push!(infos, (type = :resample, traces = copy(traces), log_weights = copy(log_weights)))
+
+        rejuv_count = 0
+        temp_args_schedule = rejuv_args_schedule
+        while logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count <= MAX_rejuv
+            for i in 1:N_particles
+                for rejuv_args in rejuv_args_schedule
+                    traces[i], log_weight_increment, viz = rejuv_kernel(traces[i], rejuv_args)
+                    log_weights[i] += log_weight_increment
+                    vizs[i] = viz
+                end
+            end
+            push!(infos, (type = :rejuv, traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+
+            if logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count != MAX_rejuv && t > 1
+                # Produce entirely new extensions to the last time step by first backing out and then readvancing.
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-2, args...), change_only_T, choicemap())
+                    log_weights[i] += log_weight_increment
+                end
+                push!(infos, (type = :rejuvenate_bwd, traces = copy(traces), log_weights = copy(log_weights)))
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-1, args...), change_only_T, constraints[t])
+                    log_weights[i] += log_weight_increment
+                end
+                push!(infos, (type = :rejuvenate_fwd, traces = copy(traces), log_weights = copy(log_weights)))
+
+                # By the way, the following commented lines would accomplish the same (on traces, not infos) as the above two loops.  You can read about it...
+                # for i in 1:N_particles
+                #     traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
+                #     log_weights[i] += log_weight_increment
+                # end
+                # push!(infos, (type = :rejuvenate, traces = copy(traces), log_weights = copy(log_weights)))
+
+                resample!(traces, log_weights, ESS_threshold)
+                push!(infos, (type = :resample, traces = copy(traces), log_weights = copy(log_weights)))
+            end
+
+            rejuv_count += 1
+            temp_args_schedule = args_schedule_modifier(temp_args_schedule, rejuv_count)
+        end
+
+        prev_total_weight = logsumexp(log_weights)
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+        push!(infos, (type = :update, traces = copy(traces), log_weights = copy(log_weights)))
+    end
+
+    return infos
 end;
 
 # %%
