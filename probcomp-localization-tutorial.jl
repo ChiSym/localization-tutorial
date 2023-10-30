@@ -1390,16 +1390,12 @@ end
 gif(ani, "imgs/RS_3.gif", fps=1)
 
 # %% [markdown]
-# The performance of this algorithm varies wildly!  Without the `MAX_attempts` way out, it may take a long time to run; and with, it may produce few samples.
+# The performance dynamics of this algorithm is a fun EXERCISE!
 
 # %% [markdown]
-# ### SIR and Adaptive Rejection Sampling scale poorly
+# ### SIR and Rejection Sampling scale poorly
 #
-# SIR does not scale because for longer paths, the search space is too large, and the results are only modestly closer to the posterior.
-#
-# Adaptive rejection sampling suffers from a similar issue.
-#
-# Below, we show SIR run on a long path to illustrate the type of poor inference results which arise from these algorithms.
+# SIR and RS already do not provide high-quality traces on short paths.  For longer paths, the difficulty only grows, as one blindly searches for a needle in a high-dimensional haystack.
 
 # %%
 N_samples = 10
