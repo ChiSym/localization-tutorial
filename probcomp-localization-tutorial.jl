@@ -1698,7 +1698,9 @@ inverse_grid_index(grid_n_points :: Vector{Int}, j :: Int) :: Int =
            params = (color=:red, label="pose grid"))
 
     return choicemap_grid[j], choicemap((:j, inv_j)), viz
-end;
+end
+
+grid_mh_kernel = mh_kernel(grid_proposal);
 
 # %% [markdown]
 # Should be able to:
@@ -1707,8 +1709,6 @@ end;
 grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
 grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
-
-grid_mh_kernel = mh_kernel(grid_proposal)
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
