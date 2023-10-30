@@ -437,11 +437,35 @@ project(trace, select(:hd))
 project(trace, select(:p, :hd)) == get_score(trace)
 
 # %% [markdown]
+# ### Updating traces
+#
+# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `Gen.update` takes as inputs a trace, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace.  It also returns (the log of) the ratio of the updated trace's density to the original trace's density, together with a precise record of the resulting modifications that played out.
+
+# %% [markdown]
+# In our example, one could, for instance, replace the first step's stochastic choice of heading with a specific value.
+
+# %%
+trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
+rotated_trace, rotated_trace_weight_diff, _, _ =
+    update(trace, (robot_inputs.start, motion_settings), (NoChange(), NoChange()), choicemap((:hd, π/2.)))
+the_plot = plot_world(world, "Modifying a heading")
+plot!(get_retval(trace); color=:green, label="some pose")
+plot!(get_retval(rotated_trace); color=:red, label="with heading modified")
+savefig("imgs/modify_trace_1")
+the_plot
+
+# %% [markdown]
+# The original trace was typical under the pose prior model, whereas the modified one is rather less likely.  This is the log of how much unlikelier:
+
+# %%
+rotated_trace_weight_diff
+
+# %% [markdown]
 # ### Modeling a full path
 #
 # The model contains all information in its trace, rendering its return value redundant.  The the noisy path integration will just be a wrapper around its functionality, extracting what it needs from the trace.
 #
-# It is worth acknowledging two strange things in the code below: the extra text "`_loop`" in the function name, and the seemingly redundant new parameter `T`.  Both will be addressed in the next section, along with the aforementioned wrapper.
+# (It is worth acknowledging two strange things in the code below: the extra text "`_loop`" in the function name, and the seemingly redundant new parameter `T`.  Both will be addressed shortly, along with the aforementioned wrapper.)
 
 # %%
 """
@@ -521,12 +545,9 @@ end
 gif(ani, "imgs/motion.gif", fps=2)
 
 # %% [markdown]
-# ### Updating traces, and improving performance using combinators.
+# ### Updating traces, revisited
 #
-# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `Gen.update` takes as inputs a trace, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace.  It also returns (the log of) the ratio of the output trace's density to the input trace's density, together with a precise record of the resulting modifications to the trace.
-
-# %% [markdown]
-# In our example, one could, for instance, replace the first step's stochastic choice of heading with a specific value.
+# In our example, suppose we replaced the $t = 1$ step's stochastic choice of heading with some specific value.
 
 # %%
 trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
@@ -534,20 +555,20 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ =
     update(trace,
            (T, robot_inputs, world_inputs, motion_settings), (NoChange(), NoChange(), NoChange(), NoChange()),
            choicemap((:steps => 1 => :pose => :hd, π/2.)))
-the_plot = plot_world(world, "Modifying a heading")
-plot!(get_path(trace); color=:green, label="Some path")
-plot!(get_path(rotated_first_step); color=:red, label="With heading at first step modified")
+the_plot = plot_world(world, "Modifying another heading")
+plot!(get_path(trace); color=:green, label="some path")
+plot!(get_path(rotated_first_step); color=:red, label="with heading at first step modified")
 savefig("imgs/modify_trace_1")
 the_plot
 
 # %% [markdown]
-# In the above picture, the green path is apparently missing, having been near-completely overdrawn by the red path.  This is because in the execution of the model, the only change in the stochastic choices took place where we specified.  In particular, the stochastic choice of pose at the second step was left unchanged.  This choice was typical relative to the first step's heading in the old trace, and while it is not impossible relative to the first step's heading in the new trace, it is *far unlikelier* under the mulitvariate normal distribution supporting it.  This is the log of how much unlikelier:
+# In the above picture, the green path is apparently missing, having been near-completely overdrawn by the red path.  This is because in the execution of the model, the only change in the stochastic choices took place where we specified.  In particular, the stochastic choice of pose at the second step was left unchanged.  This choice was typical relative to the first step's heading in the old trace, and while it is not impossible relative to the first step's heading in the new trace, it is *far unlikelier* under the mulitvariate normal distribution supporting it:
 
 # %%
 rotated_first_step_weight_diff
 
 # %% [markdown]
-# One can also modify the arguments to the program.  In our example, we might have on hand a very long list of controls, and we wish to explore the space of paths incrementally in the timestep:
+# Another capability of `Gen.update` is to modify the arguments to the generative function used to produce the trace.  In our example, we might have on hand a very long list of controls, and we wish to explore the space of paths incrementally in the timestep:
 
 # %%
 change_only_T = (UnknownChange(), NoChange(), NoChange(), NoChange())
@@ -565,7 +586,10 @@ end
 println("Success");
 
 # %% [markdown]
-# This is a good opportunity to introduce some computational complexity considerations.
+# Because performing such updates to traces occur frequently, and they seemingly require re-running the entire model, computational complexity considerations become important.  We detour next through an important speedup.
+
+# %% [markdown]
+# ### Improving performance using the static DSL and combinators
 #
 # Because the dynamic DSL does not understand the loop inside `path_model_loop`, calling `Gen.update` with the new value of `T` requires re-execution of the whole loop.  This means that the update requires $O(T)$ time, and the above code requires $O(T^2)$ time.
 #
