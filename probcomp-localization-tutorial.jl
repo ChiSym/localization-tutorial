@@ -1147,12 +1147,18 @@ drift_step_factor = 1/3.
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
+t1 = now()
 traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
           for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
+t1 = now()
 traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
           for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "posterior samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. approximate posteriors")
@@ -1285,7 +1291,10 @@ T_short = 6
 
 N_samples = 10
 N_SIR = 500
+t1 = now()
 traces = [basic_SIR_library(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (short path): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
 the_plot = frame_from_traces(world, "SIR (short path)", path_low_deviation[1:(T_short+1)], "path to fit", traces, "SIR samples")
 savefig("imgs/SIR_short")
@@ -1333,7 +1342,11 @@ end;
 N_burn_in = 0 # omit burn-in to illustrate early behavior
 N_particles = 20
 compute_bound = 5000
+
+t1 = now()
 traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
+t2 = now()
+println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (Total: $(dv(t2 - t1)) ms.)")
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1346,7 +1359,11 @@ gif(ani, "imgs/RS.gif", fps=1)
 N_burn_in = 100
 N_particles = 20
 compute_bound = 5000
+
+t1 = now()
 traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
+t2 = now()
+println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (Total: $(dv(t2 - t1)) ms.)")
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1359,7 +1376,11 @@ gif(ani, "imgs/RS_2.gif", fps=1)
 N_burn_in = 1000
 N_particles = 20
 compute_bound = 5000
+
+t1 = now()
 traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, compute_bound)
+t2 = now()
+println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (Total: $(dv(t2 - t1)) ms.)")
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1383,7 +1404,11 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 # %%
 N_samples = 10
 N_SIR = 500
+
+t1 = now()
 traces = [basic_SIR_library(full_model, (T, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
 the_plot = frame_from_traces(world, "SIR (original path)", path_low_deviation, "path to fit", traces, "RS samples")
 savefig("imgs/SIR_final")
@@ -1543,10 +1568,16 @@ N_samples = 10
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
+t1 = now()
 traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, drift_mh_kernel, drift_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
+t1 = now()
 traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, drift_mh_kernel, drift_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Drift")
@@ -1602,10 +1633,16 @@ grid_mh_kernel = mh_kernel(grid_proposal)
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
+t1 = now()
 traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_mh_kernel, grid_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
+t1 = now()
 traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, grid_mh_kernel, grid_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Grid")
@@ -1687,10 +1724,16 @@ grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal)
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
+t1 = now()
 traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, grid_smcp3_kernel, grid_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
+t1 = now()
 traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, grid_smcp3_kernel, grid_args_schedule, ESS_threshold)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid")
