@@ -1665,6 +1665,16 @@ function frame_from_info(world, title, path, path_label, info, info_label; show_
     return the_plot
 end;
 
+# %%
+infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)
+
+ani = Animation()
+for info in infos
+    frame_plot = frame_from_info(world, "Run of PF + MH/Drift", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/pf_mh_dift_animation.gif", fps=1/3.)
+
 # %% [markdown]
 # ### Grid proposal for MH
 #
@@ -1727,6 +1737,16 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Grid")
 savefig("imgs/PF_MH_grid")
 the_plot
+
+# %%
+infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)
+
+ani = Animation()
+for info in infos
+    frame_plot = frame_from_info(world, "Run of PF + MH/Drift", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/pf_mh_dift_animation.gif", fps=1/3.)
 
 # %% [markdown]
 # ### Properly weighted samples
