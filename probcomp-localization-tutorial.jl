@@ -930,7 +930,7 @@ frames_low = frames_from_full_trace(world, "Low motion deviation", trace_low_dev
 frames_high = frames_from_full_trace(world, "High motion deviation", trace_high_deviation)
 ani = Animation()
 for (low, high) in zip(frames_low, frames_high)
-    frame_plot = plot(low, high; size=(1000,500), plot_title="Fixed synthetic data")
+    frame_plot = plot(low, high; size=(1000,500), plot_title="Two synthetic data sets")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/the_data.gif", fps=2)
