@@ -1654,6 +1654,16 @@ function frame_from_weighted_traces(world, title, path, path_label, traces, log_
     end
 
     return the_plot
+end
+
+function frame_from_info(world, title, path, path_label, info, info_label; show_clutters=false, min_alpha=0.03)
+    t = get_args(info.traces[1])[1]
+    the_plot = frame_from_weighted_traces(world, title * "\nt=$t|" * info.label, path, path_label,
+                    info.traces, info.log_weights, info_label; show_clutters=show_clutters, min_alpha=min_alpha)
+    if haskey(info, :vizs)
+        plot!(info.vizs[1].objs...; info.vizs[1].params...)
+    end
+    return the_plot
 end;
 
 # %% [markdown]
