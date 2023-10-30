@@ -1846,14 +1846,14 @@ t1 = now()
 traces_low_deviation = [particle_filter_MH_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles,
                                                  N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
 t2 = now()
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 plot_low_deviation = frame_from_traces(world, "low dev", path_low_deviation, "path to be fit", traces_low_deviation, "samples")
 
 t1 = now()
 traces_high_deviation = [particle_filter_MH_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles,
                                                   N_MH, drift_proposal, (drift_step_factor,))[1][1] for _ in 1:N_samples]
 t2 = now()
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 plot_high_deviation = frame_from_traces(world, "high dev", path_high_deviation, "path to be fit", traces_high_deviation, "samples")
 
 the_plot = plot(plot_low_deviation, plot_high_deviation; size=(1000,500), plot_title="PF+Drift Rejuv")
@@ -2023,7 +2023,7 @@ for checkpoints in checkpointss[1]
     merged_weight_list = [merged_weight_list..., lwts...]
 end
 merged_weight_list = merged_weight_list .- log(length(checkpointss[1]))
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 plot_low_deviation = frame_from_weighted_trajectories(world, "low dev", path_low_deviation, merged_traj_list, merged_weight_list)
 
 t1 = now()
@@ -2041,7 +2041,7 @@ for checkpoints in checkpointss[2]
     merged_weight_list = [merged_weight_list..., lwts...]
 end
 merged_weight_list = merged_weight_list .- log(length(checkpointss[2]))
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 plot_high_deviation = frame_from_weighted_trajectories(world, "high dev", path_high_deviation, merged_traj_list, merged_weight_list)
 
 the_plot = plot(plot_low_deviation, plot_high_deviation; size=(1000,500), plot_title="PF + Grid MH Rejuv")
@@ -2221,7 +2221,7 @@ for checkpoints in checkpointss2[1]
     merged_weight_list2 = [merged_weight_list2..., lwts...]
 end
 merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2[1]))
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 plot_low_deviation = frame_from_weighted_trajectories(world, "low dev", path_low_deviation, merged_traj_list2, merged_weight_list2)
 
 t1 = now()
@@ -2239,7 +2239,7 @@ for checkpoints in checkpointss2[2]
     merged_weight_list2 = [merged_weight_list2..., lwts...]
 end
 merged_weight_list2 = merged_weight_list2 .- log(length(checkpointss2[2]))
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 plot_high_deviation = frame_from_weighted_trajectories(world, "high dev", path_high_deviation, merged_traj_list2, merged_weight_list2)
 
 the_plot = plot(plot_low_deviation, plot_high_deviation; size=(1000,500), plot_title="PF + Grid SMCP3 Rejuv")
@@ -2295,7 +2295,7 @@ for checkpoints in checkpointss4
 end
 merged_weight_list4 = merged_weight_list4 .- log(length(checkpointss4))
 
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "Particle filter (no rejuv) - low motion noise", path_low_deviation, merged_traj_list4, merged_weight_list4)
 
 # %% [markdown]
@@ -2345,7 +2345,7 @@ for checkpoints in checkpointss5
 end
 merged_weight_list5 = merged_weight_list5 .- log(length(checkpointss5))
 
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "PF - motion noise:(model:low)(data:high)", path_high_deviation, merged_traj_list5, merged_weight_list5)
 
 # %% [markdown]
@@ -2372,7 +2372,7 @@ for checkpoints in checkpointss6
 end
 merged_weight_list6 = merged_weight_list6 .- log(length(checkpointss6))
 
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "PF - motion noise:(model:high)(data:high)", path_high_deviation, merged_traj_list6, merged_weight_list6)
 
 # %% [markdown]
@@ -2404,7 +2404,7 @@ for checkpoints in checkpointss7
 end
 merged_weight_list7 = merged_weight_list7 .- log(length(checkpointss7))
 
-println("Time ellapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+println("Time elapsed per run: $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 frame_from_weighted_trajectories(world, "PF + Grid SMCP3 Rejuv - motion noise:high", path_high_deviation, merged_traj_list7, merged_weight_list7)
 
 # %% [markdown]
@@ -2629,7 +2629,7 @@ for checkpoints in checkpointss3[1]
     merged_weight_list3 = [merged_weight_list3..., lwts...]
 end
 merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3[1]));
-println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
+println("time elapsed per run (low dev) = $(dv(t2 - t1)/N_samples)")
 plot_low_deviation = frame_from_weighted_trajectories(world, "low dev", path_low_deviation, merged_traj_list3, merged_weight_list3)
 
 t1 = now()
@@ -2647,7 +2647,7 @@ for checkpoints in checkpointss3[2]
     merged_weight_list3 = [merged_weight_list3..., lwts...]
 end
 merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3[2]));
-println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
+println("time elapsed per run (high dev) = $(dv(t2 - t1)/N_samples)")
 plot_high_deviation = frame_from_weighted_trajectories(world, "high dev", path_high_deviation, merged_traj_list3, merged_weight_list3)
 
 the_plot = plot(plot_low_deviation, plot_high_deviation; size=(1000,500), plot_title="Inference Controller (moderate noise)")
@@ -2711,7 +2711,7 @@ gif(ani_high_deviation, "imgs/controller_animation.gif", fps=1/3)
 #         merged_weight_list3 = [merged_weight_list3..., lwts...]
 #     end
 #     merged_weight_list3 = merged_weight_list3 .- log(length(checkpointss3));
-#     println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
+#     println("time elapsed per run = $(dv(t2 - t1)/N_samples)")
 #     frame_from_weighted_trajectories(world, "controlled grid rejuv", path_actual, merged_traj_list3, merged_weight_list3; minalpha=0.03)
 # end
 
@@ -2744,7 +2744,7 @@ for checkpoints in checkpointss9
     merged_weight_list9 = [merged_weight_list9..., lwts...]
 end
 merged_weight_list9 = merged_weight_list9 .- log(length(checkpointss9));
-println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
+println("time elapsed per run = $(dv(t2 - t1)/N_samples)")
 frame_from_weighted_trajectories(world, "Inference controller (low motion noise)", path_low_deviation, merged_traj_list9, merged_weight_list9)
 
 # %% [markdown]
@@ -2776,5 +2776,5 @@ for checkpoints in checkpointss10
     merged_weight_list10 = [merged_weight_list10..., lwts...]
 end
 merged_weight_list10 = merged_weight_list10 .- log(length(checkpointss10));
-println("time ellapsed per run = $(dv(t2 - t1)/N_samples)")
+println("time elapsed per run = $(dv(t2 - t1)/N_samples)")
 frame_from_weighted_trajectories(world, "Inference controller (high motion noise)", path_high_deviation, merged_traj_list10, merged_weight_list10)
