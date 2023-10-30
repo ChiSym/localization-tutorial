@@ -1693,7 +1693,7 @@ inverse_grid_index(grid_n_points :: Vector{Int}, j :: Int) :: Int =
     j ~ categorical(pose_norm_weights)
     inv_j = inverse_grid_index(grid_n_points, j)
 
-    viz = (objs = ([Pose([x, y], h) for (x, y, h) in pose_grid]),
+    viz = (objs = ([Pose([x, y], h) for (x, y, h) in pose_grid],),
            params = (color=:red, label="pose grid"))
 
     return choicemap_grid[j], choicemap((:j, inv_j)), viz
