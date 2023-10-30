@@ -1742,8 +1742,8 @@ the_plot
 # ### Adaptive inference controller
 
 # %%
-function controlled_particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
-                                          ESS_threshold=Inf, MAX_rejuv=3)
+function controlled_particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
+                                          MAX_rejuv=3)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
@@ -1765,19 +1765,18 @@ function controlled_particle_filter_rejuv(model, T, args, constraints, N_particl
                 end
             end
 
-            if logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count != MAX_rejuv
+            if logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count != MAX_rejuv && t > 1
                 for i in 1:N_particles
                     # Produce entirely new extensions to the last time step by first backing out and then readvancing.
-                    traces[i], log_weight_increment, _, _ = update(trace[i], (t-2, args...), change_only_T)
+                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-2, args...), change_only_T, choicemap())
                     log_weights[i] += log_weight_increment
-                    traces[i], log_weight_increment, _, _ = update(trace[i], (t-1, args...), change_only_T, constraints[t])
+                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-1, args...), change_only_T, constraints[t])
                     log_weights[i] += log_weight_increment
 
                     # By the way, the following commented line would accomplish the same.  You can read about it...
                     # traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
                     # log_weights[i] += log_weight_increment
                 end
-
                 resample!(traces, log_weights, ESS_threshold)
             end
 
@@ -1791,6 +1790,8 @@ function controlled_particle_filter_rejuv(model, T, args, constraints, N_particl
             log_weights[i] += log_weight_increment
         end
     end
+
+    return traces, log_weights
 end;
 
 # %%
