@@ -1074,19 +1074,6 @@ the_plot
 # In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In other words, as generative functions induce distributions on traces, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
 
 # %% [markdown]
-# Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
-# $$
-# P_\text{full}(o_{0:T})
-# := \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
-#  = \mathbf{E}_{Z_{0:T} \sim \text{path}}\big[P_\text{full}(Z_{0:T}, o_{0:T})\big],
-# $$
-# and then the *conditional distribution* has density
-# $$
-# P_\text{full}(z_{0:T} | o_{0:T}) := \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{full}(o_{0:T})}.
-# $$
-# The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to the latter distribution.
-
-# %% [markdown]
 # Let's show what we mean with a picture.  The following short code, which we treat as a *black box* for the present purposes, very mildly exploits the model structure to bring the samples much closer to the true path.
 
 # %%
@@ -1172,6 +1159,21 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. approximate posteriors")
 savefig("imgs/prior_posterior")
 the_plot
+
+# %% [markdown]
+# Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
+# $$
+# P_\text{marginal}(o_{0:T})
+# := \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
+#  = \mathbf{E}_{Z_{0:T} \sim \text{path}}\big[P_\text{full}(Z_{0:T}, o_{0:T})\big],
+# $$
+# and then the *conditional distribution* has density
+# $$
+# P_\text{full}(z_{0:T} | o_{0:T}) := \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T})}.
+# $$
+# The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to the latter distribution.
+#
+# The (most evident) problem with doing inference is that the quantity $P_\text{marginal}(o_{0:T})$ is intractable!
 
 # %% [markdown]
 # Numerical comparison
