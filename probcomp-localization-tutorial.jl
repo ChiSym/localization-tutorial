@@ -1099,9 +1099,9 @@ the_plot
             choicemap((prefix_address(t, :pose => :p), p), (prefix_address(t, :pose => :hd), hd)))
 end
 
-# PF with rejuvenation, using `GenParticleFilters` library code for the generic parts.
+# Use `GenParticleFilters` library code for the generic parts.
 
-function particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
+function particle_filter_MH_rejuv_library(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
     state = pf_initialize(model, (0, args...), constraints[1], N_particles)
     for t in 1:T
         pf_resample!(state)
@@ -1111,18 +1111,13 @@ function particle_filter_rejuv_library(model, T, args, constraints, N_particles,
     return state.traces, state.log_weights
 end
 
-# Run PF and return one of its particles.
+# Choose one representative particle.
 
 function sample(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
     index = categorical(norm_weights)
     return particles[index]
-end
-
-function sample_from_posterior(model, T, args, constraints; N_MH = 10, N_particles = 10)
-    drift_step_factor = 1/3.
-    return sample(particle_filter_rejuv_library(model, T, args, constraints, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
 end;
 
 # %%
@@ -1141,19 +1136,23 @@ function frame_from_traces(world, title, path, path_label, traces, trace_label; 
     return the_plot
 end;
 
-# %% [markdown]
-# Here is a visual comparison.
-
 # %%
 N_samples = 10
+
+# Some black box params
+N_particles = 10
+N_MH = 10
+drift_step_factor = 1/3.
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints_low_deviation) for _ in 1:N_samples]
+traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+          for _ in 1:N_samples]
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
-traces = [sample_from_posterior(full_model, T, full_model_args, constraints_high_deviation) for _ in 1:N_samples]
+traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+          for _ in 1:N_samples]
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "posterior samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. approximate posteriors")
@@ -1276,7 +1275,7 @@ end
 basic_SIR_library(model, args, merged_constraints, N_SIR) = importance_resampling(model, args, merged_constraints, N_SIR)[1];
 
 # %% [markdown]
-# For such a shorter path, SIR can find a somewhat noisy fit without too much effort.
+# For a short path, SIR can improve from chaos to a somewhat coarse/noisy fit without too much effort.
 #
 # Rif asks
 # > In `traces = ...` below, are you running SIR `N_SAMPLES` times and getting one sample each time? Why not run it once and get `N_SAMPLES`? Talk about this?
@@ -1497,7 +1496,7 @@ function resample!(particles, log_weights, ESS_threshold)
 end
 
 
-# Compare with the source code for the library calls used by `particle_filter_rejuv_library`!
+# Compare with the source code for the library calls used by `particle_filter_MH_rejuv_library`!
 
 function particle_filter_rejuv(model, T, args, constraints, N_particles, rejuv_kernel, rejuv_args_schedule, ESS_threshold)
     traces = Vector{Trace}(undef, N_particles)
