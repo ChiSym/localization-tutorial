@@ -1690,7 +1690,7 @@ for info in infos
     frame_plot = frame_from_info(world, "Run of PF + MH/Drift", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
     frame(ani, frame_plot)
 end
-gif(ani, "imgs/pf_mh_dift_animation.gif", fps=1/3.)
+gif(ani, "imgs/pf_mh_dift_animation.gif", fps=1)
 
 # %% [markdown]
 # ### Grid proposal for MH
@@ -1760,10 +1760,10 @@ infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_
 
 ani = Animation()
 for info in infos
-    frame_plot = frame_from_info(world, "Run of PF + MH/Drift", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame_plot = frame_from_info(world, "Run of PF + MH/Grid", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
     frame(ani, frame_plot)
 end
-gif(ani, "imgs/pf_mh_dift_animation.gif", fps=1/3.)
+gif(ani, "imgs/pf_mh_grid_animation.gif", fps=1)
 
 # %% [markdown]
 # ### Properly weighted samples
