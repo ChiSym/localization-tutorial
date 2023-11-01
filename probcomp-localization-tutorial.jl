@@ -530,15 +530,12 @@ function frames_from_motion_trace(world, title, trace; show_clutters=false, std_
 end;
 
 # %%
-scaled_motion_settings(settings, x) = (p_noise = x * settings.p_noise, hd_noise = x * settings.hd_noise)
-
 N_samples = 5
 
 ani = Animation()
 for n in 1:N_samples
-    scale = 2. * (2.)^(n-N_samples)
-    trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, scaled_motion_settings(motion_settings, scale)))
-    frames = frames_from_motion_trace(world, "Motion model (samples)\nnoise factor $(round(scale, digits=3))", trace)
+    trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
+    frames = frames_from_motion_trace(world, "Motion model (samples)", trace)
     for frame_plot in frames; frame(ani, frame_plot) end
 end
 gif(ani, "imgs/motion.gif", fps=2)
@@ -886,15 +883,12 @@ function frames_from_full_trace(world, title, trace; show_clutters=false, std_de
 end;
 
 # %%
-scaled_full_settings(settings, x) = (settings..., motion_settings=scaled_motion_settings(settings.motion_settings, x))
-
 N_samples = 5
 
 ani = Animation()
 for n in 1:N_samples
-    scale = 2. * (2.)^(n-N_samples)
-    trace = simulate(full_model, (T, robot_inputs, world_inputs, scaled_full_settings(full_settings, scale)))
-    frames = frames_from_full_trace(world, "Full model (samples)\nnoise factor $(round(scale, digits=3))", trace)
+    trace = simulate(full_model, (T, robot_inputs, world_inputs, full_settings))
+    frames = frames_from_full_trace(world, "Full model (samples)", trace)
     for frame_plot in frames; frame(ani, frame_plot) end
 end
 gif(ani, "imgs/full_1.gif", fps=2)
