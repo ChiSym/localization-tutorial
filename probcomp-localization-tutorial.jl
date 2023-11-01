@@ -18,11 +18,6 @@
 # %% [markdown]
 # # TODO
 #
-# * Explanation of `Gen.generate`, what frequencies/weights to expect, and why they are correct ones to use in context.
-#
-# * Comment on roles of fwd/bwd proposals in SMCP3.
-# * Visualize grids somehow.
-#
 # * Color sensor reading picture lines via when unexpectedly low likelihood.
 #
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
