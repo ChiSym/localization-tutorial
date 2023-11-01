@@ -1245,9 +1245,9 @@ the_plot
 # **Sample generation.**
 #
 # Specifically, this algorithm will generate $N$ possible latent trajectories:
-# $$\textbf{z}_{0:T}^i \sim P_\text{trajectory\_prior} \text{ for } i=1, 2, \dots, N$$
+# $$\textbf{z}_{0:T}^i \sim P_\text{path} \text{ for } i=1, 2, \dots, N$$
 #
-# Here, $P_\text{trajectory\_prior}(\textbf{z}_{0:T}) := P_{\text{pose}_0}(\textbf{z}_0) \prod_{t=1}^T{P_\text{step}(\textbf{z}_t ; \textbf{z}_{t-1})}$.
+# Here, $P_\text{path}(\textbf{z}_{0:T}) := P_{\text{pose}_0}(\textbf{z}_0) \prod_{t=1}^T{P_\text{step}(\textbf{z}_t ; \textbf{z}_{t-1})}$.
 #
 # Note that these trajectories are generated entirely without considering the robot's observations $\textbf{o}_{0:T}^*$.
 #
@@ -1258,7 +1258,7 @@ the_plot
 # w^i := \frac{
 # P_\text{full}(\textbf{z}^i_{0:T}, \textbf{o}_{0:T})
 # }{
-# P_\text{trajectory\_prior}(\textbf{z}^i_{0:T})
+# P_\text{path}(\textbf{z}^i_{0:T})
 # }
 # $$
 #
