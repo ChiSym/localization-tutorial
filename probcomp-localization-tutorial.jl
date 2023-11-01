@@ -1046,6 +1046,10 @@ gif(ani, "imgs/need.gif", fps=1)
 #
 # RATIO IS THE IMPORTANCE WEIGHT, EQUALS PROJECT OF CONSTRAINT ADDRESSES IN RESULTING TRACE, AND IS ALSO RETURNED.
 #
+# $$
+# w = \frac{P(z,o)}{Q(z;o)}
+# $$
+#
 # Frequency times importance weight equals getscore; extreme cases.
 
 # %% [markdown]
