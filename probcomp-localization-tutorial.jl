@@ -987,17 +987,17 @@ short_control(c) = "ds = $(round(c.ds, digits=2)), dhd = $(round(c.dhd, digits=2
 
 ani = Animation()
 for (t, (pose, readings_low, readings_high)) in enumerate(zip(path_integrated, observations_low_deviation, observations_high_deviation))
-    plot_integrated = plot_world(world, "Startup data")
-    plot!(path_integrated[1]; color=:green, label="start guess")
-    if t > 1; annotate!(5, 2.5, "Control $(t-1):\n$(short_control(robot_inputs.controls[t-1]))") end
+    # plot_integrated = plot_world(world, "Startup data")
+    # plot!(path_integrated[1]; color=:green, label="start guess")
+    # if t > 1; annotate!(5, 2.5, "Control $(t-1):\n$(short_control(robot_inputs.controls[t-1]))") end
 
-    plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, "fixed sensor data", sensor_settings)
+    plot_low = plot_bare_sensors(world, "Low motion deviation", readings_low, "synthetic sensor data", sensor_settings)
     plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
 
-    plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, "fixed sensor data", sensor_settings)
+    plot_high = plot_bare_sensors(world, "High motion deviation", readings_high, "synthetic sensor data", sensor_settings)
     plot!(Pose(world.center_point, 0.0); color=:black, label=nothing)
 
-    the_frame = plot(plot_integrated, plot_low, plot_high; size=(1500,500), layout=grid(1,3), plot_title="<— Data available to robot —>")
+    the_frame = plot(plot_low, plot_high; size=(1000,500), layout=grid(1,2), plot_title="Observations available to robot")
     frame(ani, the_frame)
 end
 gif(ani, "imgs/robot_can_see.gif", fps=2)
