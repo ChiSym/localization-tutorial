@@ -1780,7 +1780,7 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
     fwd_j ~ categorical(pose_norm_weights)
     bwd_j = inverse_grid_index(grid_n_points, fwd_j)
 
-    viz = (objs = ([Pose([x, y], h) for (x, y, h) in pose_grid]),
+    viz = (objs = ([Pose([x, y], h) for (x, y, h) in pose_grid],),
            params = (color=:red, label="pose grid"))
 
     return choicemap_grid[fwd_j], choicemap((:bwd_j, bwd_j)), viz
