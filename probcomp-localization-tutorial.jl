@@ -1491,6 +1491,30 @@ function particle_filter(model, T, args, constraints, N_particles)
     return traces, log_weights
 end;
 
+# %%
+N_particles = 10
+
+N_samples = 10
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+
+t1 = now()
+traces = [sample(particle_filter(full_model, T, full_model_args, constraints_low_deviation, N_particles)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+t1 = now()
+traces = [sample(particle_filter(full_model, T, full_model_args, constraints_high_deviation, N_particles)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF")
+savefig("imgs/PF_1")
+the_plot
+
 # %% [markdown]
 # Pictures and discussion of the drawbacks.
 
@@ -1938,6 +1962,26 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Controlled PF + SMCP3/Grid")
 savefig("imgs/PF_controller")
 the_plot
+
+# %%
+infos = controlled_particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)
+
+ani = Animation()
+for info in infos
+    frame_plot = frame_from_info(world, "Run of Controlled PF + SMCP3/Grid", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/pf_controller_animation_low.gif", fps=1)
+
+# %%
+infos = controlled_particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)
+
+ani = Animation()
+for info in infos
+    frame_plot = frame_from_info(world, "Run of Controlled PF + SMCP3/Grid", path_high_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
 
 # %% [markdown]
 # # Particle filter with MCMC Rejuvenation
