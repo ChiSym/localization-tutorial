@@ -564,7 +564,7 @@ the_plot
 rotated_first_step_weight_diff
 
 # %% [markdown]
-# Another capability of `Gen.update` is to modify the arguments to the generative function used to produce the trace.  In our example, we might have on hand a very long list of controls, and we wish to explore the space of paths incrementally in the timestep:
+# Another capability of `Gen.update` is to modify the *arguments* to the generative function used to produce the trace.  In our example, we might have on hand a very long list of controls, and we wish to explore the space of paths incrementally in the timestep:
 
 # %%
 change_only_T = (UnknownChange(), NoChange(), NoChange(), NoChange())
@@ -605,7 +605,7 @@ end;
 # %% [markdown]
 # The models `path_model_loop` and `path_model` have been arranged to produce identically structured traces with the same frequencies and return values, and to correspond to identical distributions over traces in the mathematical picture, thereby yielding the same weights.  They give rise to identical computations under `Gen.simulate`, whereas the new model is sometimes more efficient under `Gen.update`.  Here we illustrate the efficiency gain.
 #
-# (The following cell may need to be rerun to fix Julia garbage collection artifacts.)
+# (The following cell may need to be rerun to ameliorate Julia garbage collection artifacts.)
 
 # %%
 N_repeats = 100
