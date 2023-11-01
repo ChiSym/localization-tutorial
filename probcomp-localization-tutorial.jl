@@ -1840,7 +1840,7 @@ println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total:
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid")
-savefig("imgs/PF_MH_grid")
+savefig("imgs/PF_SMCP3_grid")
 the_plot
 
 # %% [markdown]
@@ -1943,7 +1943,7 @@ println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total:
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Controlled PF + SMCP3/Grid")
-savefig("imgs/PF_MH_grid")
+savefig("imgs/PF_controller")
 the_plot
 
 # %% [markdown]
