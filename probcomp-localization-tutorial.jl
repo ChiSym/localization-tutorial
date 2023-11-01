@@ -1812,11 +1812,11 @@ end
     fwd_j = inverse_grid_index(grid_n_points, bwd_j)
 
     return choicemap_grid[bwd_j], choicemap((:fwd_j, fwd_j))
-end;
+end
+
+grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal);
 
 # %%
-grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal)
-
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
