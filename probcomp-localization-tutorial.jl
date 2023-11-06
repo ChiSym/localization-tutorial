@@ -1238,56 +1238,53 @@ the_plot
 # There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency will later become possible when we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
 
 # %% [markdown]
-# ### Sampling / importance resampling
+# ### Sampling weighted particles
 #
-# Let's try a classic generic inference strategy, *sampling / importance resampling (SIR)*.  The idea is to independently draw a number of samples with weights, called *particles*, in order to explore the space of the distribution, and then to select one of them in proportion to its weight as a representative.
+# We put a name on a simple and common construction.
+#
+# Suppose we are given a list of nonnegative numbers, not all zero: $[w^1, w_2, \ldots, w^N]$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.   The normalized list $[\hat w^1, \hat w^2, \ldots, \hat w^N]$ describes a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$.
+#
+# Note that for any constant $Z > 0$, the scaled list $[Zw^1, Zw^2, \ldots, Zw^N]$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
+#
+# When some list of data $[z^1, z^2, \ldots, z^N]$ have been associated with these respective numbers $[w^1, w^2, \ldots, w^N]$, then to *sample* from the former data according to the latter *weights* means to sample an index $a \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the single datum $z^a$ from the list.
 
 # %% [markdown]
-# **Sample generation.**
+# ### Sampling / importance resampling
 #
-# Specifically, this algorithm will generate $N$ possible latent trajectories:
-# $$\textbf{z}_{0:T}^i \sim P_\text{path} \text{ for } i=1, 2, \dots, N$$
+# Suppose we have two distributions, a *target* $P$ from which we would like to generate samples, and a *proposal* $Q$ from which we are able to generate samples.  We assume that the proposal is a suitable substitute for the target, in the senses that the samples from $P$ and $Q$ have the same type, and that every event supported by $P$ is also supported by $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
 #
-# Here, $P_\text{path}(\textbf{z}_{0:T}) := P_{\text{pose}_0}(\textbf{z}_0) \prod_{t=1}^T{P_\text{step}(\textbf{z}_t ; \textbf{z}_{t-1})}$.
+# Under these hypotheses, there is a well-defined density ratio function $f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *weight* $w = f(z)$ is how much more or less likely the sample would have been drawn $P$.  In fact, we only require that $f$ compute some constant $Z > 0$ times this density ratio.
 #
-# Note that these trajectories are generated entirely without considering the robot's observations $\textbf{o}_{0:T}^*$.
+# The *sampling / importance resampling* (SIR) strategy runs as follows:  Let counts $N > 0$ and $M > 0$ be given.
+# 1. Generate $N$ samples $[z^1, z^2, \ldots, z^N]$ from the proposal $Q$.
+# 2. Compute $w^i := f(z^i)$ for $i = 1, \ldots, N$, called the *importance weight*.
+# 3. Use these data to independently *sample* $M$ particles.  
+#    In other words, independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$ as above, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.
+# 4. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
 #
-# **Weight computation.**
-#
-# After generating $N$ trajectories, SIR computes the following _weight_, $w^i$, for each sample $\textbf{z}_{0:T}^i$:
+# As $N \to \infty$, the samples produced by this algorithm converge to the target $P$.  (What is the role of $M$?  Fixed for now, at least.)
+
+# %% [markdown]
+# In our running example, we have our ongoing family of models, along with fixed observations $o_{0:T}$.  The target distribution $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, whereas the proposal $Q$ we have on hand is the path prior $\text{path}$.  The density ratio between these for a path $z_{0:T}$ is
 # $$
-# w^i := \frac{
-# P_\text{full}(\textbf{z}^i_{0:T}, \textbf{o}_{0:T})
-# }{
-# P_\text{path}(\textbf{z}^i_{0:T})
-# }
+# \frac{P_\text{full}(z_{0:T} | o_{0:T})}{P_\text{path}(z_{0:T})}
+# =
+# \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T}) \cdot P_\text{path}(z_{0:T})}
+# =
+# \frac{\prod_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)}{P_\text{marginal}(o_{0:T})}
+# =
+# Z \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots).
 # $$
+# For the purposes of SIR, we may disregard the intractable value $Z$ and focus on the quantity $\prod_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)$.
 #
-# This $w^i$ will be large for samples $\textbf{z}^i_{0:T}$ which seem consistent with the observations $\textbf{o}_{0:T}$, since then $P_\text{full}(\textbf{z}^i_{0:T}, \textbf{o}_{0:T})$ will be large.
+# The most literal approach to implementing these are, first, to call `Gen.simulate` on `path_model` to get samples $z_{0:T}$ from the proposal Q, and second, to call `get_score` on suitably fashioned traces for `sensor_model` that have the $z_t$ as parameters and the $o_t$ as choicemaps for $t=0,\ldots,T$.
 #
-# **Weight normalization.**
+# But there is a more direct way to obtain exactly the same result: to call `Gen.generate` on `full_model` given the observations $o_t$ as constraints on the trace.  The returned trace is none other than a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ (the observations are not consulted in doing so), and the returned importance weight is none other than the product on the right hand side.
 #
-# After computing the $w^i$, SIR computes _normalized_ weights,
-# $$
-# \hat{w}^i = \frac{w^i}{\sum_{j=1}^N{w^j}}
-# $$
-# Note that $[\hat{w}^1, \hat{w}^2, \dots, \hat{w}^N]$ is a probability distribution.
-#
-# **Resampling.**
-#
-# The last step of SIR is to _resample_ $M$ of the original $N$ particles.  That is, SIR will choose $M$ of the $N$ original samples $\textbf{z}_{0:T}^i$, which appear consistent with the observations.  It does this by being more likely to choose samples with high $w^i$ values.
-#
-# Specifically, resampling first chooses $M$ particle indices, $i_1, \dots, i_M$, according to
-# $$
-# \forall k, i_k \sim \text{categorical}([\hat{w}^1, \hat{w}^2, \dots, \hat{w}^N])
-# $$
-# Put another way, $P(i_k = j) = \hat{w}^j$.
-#
-# Finally, SIR outputs the collection of trajectories $\textbf{z}^{i_1}_{0:T}, \textbf{z}^{i_2}_{0:T}, \dots, \textbf{z}^{i_M}_{0:T}$.
-#
-# **Summary:** SIR generates possible samples without considering the observations $\textbf{o}_{0:T}^*$, but attempts to ultimately output a sub-collection of these randomly generated samples which are consistent with the observations.  It does this by computing the weights $w^i$.
+# Upon applying the resampling step to these data with weights, we obtain an approximation to the sought posterior.
 
 # %%
+# Corresponds to the case `M = 1` of the above discussion.
 function basic_SIR(model, args, merged_constraints, N_SIR)
     traces = Vector{Trace}(undef, N_SIR)
     log_weights = Vector{Float64}(undef, N_SIR)
@@ -1309,9 +1306,6 @@ basic_SIR_library(model, args, merged_constraints, N_SIR) = importance_resamplin
 
 # %% [markdown]
 # For a short path, SIR can improve from chaos to a somewhat coarse/noisy fit without too much effort.
-#
-# Rif asks
-# > In `traces = ...` below, are you running SIR `N_SAMPLES` times and getting one sample each time? Why not run it once and get `N_SAMPLES`? Talk about this?
 
 # %%
 T_short = 6
