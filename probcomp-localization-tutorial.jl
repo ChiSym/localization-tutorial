@@ -1442,7 +1442,7 @@ the_plot
 # The following two functions construct indistinguishable stochastic families of weighted particles.  In the first case, each trace has path `generate`d all in one go, recorded with the density of all the observations relative to that path.  In the second case, each trace is built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  The only difference is the static DSL combinator's extra overhead in determining how to minimally perform the `update`.
 
 # %%
-function particle_unfilter(model, T, args, merged_constraints, N_particles)
+function unfiltered_particles(model, T, args, merged_constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
