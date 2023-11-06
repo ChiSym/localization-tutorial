@@ -1197,7 +1197,7 @@ the_plot
 # := \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
 #  = \mathbf{E}_{Z_{0:T} \sim \text{path}}\big[P_\text{full}(Z_{0:T}, o_{0:T})\big],
 # $$
-# and then the *conditional distribution* has density
+# and then the *conditional distribution* $\text{full}(\cdot | o_{0:T})$ has density
 # $$
 # P_\text{full}(z_{0:T} | o_{0:T}) := \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T})}.
 # $$
@@ -1897,6 +1897,10 @@ the_plot
 
 # %% [markdown]
 # ### Adaptive inference controller
+#
+# For a low deviation path, a particle filter with mere resampling performed decent inference: the MCMC rejuvenation is overkill!  The issue was when the path deviation is higher.
+#
+# We, the inference programmers, do not have to be stuck here; we get to choose how much computing resource to spend on any given example.  For example, we can check a quantitative test for our particle population's suitabiliy as hypotheses, such as a marginal likelihood estimate, and only do as much work is needed to bring this measure to target.
 
 # %%
 function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
