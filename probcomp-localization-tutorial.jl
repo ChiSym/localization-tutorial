@@ -1236,103 +1236,50 @@ the_plot
 # We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.
 #
 # There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency will later become possible when we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
+#
+# These strategies have a common shape.  We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the senses that its samples have the same type, and that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
+#
+# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn $P$.  In fact, we only require that we have on hand this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
+#
+# The question is how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$.
 
 # %% [markdown]
-# ### Sampling weighted particles
-#
-# We put a name on a simple and common construction.
-#
-# Suppose we are given a list of nonnegative numbers, not all zero: $[w^1, w_2, \ldots, w^N]$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.   The normalized list $[\hat w^1, \hat w^2, \ldots, \hat w^N]$ describes a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$.
-#
-# Note that for any constant $Z > 0$, the scaled list $[Zw^1, Zw^2, \ldots, Zw^N]$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
-#
-# When some list of data $[z^1, z^2, \ldots, z^N]$ have been associated with these respective numbers $[w^1, w^2, \ldots, w^N]$, then to *sample* from the former data according to the latter *weights* means to sample an index $a \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the single datum $z^a$ from the list.
-
-# %% [markdown]
-# ### Sampling / importance resampling
-#
-# Suppose we have two distributions, a *target* $P$ from which we would like to generate samples, and a *proposal* $Q$ from which we are able to generate samples.  We assume that the proposal is a suitable substitute for the target, in the senses that the samples from $P$ and $Q$ have the same type, and that every event supported by $P$ is also supported by $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
-#
-# Under these hypotheses, there is a well-defined density ratio function $f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *weight* $w = f(z)$ is how much more or less likely the sample would have been drawn $P$.  In fact, we only require that $f$ compute some constant $Z > 0$ times this density ratio.
-#
-# The *sampling / importance resampling* (SIR) strategy runs as follows:  Let counts $N > 0$ and $M > 0$ be given.
-# 1. Generate $N$ samples $[z^1, z^2, \ldots, z^N]$ from the proposal $Q$.
-# 2. Compute $w^i := f(z^i)$ for $i = 1, \ldots, N$, called the *importance weight*.
-# 3. Use these data to independently *sample* $M$ particles.  
-#    In other words, independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$ as above, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.
-# 4. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
-#
-# As $N \to \infty$, the samples produced by this algorithm converge to the target $P$.  (What is the role of $M$?  Fixed for now, at least.)
-
-# %% [markdown]
-# In our running example, we have our ongoing family of models, along with fixed observations $o_{0:T}$.  The target distribution $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, whereas the proposal $Q$ we have on hand is the path prior $\text{path}$.  The density ratio between these for a path $z_{0:T}$ is
+# In our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, and the proposal $Q$ is the path prior $\text{path}$.  The density ratio between these for a path $z_{0:T}$ is
 # $$
+# \hat f(z_{0:T})
+# =
 # \frac{P_\text{full}(z_{0:T} | o_{0:T})}{P_\text{path}(z_{0:T})}
 # =
 # \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T}) \cdot P_\text{path}(z_{0:T})}
 # =
-# \frac{\prod_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)}{P_\text{marginal}(o_{0:T})}
-# =
-# Z \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots).
+# \frac{\prod_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)}{P_\text{marginal}(o_{0:T})}.
 # $$
-# For the purposes of SIR, we may disregard the intractable value $Z$ and focus on the quantity $\prod_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)$.
-#
-# The most literal approach to implementing these are, first, to call `Gen.simulate` on `path_model` to get samples $z_{0:T}$ from the proposal Q, and second, to call `get_score` on suitably fashioned traces for `sensor_model` that have the $z_t$ as parameters and the $o_t$ as choicemaps for $t=0,\ldots,T$.
-#
-# But there is a more direct way to obtain exactly the same result: to call `Gen.generate` on `full_model` given the observations $o_t$ as constraints on the trace.  The returned trace is none other than a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ (the observations are not consulted in doing so), and the returned importance weight is none other than the product on the right hand side.
-#
-# Upon applying the resampling step to these data with weights, we obtain an approximation to the sought posterior.
-
-# %%
-# Corresponds to the case `M = 1` of the above discussion.
-function basic_SIR(model, args, merged_constraints, N_SIR)
-    traces = Vector{Trace}(undef, N_SIR)
-    log_weights = Vector{Float64}(undef, N_SIR)
-    for i in 1:N_SIR
-        traces[i], log_weights[i] = generate(model, args, merged_constraints)
-    end
-    return sample(traces, log_weight)
-end
-
-# This is a generic algorithm, so there is a library version.
-# We will the library version use going forward, because it includes a constant-memory optimization.
-# (It is not necessary to store all particles and categorically select one at the end.  Mathematically
-# it amounts to the same instead to store just one candidate selection, and stochastically replace it
-# with each newly generated particle with odds the latter's weight relative to the sum of the
-# preceding weights.)
-# To obtain the above from the library version, one would define:
-
-basic_SIR_library(model, args, merged_constraints, N_SIR) = importance_resampling(model, args, merged_constraints, N_SIR)[1];
-
-# %% [markdown]
-# For a short path, SIR can improve from chaos to a somewhat coarse/noisy fit without too much effort.
-
-# %%
-T_short = 6
-
-N_samples = 10
-N_SIR = 500
-t1 = now()
-traces = [basic_SIR_library(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (short path): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
-
-the_plot = frame_from_traces(world, "SIR (short path)", path_low_deviation[1:(T_short+1)], "path to fit", traces, "SIR samples")
-savefig("imgs/SIR_short")
-the_plot
+# Noting that the intractable quantity
+# $$
+# Z := P_\text{marginal}(o_{0:T})
+# $$
+# is constant in $z_{0:T}$, we are free to take the explicitly computable quantity
+# $$
+# f(z_{0:T}) := \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)
+# $$
+# in what follows.
 
 # %% [markdown]
 # ### Rejection sampling
 #
-# Suppose we have a target distribution, and a stochastic program that generates samples plus weights that measure the *ratio* of their generated frequency to the target frequency.
+# One approach, called *rejection sampling*, is to go ahead and generate samples from $Q$, but to accept (return) only some of them while rejecting (discarding) others, the probability of acceptance according to the sampled value.  If for each sampled value $z$ the probability of acceptance is a constant times $\hat f(z)$, or equivalently a constant times $f(z)$, then the samples that make it through will be distributed according to $P$.
 #
-# We may convert our program into a sampler for the target distribution via the metaprogram that draws samples and weights, stochastically accepts them with frequency equal to the reported ratio, and otherwise rejects them and tries again.  This metaprogram is called *rejection sampling*.
+# The first key technical problem is that, in deciding whether to reject or accept a sample $z$, we in effect need to flip a weight-$p$ coin for some value $p$ that is simultaneously
+# * in the interval $[0,1]$, and
+# * proportional to $f(z)$,
 #
-# Suppose that our stochastic program only reports *unnormalized* ratios of their generated frequency to the target frequency.  That is, there exists some constant $Z$ such that $Z$ times the correct ratio is reported.  If we knew $Z$, we could just correct the reported ratios by $Z$.  But suppose $Z$ itself is unavailable, and we only know a bound $C$ for $Z$, that is $Z < C$.  Then we can correct the ratios by $C$, obtaining an algorithm that is correct but inefficient by a factor of drawing $C/Z$ too many samples on average.  This metaprogram is called *approximate rejection sampling*.
+# whereas the latter quantities may very well $> 1$, or even very large.  In other words, we need an *upper bound* $C > 0$ on the outputs of the function $f$, for then we may take $p = f(z)/C$.
 #
-# Finally, suppose we know that $Z$ exists, but we do not even know a bound $C$ for it.  Then we may proceed adaptively by tracking the largest weight encountered thus far, and using this number $C$ as above.  This metaprogram is called *adaptive approximate rejection sampling*.
+# There is an optimal upper bound constant, namely the supremum value $C_\text{opt} = \max_z f(z)$.  If we simply know some upper bound $C \geq C_\text{opt}$, then we can still correct the ratios $f(z)$ by $C$, to obtain an algorithm that is correct but inneficient by drawing a factor of $C/C_\text{opt}$ too many samples on average.
 #
-# Earlier samples may occur with too high absolute frequency, but over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
+# Sometimes, we have only a number $C > 0$ that is *guess* at an upper bound.  When we proceed with this $C$ under the assumption that it works, the resulting algorithm is called *approximate rejection sampling*.  So long as it indeed bounds above all values of $f(z)$ that we encounter, the algorithm has so far been valid.
+#
+# But what to do if we encounter a sample $z$ with $f(z) > C$?  Then we may replace $C$ with this new larger quantity and keep going.  This algorithm is called *adaptive approximate rejection sampling*.  Earlier samples, with a too-low intitial value for $C$, may occur with too high absolute frequency.  But over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
 
 # %%
 function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_attempts)
@@ -1412,6 +1359,80 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 
 # %% [markdown]
 # The performance dynamics of this algorithm is a fun EXERCISE!
+#
+# In general, as $C$ increases, the algorithm is increasingly *wasteful*, rejecting more samples overall, and taking longer to find likely hits.
+
+# %% [markdown]
+# ### Sampling weighted particles
+#
+# Intead of indefinitely rejecting particles, we can guarantee to use at least some of them.  Here we put a name on a simple and common construction.
+#
+# Suppose we are given a list of nonnegative numbers, not all zero: $[w^1, w_2, \ldots, w^N]$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.   The normalized list $[\hat w^1, \hat w^2, \ldots, \hat w^N]$ describes a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$.
+#
+# Note that for any constant $Z > 0$, the scaled list $[Zw^1, Zw^2, \ldots, Zw^N]$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
+#
+# When some list of data $[z^1, z^2, \ldots, z^N]$ have been associated with these respective numbers $[w^1, w^2, \ldots, w^N]$, then to *sample* from the former data according to the latter *weights* means to sample an index $a \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the single datum $z^a$ from the list.
+#
+# Compare to the function `sample` implemented in the black box above.
+
+# %% [markdown]
+# ### Sampling / importance resampling
+#
+# The *sampling / importance resampling* (SIR) strategy runs as follows:  Let counts $N > 0$ and $M > 0$ be given.
+# 1. Generate $N$ samples $[z^1, z^2, \ldots, z^N]$ from the proposal $Q$.
+# 2. Compute $w^i := f(z^i)$ for $i = 1, \ldots, N$, called the *importance weight*.
+# 3. Use these data to independently *sample* $M$ particles from this list, using the respective weights, as above.  
+#    In other words, independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$ as above, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.
+# 4. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
+#
+# As $N \to \infty$, the samples produced by this algorithm converge to the target $P$.  (What is the role of $M$?  Fixed for now, at least.)
+
+# %% [markdown]
+# Turning towards our running example, there is a rather literal way of implementing this strategy.  First call `Gen.simulate` on `path_model` to get samples $z_{0:T}^i$ from the proposal Q.  Then call `get_score` on a suitably fashioned family of traces for `sensor_model` that have the $z_t$ as parameters and the $o_t$ as choicemaps, to obtain the weights $w^i$.
+#
+# But there is a more direct way to obtain exactly the same result: call `Gen.generate` on `full_model` given the observations $o_t$ as constraints on the trace.  The returned trace is none other than a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ (the observations are not consulted in doing so), and the returned projection onto the observations is none other than the likelihood of the observations.
+#
+# This is a general pattern when working in `Gen`:
+
+# %%
+# Corresponds to the case `M = 1` of the above discussion.
+function basic_SIR_spelled_out(model, args, merged_constraints, N_SIR)
+    traces = Vector{Trace}(undef, N_SIR)
+    log_weights = Vector{Float64}(undef, N_SIR)
+
+    for i in 1:N_SIR
+        traces[i], log_weights[i] = generate(model, args, merged_constraints)
+    end
+
+    return sample(traces, log_weight)
+end
+
+# This is a generic algorithm, so there is a library version.
+# We will the library version use going forward, because it includes a constant-memory optimization.
+# (It is not necessary to store all particles and categorically select one at the end.  Mathematically
+# it amounts to the same instead to store just one candidate selection, and stochastically replace it
+# with each newly generated particle with odds the latter's weight relative to the sum of the
+# preceding weights.)
+# To obtain the above from the library version, one would define:
+
+basic_SIR(model, args, merged_constraints, N_SIR) = importance_resampling(model, args, merged_constraints, N_SIR)[1];
+
+# %% [markdown]
+# For a short path, SIR can improve from chaos to a somewhat coarse/noisy fit without too much effort.
+
+# %%
+T_short = 6
+
+N_samples = 10
+N_SIR = 500
+t1 = now()
+traces = [basic_SIR(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (short path): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
+
+the_plot = frame_from_traces(world, "SIR (short path)", path_low_deviation[1:(T_short+1)], "path to fit", traces, "SIR samples")
+savefig("imgs/SIR_short")
+the_plot
 
 # %% [markdown]
 # ### SIR and Rejection Sampling scale poorly
@@ -1423,7 +1444,7 @@ N_samples = 10
 N_SIR = 500
 
 t1 = now()
-traces = [basic_SIR_library(full_model, (T, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
+traces = [basic_SIR(full_model, (T, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
