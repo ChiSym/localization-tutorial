@@ -19,15 +19,12 @@
 # # TODO
 #
 # * Color sensor reading picture lines via when unexpectedly low likelihood.
-#
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
 # * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
 # * label all (hyper)parameters in visualizations
 # * fix docstrings, image filenames
 # * Hierarchical (sensor) model?
-#
-# Rif comments:
-# * Correct understanding of initial pose.
+# * Rif comments: Correct understanding of initial pose.
 
 # %% [markdown]
 # # ProbComp Localization Tutorial
