@@ -1443,7 +1443,45 @@ the_plot
 # We now begin to exploit the structure of the problem in significant ways to construct good candidate traces for the posterior.  Especially, we use the Markov chain structure to construct these traces step-by-step.  While generic algorithms like SIR and rejection sampling must first construct full paths $\text{trace}_{0:T}$ and then sift among them using the observations $o_{0:T}$, we may instead generate one $\text{trace}_t$ at a time, taking into account the datum $o_t$.  Since then one is working with only a few dimensions any one time step, more intelligent searches become computationally feasible.
 
 # %% [markdown]
-# ### Particle filter
+# ### Particle filter: basic refactor
+#
+# The following two functions construct indistinguishable stochastic families of weighted particles.  In the first case, each trace has path `generate`d all in one go, recorded with the density of all the observations relative to that path.  In the second case, each trace is built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  The only difference is the static DSL combinator's extra overhead in determining how to minimally perform the `update`.
+
+# %%
+function particle_unfilter(model, T, args, merged_constraints, N_particles)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (T, args...), merged_constraints)
+    end
+
+    return traces, log_weights
+end
+
+function particle_filter_vanilla(model, T, args, constraints, N_particles)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    
+    for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+    end
+
+    return traces, log_weights
+end;
+
+# %% [markdown]
+# This refactoring is called "particle filter" because it of how it spreads the reasoning out along the time axis.  It has the effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
+
+# %% [markdown]
+# ### Resampling
 #
 # One of the simplest manifestations of the preceding strategy is called a particle filter, which, roughly speaking, looks like a kind of incremental SIR.  One constructs a population of traces in parallel; upon constructing each new step of the traces, one assesses how well they fit the data, discarding the worse ones and keeping more copies of the better ones.
 #
