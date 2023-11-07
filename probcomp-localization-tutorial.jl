@@ -1083,7 +1083,7 @@ savefig("imgs/likelihoods")
 the_plot
 
 # %% [markdown]
-# Note the differences in scales along the bottom.
+# Note the differences in scales along the bottom...
 
 # %% [markdown]
 # ## Inference: main idea
