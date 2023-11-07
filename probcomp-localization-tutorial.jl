@@ -1230,13 +1230,6 @@ savefig("imgs/likelihoods")
 the_plot
 
 # %% [markdown]
-# ## Generic strategies for inference
-#
-# We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.
-#
-# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency will later become possible when we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
-
-# %% [markdown]
 # ### Importance sampling
 #
 # These generic inference strategies have a common shape.  We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the senses that its samples have the same type, and that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
@@ -1288,6 +1281,13 @@ end;
 # %%
 trace, log_weight = generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)
 # AGAIN, VISUALIZE SOMEHOW
+
+# %% [markdown]
+# ## Generic strategies for inference
+#
+# We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.
+#
+# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency will later become possible when we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
 
 # %% [markdown]
 # ### Rejection sampling
