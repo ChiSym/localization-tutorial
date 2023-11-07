@@ -1221,7 +1221,7 @@ the_plot
 # := \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
 #  = \mathbf{E}_{Z_{0:T} \sim \text{path}}\big[P_\text{full}(Z_{0:T}, o_{0:T})\big],
 # $$
-# and then the *conditional distribution* $\text{full}(\cdot | o_{0:T})$ has density
+# and then uses it to normalize the density of the *conditional distribution* $\text{full}(\cdot | o_{0:T})$:
 # $$
 # P_\text{full}(z_{0:T} | o_{0:T}) := \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T})}.
 # $$
