@@ -1010,10 +1010,10 @@ end
 gif(ani, "imgs/robot_can_see.gif", fps=2)
 
 # %% [markdown]
-# ## Why we need inference
+# ## Inference
 
 # %% [markdown]
-# ### In a picture
+# ### Why we need inference: in a picture
 #
 # The path obtained by integrating the controls serves as a proposal for the true path, but it is unsatisfactory, especially in the high motion deviation case.  The picture gives an intuitive sense of the fit:
 
@@ -1073,13 +1073,14 @@ project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...)) == log_
 # =
 # \text{get\_score}(\text{trace})
 # =
-# (\text{probability of trace under Gen.generate with observations})
+# (\text{probability of trace under Gen.generate with constraints})
 # \cdot
-# \text{project}(\text{trace}, \text{observations})
+# \text{project}(\text{trace}, \text{constraints})
 # $$
+# In one extreme case where no constraints have been provided, this says that `Gen.generate` reduces to `Gen.simulate`, along with importance weight $1$.  In the opposite extreme case where the constraints completely determine the trace, `Gen.generate` deterministically returns this trace, along with importance weight equal to the overall density of the trace under the model.
 
 # %% [markdown]
-# ### Picturing generated samples
+# ### Why we need inference: in numbers
 #
 # We return to how the model offers a numerical benchmark for how good a fit the integrated path is.
 #
@@ -1111,9 +1112,9 @@ the_plot
 # Note the differences in scales along the bottom...
 
 # %% [markdown]
-# ## Inference: main idea
+# ### Inference: main idea
 #
-# In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In other words, as generative functions induce distributions on traces, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
+# In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In the langauge of probability theory, as generative functions induce distributions on traces, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
 
 # %% [markdown]
 # Let's show what we mean with a picture.  The following short code, which we treat as a *black box* for the present purposes, very mildly exploits the model structure to bring the samples much closer to the true path.
@@ -1215,22 +1216,23 @@ savefig("imgs/prior_posterior")
 the_plot
 
 # %% [markdown]
+# ### The posterior distribution
+#
 # Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
 # $$
 # P_\text{marginal}(o_{0:T})
 # := \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
 #  = \mathbf{E}_{Z_{0:T} \sim \text{path}}\big[P_\text{full}(Z_{0:T}, o_{0:T})\big],
 # $$
-# and then uses it to normalize the density of the *conditional distribution* $\text{full}(\cdot | o_{0:T})$:
+# and then uses it to normalize the density of the joint distribution $\text{full}$ to get the *conditional distribution* $\text{full}(\cdot | o_{0:T})$:
 # $$
 # P_\text{full}(z_{0:T} | o_{0:T}) := \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T})}.
 # $$
-# The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to the latter distribution.
 #
-# The (most evident) problem with doing inference is that the quantity $P_\text{marginal}(o_{0:T})$ is intractable!
+# The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to $\text{full}(\cdot | o_{0:T})$.  The (most evident) problem with doing inference is that the quantity $P_\text{marginal}(o_{0:T})$ is intractable!
 
 # %% [markdown]
-# Numerical comparison
+# Numerical comparison FIXME
 
 # %%
 N_samples = 100
@@ -1255,15 +1257,17 @@ savefig("imgs/likelihoods")
 the_plot
 
 # %% [markdown]
-# ### Importance sampling
+# ### Importance sampling and `Gen.generate`
 #
-# These generic inference strategies have a common shape.  We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the senses that its samples have the same type, and that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
+# What we have on hand fits into the following common shape.
 #
-# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *importance weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn $P$.  In fact, we only require that we have on hand this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
+# We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the sense that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
 #
-# The pair $(Q,f)$ is called *importance sampling* or a *properly weighted sampler*?!
+# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *importance weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn from $P$.  In fact, we only require that we have on hand this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
 #
-# The question is how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$.
+# The pair $(Q,f)$ is said to implement *importance sampling* or a *properly weighted sampler*?! for $P$.
+#
+# (The question remains: how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$?)
 
 # %% [markdown]
 # In our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, and the proposal $Q$ is the path prior $\text{path}$.  The density ratio between these for a path $z_{0:T}$ is
@@ -1276,7 +1280,7 @@ the_plot
 # =
 # \frac{\prod_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)}{P_\text{marginal}(o_{0:T})}.
 # $$
-# Noting that the intractable quantity
+# (This manipulation is tantamount to invoking Bayes's Rule.)  Noting that the intractable quantity
 # $$
 # Z := P_\text{marginal}(o_{0:T})
 # $$
@@ -1284,10 +1288,10 @@ the_plot
 # $$
 # f(z_{0:T}) := \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)
 # $$
-# in what follows.
+# in what follows.  The elimination of the need to compute $Z$ is one of the primary contributions of the ProbComp/Gen perspective.
 
 # %% [markdown]
-# There is a rather literal way of implementing $Q$ and $f$ in the example.  First call `Gen.simulate` on `path_model` to get samples $z_{0:T}^i$ from the proposal $Q$.  Then call `get_score` on the (determininstically constrained, in this case!) traces for `sensor_model` that have the $z_t$ as parameters and the $o_t$ as choicemaps, to obtain the weights $w^i$.
+# There is a rather literal, if cumbersome, way of implementing $Q$ and $f$ in our running example.  First call `Gen.simulate` on `path_model` to get samples $z_{0:T}^i$ from the proposal $Q$.  Then call `get_score` on the (determininstically constrained, in this case!) traces for `sensor_model` that have the $z_t$ as parameters and the $o_t$ as choicemaps, to obtain the weights $w^i$.
 
 # %%
 z_path = simulate(path_model, (T, full_model_args...))
@@ -1299,9 +1303,9 @@ end;
 # VISUALIZE SOMEHOW
 
 # %% [markdown]
-# But there is a more direct way to obtain exactly the same result: call `Gen.generate` on `full_model` given the observations $o_t$ as constraints on the trace.  The returned trace is none other than a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ (the observations are not consulted in doing so), and the returned projection onto the observations is none other than $f(z_{0:T})$ as defined above.
+# But there is a more direct and completely general way to obtain exactly the same result: call `Gen.generate` on `full_model` given the observations $o_t$ as constraints on the trace.  The returned trace is none other than a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ (the observations are not consulted in doing so), and the returned projection onto the observations is none other than $f(z_{0:T})$ as defined above.
 #
-# This is a general pattern when working in `Gen`:
+# Thus the following code succinctly implements importance sampling for the conditional distribution:
 
 # %%
 trace, log_weight = generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)
@@ -1322,18 +1326,22 @@ end;
 # %% [markdown]
 # ## Generic strategies for inference
 #
-# We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.
+# We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.  They simply take a pair $(Q,f)$ of a proposal and a weight function that implement importance sampling with target our posterior $P$.
 #
-# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency will later become possible when we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
+# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  One of the root problems is that proposals $Q$ may provide arbitrarily bad samples relative to our target $P$; if $Q$ still supports all samples of $P$ with microscopic but nonzero density, then the generic algorithm will converge in the limit.
+#
+# Rather, efficiency will become possible when we exploit what we actually know about the problem in our design of the inference strategy, namely, to propose better traces towards our target.  Gen's aim is to provide the right entry points to enact this exploitation.
 
 # %% [markdown]
 # ### Rejection sampling
 #
-# One approach, called *rejection sampling*, is to interfere with the probabilities of samples by throttling them in varying proportions.  In other words, we go ahead and generate samples from $Q$, but accept (return) only some of them while rejecting (discarding) others, the probability of acceptance depending on the sampled value.  If for each sampled value $z$ the probability of acceptance is a constant times $\hat f(z)$, or equivalently a constant times $f(z)$, then the samples that make it through will be distributed according to $P$.
+# One approach, called *rejection sampling*, is to interfere with the probabilities of samples by throttling them in the correct proportions.  In other words, we go ahead and generate samples from $Q$, but accept (return) only some of them while rejecting (discarding) others, the probability of acceptance depending on the sampled value.  If for each sampled value $z$ the probability of acceptance is a constant times $\hat f(z)$ (or equivalently $f(z)$), then the samples that make it through will be distributed according to $P$.
 #
-# More precisely, in deciding whether to accept or reject a sample $z$, we flip a weight-$p$ coin where $p = f(z)/C$ for some constant $C > 0$, accepting if heads and rejecting of tails.  In order for this to make sense, $p$ must lie in the interval $[0,1]$, or equivalently $f(z) \leq C$, that is, we need $C$ to be an *upper bound* on the outputs of the function $f$.  There is an optimal upper bound constant, namely the supremum value $C_\text{opt} = \max_z f(z)$.  If we only know *some* upper bound $C \geq C_\text{opt}$, then rejection sampling with this constant still provides a correct algorithm, but it is inneficient by drawing a factor of $C/C_\text{opt}$ too many samples on average.  The first of many problems with rejection sampling is that finding *any* upper bound for $f$ (or even for $\hat f$), efficient or not, is often intractable!
+# More precisely, in deciding whether to accept or reject a sample $z$, we flip a weight-$p(z)$ coin where $p(z) = f(z)/C$ for some constant $C > 0$, accepting if heads and rejecting of tails.  In order for this to make sense, $p(z)$ must always lie in the interval $[0,1]$.  This is equivalent to having $f(z) \leq C$, that is, we need $C$ to be an *upper bound* on the outputs of the function $f$.  There is an optimal upper bound constant, namely the supremum value $C_\text{opt} = \max_z f(z)$.  If we only know *some* upper bound $C \geq C_\text{opt}$, then rejection sampling with this constant still provides a correct algorithm, but it is inneficient by drawing a factor of $C/C_\text{opt}$ too many samples on average.
 #
-# Sometimes we have only a number $C > 0$ that is *guess* at an upper bound; when we proceed with this $C$ under the assumption that it bounds $f$, the resulting algorithm is called *approximate rejection sampling*.  But what to do if we encounter a sample $z$ with $f(z) > C$?  Then we may replace $C$ with this new larger quantity and keep going.  This algorithm is called *adaptive approximate rejection sampling*.  Earlier samples, with a too-low intitial value for $C$, may occur with too high absolute frequency.  But over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
+# The first of many problems with rejection sampling is tractability: above we have pointed to the difficulty in copmuting $P_\text{marginal}(o_{[0:T]})$, to recover the $\hat f$ from the known $f$; determining an upper bound for either $f$ or $\hat f$ is an additional impossibility!
+#
+# We can try to make do anyway, using a number $C > 0$ that is *guess* at an upper bound; when we proceed with this $C$ under the assumption that it bounds $f$, the resulting algorithm is called *approximate rejection sampling*.  But what to do if we encounter a sample $z$ with $f(z) > C$?  Then we replace $C$ with this new larger quantity and keep going.  This algorithm is called *adaptive approximate rejection sampling*.  Earlier samples, with a too-low intitial value for $C$, may occur with too high absolute frequency.  But over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
 
 # %%
 function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_attempts)
@@ -1422,12 +1430,14 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 # %% [markdown]
 # ### Sampling / importance resampling
 #
+# We turn to inference strategies that require only our proposal $Q$ and unnormalized weight function $f$ for the target $P$, *without* forcing us to compute any intractable integrals or upper bounds.
+#
 # Suppose we are given a list of nonnegative numbers, not all zero: $w^1, w_2, \ldots, w^N$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.  The normalized list $\hat w^1, \hat w^2, \ldots, \hat w^N$ determines a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$. 
 # Note that for any constant $Z > 0$, the scaled list $Zw^1, Zw^2, \ldots, Zw^N$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
 #
 # When some list of data $z^1, z^2, \ldots, z^N$ have been associated with these respective numbers $w^1, w^2, \ldots, w^N$, then to *importance **re**sample* $M$ values from these data according to these weights means to independently sample indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the new list of data $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.  Compare the $M = 1$ case to the function `resample` implemented in the black box above, and the $M = N$ case to the function `resample!` below.
 #
-# Returning to inference, the *sampling / importance resampling* (SIR) strategy runs as follows.  Let counts $N > 0$ and $M > 0$ be given.
+# The *sampling / importance resampling* (SIR) strategy for inference runs as follows.  Let counts $N > 0$ and $M > 0$ be given.
 # 1. Importance sample:  Generate $N$ samples $z^1, z^2, \ldots, z^N$ from the proposal $Q$, called *particles*.  Compute also their *importance weights* $w^i := f(z^i)$ for $i = 1, \ldots, N$.
 # 2. Importance resample:  Independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$ as above, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
 #
