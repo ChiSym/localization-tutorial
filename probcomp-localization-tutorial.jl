@@ -1307,6 +1307,18 @@ end;
 trace, log_weight = generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)
 # AGAIN, VISUALIZE SOMEHOW
 
+# %%
+function importance_sample(model, args, merged_constraints, N_samples)
+    traces = Vector{Trace}(undef, N_samples)
+    log_weights = Vector{Float64}(undef, N_samples)
+
+    for i in 1:N_samples
+        traces[i], log_weights[i] = generate(model, args, merged_constraints)
+    end
+
+    return traces, log_weights
+end;
+
 # %% [markdown]
 # ## Generic strategies for inference
 #
@@ -1422,17 +1434,6 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 # As $N \to \infty$, the samples produced by this algorithm converge to the target $P$.  This strategy is computationally an improvement over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guess among these.
 
 # %%
-function importance_sample(model, args, merged_constraints, N_samples)
-    traces = Vector{Trace}(undef, N_samples)
-    log_weights = Vector{Float64}(undef, N_samples)
-
-    for i in 1:N_samples
-        traces[i], log_weights[i] = generate(model, args, merged_constraints)
-    end
-
-    return traces, log_weights
-end
-
 sampling_importance_resampling(model, args, merged_constraints, N_SIR) =
     resample(importance_sample(model, args, merged_constraints, N_SIR)...)
 
