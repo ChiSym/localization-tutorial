@@ -1112,7 +1112,7 @@ the_plot
 # Note the differences in scales along the bottom...
 
 # %% [markdown]
-# ### Inference: main idea
+# ### Inference: main idea and demonstration
 #
 # In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In the langauge of probability theory, as generative functions induce distributions on traces, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
 
@@ -1216,22 +1216,6 @@ savefig("imgs/prior_posterior")
 the_plot
 
 # %% [markdown]
-# ### The posterior distribution
-#
-# Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
-# $$
-# P_\text{marginal}(o_{0:T})
-# := \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
-#  = \mathbf{E}_{Z_{0:T} \sim \text{path}}\big[P_\text{full}(Z_{0:T}, o_{0:T})\big],
-# $$
-# and then uses it to normalize the density of the joint distribution $\text{full}$ to get the *conditional distribution* $\text{full}(\cdot | o_{0:T})$:
-# $$
-# P_\text{full}(z_{0:T} | o_{0:T}) := \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T})}.
-# $$
-#
-# The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to $\text{full}(\cdot | o_{0:T})$.  The (most evident) problem with doing inference is that the quantity $P_\text{marginal}(o_{0:T})$ is intractable!
-
-# %% [markdown]
 # Numerical comparison FIXME
 
 # %%
@@ -1255,6 +1239,22 @@ hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, b
 the_plot = plot(hist_typical, hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Log likelihood of observations")
 savefig("imgs/likelihoods")
 the_plot
+
+# %% [markdown]
+# ### The posterior distribution
+#
+# Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
+# $$
+# P_\text{marginal}(o_{0:T})
+# := \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
+#  = \mathbf{E}_{Z_{0:T} \sim \text{path}}\big[P_\text{full}(Z_{0:T}, o_{0:T})\big],
+# $$
+# and then uses it to normalize the density of the joint distribution $\text{full}$ to get the *conditional distribution* $\text{full}(\cdot | o_{0:T})$:
+# $$
+# P_\text{full}(z_{0:T} | o_{0:T}) := \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T})}.
+# $$
+#
+# The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to $\text{full}(\cdot | o_{0:T})$.  The (most evident) problem with doing inference is that the quantity $P_\text{marginal}(o_{0:T})$ is intractable!
 
 # %% [markdown]
 # ### Importance sampling and `Gen.generate`
