@@ -1038,9 +1038,7 @@ gif(ani, "imgs/need.gif", fps=1)
 # %% [markdown]
 # It would seem that the fit is reasonable in low motion deviation, but really breaks down in high motion deviation.
 #
-# We are not limited to intuitive judgments here: the model can quantitatively tell us how good a fit it is for the data.  Namely, we can compare the likelihoods of the observation data in typical samples produced by the model, to the likelihoods of our fixed observation data under samples from the model agreeing these data.
-#
-# In order to do this, we detour to explain how to produce samples from our model that agree with the fixed observation data.
+# We are not limited to visual judgments here: the model can quantitatively assess how good a fit the integrated path is for the data.  In order to do this, we detour to explain how to produce samples from our model that agree with the fixed observation data.
 
 # %% [markdown]
 # ### Generating samples with constraints
@@ -1082,6 +1080,12 @@ project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...)) == log_
 
 # %% [markdown]
 # ### Picturing generated samples
+#
+# We return to how the model offers a numerical benchmark for how good a fit the integrated path is.
+#
+# The strategy is to `generate` traces constrained to the sensor observations, in effect just sampling typical paths from the path model, and tabulate the distribution of the densities of the observations by `project`ing onto their addresses.  We can then compare the density of the observations in the integrated path against this baseline.
+#
+# CODE BELOW DOES NOT DO THIS
 
 # %%
 N_samples = 200
