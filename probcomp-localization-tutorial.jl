@@ -1138,7 +1138,7 @@ end
 
 # Choose one representative particle.
 
-function sample(particles, log_weights)
+function resample(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
     index = categorical(norm_weights)
@@ -1173,14 +1173,14 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+traces = [resample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
           for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
 t1 = now()
-traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+traces = [resample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
           for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
@@ -1216,12 +1216,12 @@ traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_sam
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
 hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data under prior")
 
-traces_posterior_low_deviation = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+traces_posterior_low_deviation = [resample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
                                   for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_posterior_low_deviation]
 hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="typical data under posterior: low dev data")
 
-traces_posterior_high_deviation = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+traces_posterior_high_deviation = [resample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
                                    for _ in 1:N_samples]
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_posterior_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="typical data under posterior: high dev data")
@@ -1236,10 +1236,15 @@ the_plot
 # We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.
 #
 # There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  Rather, efficiency will later become possible when we exploit what we actually know about the problem in our design of the inference strategy.  Gen's aim is to provide the right entry points to enact this exploitation.
+
+# %% [markdown]
+# ### Importance sampling
 #
-# These strategies have a common shape.  We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the senses that its samples have the same type, and that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
+# These generic inference strategies have a common shape.  We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the senses that its samples have the same type, and that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
 #
-# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn $P$.  In fact, we only require that we have on hand this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
+# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *importance weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn $P$.  In fact, we only require that we have on hand this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
+#
+# The pair $(Q,f)$ is called *importance sampling* or a *properly weighted sampler*?!
 #
 # The question is how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$.
 
@@ -1258,28 +1263,41 @@ the_plot
 # $$
 # Z := P_\text{marginal}(o_{0:T})
 # $$
-# is constant in $z_{0:T}$, we are free to take the explicitly computable quantity
+# is constant in $z_{0:T}$, we are free to work instead with the explicitly computable quantity
 # $$
 # f(z_{0:T}) := \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)
 # $$
 # in what follows.
 
 # %% [markdown]
+# There is a rather literal way of implementing $Q$ and $f$ in the example.  First call `Gen.simulate` on `path_model` to get samples $z_{0:T}^i$ from the proposal $Q$.  Then call `get_score` on the (determininstically constrained, in this case!) traces for `sensor_model` that have the $z_t$ as parameters and the $o_t$ as choicemaps, to obtain the weights $w^i$.
+
+# %%
+z_path = simulate(path_model, (T, full_model_args...))
+log_weight = 0.
+for i in 1:(T+1)
+    sensor_trace, _ = generate(sensor_model, (z_path[prefix_index(i, :pose)], world.walls, sensor_settings), constraints_low_deviation[t])
+    log_weight += get_score(sensor_trace)
+end;
+# VISUALIZE SOMEHOW
+
+# %% [markdown]
+# But there is a more direct way to obtain exactly the same result: call `Gen.generate` on `full_model` given the observations $o_t$ as constraints on the trace.  The returned trace is none other than a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ (the observations are not consulted in doing so), and the returned projection onto the observations is none other than $f(z_{0:T})$ as defined above.
+#
+# This is a general pattern when working in `Gen`:
+
+# %%
+trace, log_weight = generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)
+# AGAIN, VISUALIZE SOMEHOW
+
+# %% [markdown]
 # ### Rejection sampling
 #
-# One approach, called *rejection sampling*, is to go ahead and generate samples from $Q$, but to accept (return) only some of them while rejecting (discarding) others, the probability of acceptance according to the sampled value.  If for each sampled value $z$ the probability of acceptance is a constant times $\hat f(z)$, or equivalently a constant times $f(z)$, then the samples that make it through will be distributed according to $P$.
+# One approach, called *rejection sampling*, is to interfere with the probabilities of samples by throttling them in varying proportions.  In other words, we go ahead and generate samples from $Q$, but accept (return) only some of them while rejecting (discarding) others, the probability of acceptance depending on the sampled value.  If for each sampled value $z$ the probability of acceptance is a constant times $\hat f(z)$, or equivalently a constant times $f(z)$, then the samples that make it through will be distributed according to $P$.
 #
-# The first key technical problem is that, in deciding whether to reject or accept a sample $z$, we in effect need to flip a weight-$p$ coin for some value $p$ that is simultaneously
-# * in the interval $[0,1]$, and
-# * proportional to $f(z)$,
+# More precisely, in deciding whether to accept or reject a sample $z$, we flip a weight-$p$ coin where $p = f(z)/C$ for some constant $C > 0$, accepting if heads and rejecting of tails.  In order for this to make sense, $p$ must lie in the interval $[0,1]$, or equivalently $f(z) \leq C$, that is, we need $C$ to be an *upper bound* on the outputs of the function $f$.  There is an optimal upper bound constant, namely the supremum value $C_\text{opt} = \max_z f(z)$.  If we only know *some* upper bound $C \geq C_\text{opt}$, then rejection sampling with this constant still provides a correct algorithm, but it is inneficient by drawing a factor of $C/C_\text{opt}$ too many samples on average.  The first of many problems with rejection sampling is that finding *any* upper bound for $f$ (or even for $\hat f$), efficient or not, is often intractable!
 #
-# whereas the latter quantities may very well $> 1$, or even very large.  In other words, we need an *upper bound* $C > 0$ on the outputs of the function $f$, for then we may take $p = f(z)/C$.
-#
-# There is an optimal upper bound constant, namely the supremum value $C_\text{opt} = \max_z f(z)$.  If we simply know some upper bound $C \geq C_\text{opt}$, then we can still correct the ratios $f(z)$ by $C$, to obtain an algorithm that is correct but inneficient by drawing a factor of $C/C_\text{opt}$ too many samples on average.
-#
-# Sometimes, we have only a number $C > 0$ that is *guess* at an upper bound.  When we proceed with this $C$ under the assumption that it works, the resulting algorithm is called *approximate rejection sampling*.  So long as it indeed bounds above all values of $f(z)$ that we encounter, the algorithm has so far been valid.
-#
-# But what to do if we encounter a sample $z$ with $f(z) > C$?  Then we may replace $C$ with this new larger quantity and keep going.  This algorithm is called *adaptive approximate rejection sampling*.  Earlier samples, with a too-low intitial value for $C$, may occur with too high absolute frequency.  But over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
+# Sometimes we have only a number $C > 0$ that is *guess* at an upper bound; when we proceed with this $C$ under the assumption that it bounds $f$, the resulting algorithm is called *approximate rejection sampling*.  But what to do if we encounter a sample $z$ with $f(z) > C$?  Then we may replace $C$ with this new larger quantity and keep going.  This algorithm is called *adaptive approximate rejection sampling*.  Earlier samples, with a too-low intitial value for $C$, may occur with too high absolute frequency.  But over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
 
 # %%
 function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_attempts)
@@ -1291,6 +1309,7 @@ function rejection_sample(model, args, merged_constraints, N_burn_in, N_particle
         while attempts < MAX_attempts
             attempts += 1
 
+            # The use of `generate` is as explained in the preceding section.
             particle, weight = generate(model, args, merged_constraints)
             if weight > C
                 C = weight
@@ -1361,61 +1380,48 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 # The performance dynamics of this algorithm is a fun EXERCISE!
 #
 # In general, as $C$ increases, the algorithm is increasingly *wasteful*, rejecting more samples overall, and taking longer to find likely hits.
-
-# %% [markdown]
-# ### Sampling weighted particles
 #
-# Intead of indefinitely rejecting particles, we can guarantee to use at least some of them.  Here we put a name on a simple and common construction.
-#
-# Suppose we are given a list of nonnegative numbers, not all zero: $[w^1, w_2, \ldots, w^N]$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.   The normalized list $[\hat w^1, \hat w^2, \ldots, \hat w^N]$ describes a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$.
-#
-# Note that for any constant $Z > 0$, the scaled list $[Zw^1, Zw^2, \ldots, Zw^N]$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
-#
-# When some list of data $[z^1, z^2, \ldots, z^N]$ have been associated with these respective numbers $[w^1, w^2, \ldots, w^N]$, then to *sample* from the former data according to the latter *weights* means to sample an index $a \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the single datum $z^a$ from the list.
-#
-# Compare to the function `sample` implemented in the black box above.
+# So long as it indeed bounds above all values of $f(z)$ that we encounter, the algorithm isn't nonsense, but if the proposal $Q$ is unlikely to generate representative samples for the target $P$ at all, all we are doing is improving the shape of the noise.
 
 # %% [markdown]
 # ### Sampling / importance resampling
 #
-# The *sampling / importance resampling* (SIR) strategy runs as follows:  Let counts $N > 0$ and $M > 0$ be given.
-# 1. Generate $N$ samples $[z^1, z^2, \ldots, z^N]$ from the proposal $Q$.
-# 2. Compute $w^i := f(z^i)$ for $i = 1, \ldots, N$, called the *importance weight*.
-# 3. Use these data to independently *sample* $M$ particles from this list, using the respective weights, as above.  
-#    In other words, independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$ as above, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.
-# 4. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
+# Suppose we are given a list of nonnegative numbers, not all zero: $w^1, w_2, \ldots, w^N$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.  The normalized list $\hat w^1, \hat w^2, \ldots, \hat w^N$ determines a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$. 
+# Note that for any constant $Z > 0$, the scaled list $Zw^1, Zw^2, \ldots, Zw^N$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
 #
-# As $N \to \infty$, the samples produced by this algorithm converge to the target $P$.  (What is the role of $M$?  Fixed for now, at least.)
-
-# %% [markdown]
-# Turning towards our running example, there is a rather literal way of implementing this strategy.  First call `Gen.simulate` on `path_model` to get samples $z_{0:T}^i$ from the proposal Q.  Then call `get_score` on a suitably fashioned family of traces for `sensor_model` that have the $z_t$ as parameters and the $o_t$ as choicemaps, to obtain the weights $w^i$.
+# When some list of data $z^1, z^2, \ldots, z^N$ have been associated with these respective numbers $w^1, w^2, \ldots, w^N$, then to *importance **re**sample* $M$ values from these data according to these weights means to independently sample indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the new list of data $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.  Compare the $M = 1$ case to the function `resample` implemented in the black box above, and the $M = N$ case to the function `resample!` below.
 #
-# But there is a more direct way to obtain exactly the same result: call `Gen.generate` on `full_model` given the observations $o_t$ as constraints on the trace.  The returned trace is none other than a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ (the observations are not consulted in doing so), and the returned projection onto the observations is none other than the likelihood of the observations.
+# Returning to inference, the *sampling / importance resampling* (SIR) strategy runs as follows.  Let counts $N > 0$ and $M > 0$ be given.
+# 1. Importance sample:  Generate $N$ samples $z^1, z^2, \ldots, z^N$ from the proposal $Q$, called *particles*.  Compute also their *importance weights* $w^i := f(z^i)$ for $i = 1, \ldots, N$.
+# 2. Importance resample:  Independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$ as above, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
 #
-# This is a general pattern when working in `Gen`:
+# As $N \to \infty$, the samples produced by this algorithm converge to the target $P$.  This strategy is computationally an improvement over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guess among these.
 
 # %%
-# Corresponds to the case `M = 1` of the above discussion.
-function basic_SIR_spelled_out(model, args, merged_constraints, N_SIR)
-    traces = Vector{Trace}(undef, N_SIR)
-    log_weights = Vector{Float64}(undef, N_SIR)
+function importance_sample(model, args, merged_constraints, N_samples)
+    traces = Vector{Trace}(undef, N_samples)
+    log_weights = Vector{Float64}(undef, N_samples)
 
-    for i in 1:N_SIR
+    for i in 1:N_samples
         traces[i], log_weights[i] = generate(model, args, merged_constraints)
     end
 
-    return sample(traces, log_weight)
+    return traces, log_weights
 end
 
-# This is a generic algorithm, so there is a library version.
-# We will the library version use going forward, because it includes a constant-memory optimization.
-# (It is not necessary to store all particles and categorically select one at the end.  Mathematically
+sampling_importance_resampling(model, args, merged_constraints, N_SIR) =
+    resample(importance_sample(model, args, merged_constraints, N_SIR)...)
+
+# These are generic algorithms, so there are the following library versions.
+# By the way, the library version of SIR includes a constant-memory optimization:
+# It is not necessary to store all particles and categorically select one at the end.  Mathematically
 # it amounts to the same instead to store just one candidate selection, and stochastically replace it
 # with each newly generated particle with odds the latter's weight relative to the sum of the
-# preceding weights.)
-# To obtain the above from the library version, one would define:
-
-basic_SIR(model, args, merged_constraints, N_SIR) = importance_resampling(model, args, merged_constraints, N_SIR)[1];
+# preceding weights.
+importance_sample_library(model, args, merged_constraints, N_samples) =
+    Gen.importance_sampling(model, args, merged_constraints, N_samples) |> ((ts, lws, _),) -> (ts, lws)
+sampling_importance_resampling_library(model, args, merged_constraints, N_SIR) =
+    Gen.importance_resampling(model, args, merged_constraints, N_SIR)[1];
 
 # %% [markdown]
 # For a short path, SIR can improve from chaos to a somewhat coarse/noisy fit without too much effort.
@@ -1426,7 +1432,7 @@ T_short = 6
 N_samples = 10
 N_SIR = 500
 t1 = now()
-traces = [basic_SIR(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
+traces = [sampling_importance_resampling(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (short path): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
@@ -1435,16 +1441,14 @@ savefig("imgs/SIR_short")
 the_plot
 
 # %% [markdown]
-# ### SIR and Rejection Sampling scale poorly
-#
-# SIR and RS already do not provide high-quality traces on short paths.  For longer paths, the difficulty only grows, as one blindly searches for a needle in a high-dimensional haystack.
+# There are still problems with SIR.  SIR already do not provide high-quality traces on short paths.  For longer paths, the difficulty only grows, as one blindly searches for a needle in a high-dimensional haystack.  And if the proposal $Q$ is unlikely to generate typical samples from the target $P$, one would need a massive number of particles to get a good approximation; in fact, the rate of convergence of SIR towards the target can be super-exponentially slow in $N \to \infty$!
 
 # %%
 N_samples = 10
 N_SIR = 500
 
 t1 = now()
-traces = [basic_SIR(full_model, (T, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
+traces = [sampling_importance_resampling(full_model, (T, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 
@@ -1460,20 +1464,11 @@ the_plot
 # %% [markdown]
 # ### Particle filter: basic refactor
 #
-# The following two functions construct indistinguishable stochastic families of weighted particles.  In the first case, each trace has path `generate`d all in one go, recorded with the density of all the observations relative to that path.  In the second case, each trace is built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  The only difference is the static DSL combinator's extra overhead in determining how to minimally perform the `update`.
+# Above, the function `importance_sample` produced a family of particles, each particle being `generate`d all in one go, together with the density of the observations relative to that path.
+#
+# The following two function `particle_filter_vanilla` constructs an indistinguishable stochastic family of weighted particles, each trace built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  (This comes at a small computational overhead: the static DSL combinator largely eliminates recomputation in performing the `update`s, but there is still extra logic, as well as the repeated allocations of the intermediary traces.)
 
 # %%
-function unfiltered_particles(model, T, args, merged_constraints, N_particles)
-    traces = Vector{Trace}(undef, N_particles)
-    log_weights = Vector{Float64}(undef, N_particles)
-
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (T, args...), merged_constraints)
-    end
-
-    return traces, log_weights
-end
-
 function particle_filter_vanilla(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1493,25 +1488,12 @@ function particle_filter_vanilla(model, T, args, constraints, N_particles)
 end;
 
 # %% [markdown]
-# This refactoring is called "particle filter" because it of how it spreads the reasoning out along the time axis.  It has the effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
+# This refactoring is called "particle filter" because it of how it spreads the reasoning out along the time axis.  It has the important effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
 
 # %% [markdown]
-# ### Resampling
+# ### Adding resampling: the bootstrap
 #
-# One of the simplest manifestations of the preceding strategy is called a particle filter, which, roughly speaking, looks like a kind of incremental SIR.  One constructs a population of traces in parallel; upon constructing each new step of the traces, one assesses how well they fit the data, discarding the worse ones and keeping more copies of the better ones.
-#
-# More precisely:
-#
-# In the initial step, we draw $N$ samples $z_0^1, z_0^2, \ldots, z_0^N$ from the distribution $\text{start}$, which we call *particles*.
-#
-# There are iterative steps for $t = 1, \ldots, T$.  In the iterative step $t$, we have already constructed $N$ particles of the form $z_{0:{t-1}}^1, z_{0:t-1}^2, \ldots, z_{0:t-1}^N$.  First we *resample* them as follows.  Each particle is assigned a *weight*
-# $$
-# w^i := \frac{P_\text{full}(z_{0:t-1}^i, o_{0:t-1})}{P_\text{path}(z_{0:t-1}^i)}.
-# $$
-# The normalized weights $\hat w^i := w^i / \sum_{j=1}^n w^j$ define a categorical distribution on indices $i = 1, \ldots, N$, and for each index $i$ we *sample* a new index $a^i$ accordingly.  We *replace* the list of particles with the reindexed list $z_{0:t-1}^{a^1}, z_{0:t-1}^{a^2}, \ldots, z_{0:t-1}^{a^N}$.  Finally, having resampled thusly, we *extend* each particle $z_{0:t-1}^i$ to a particle of the form $z_{0:t}^i$ by drawing a sample $z_t^i$ from $\text{step}(z_{t-1}^i, \ldots)$.
-
-# %% [markdown]
-# WHY DOES `Gen.generate` GIVE THE SAME WEIGHTS AS ABOVE?
+# One simple intervention is to prune out the particles that don't appear to be good candidates, and replace them with copies of the better ones in further exploration.  In other words, one can perform importance resampling on the particles in between the `update` steps.  The resulting kind of incremental SIR is often called a *bootstrap filter* in the literature.
 
 # %%
 function resample!(particles, log_weights)
@@ -1521,7 +1503,7 @@ function resample!(particles, log_weights)
     log_weights .= log_total_weight - log(length(log_weights))
 end
 
-function particle_filter(model, T, args, constraints, N_particles)
+function particle_filter_bootstrap(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     
@@ -1550,13 +1532,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [sample(particle_filter(full_model, T, full_model_args, constraints_low_deviation, N_particles)...) for _ in 1:N_samples]
+traces = [resample(particle_filter_bootstrap(full_model, T, full_model_args, constraints_low_deviation, N_particles)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [sample(particle_filter(full_model, T, full_model_args, constraints_high_deviation, N_particles)...) for _ in 1:N_samples]
+traces = [resample(particle_filter_bootstrap(full_model, T, full_model_args, constraints_high_deviation, N_particles)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -1681,13 +1663,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...) for _ in 1:N_samples]
+traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...) for _ in 1:N_samples]
+traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -1790,13 +1772,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)...) for _ in 1:N_samples]
+traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)...) for _ in 1:N_samples]
+traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -1895,13 +1877,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...) for _ in 1:N_samples]
+traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...) for _ in 1:N_samples]
+traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -2002,13 +1984,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [sample(controlled_particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)...) for _ in 1:N_samples]
+traces = [resample(controlled_particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [sample(controlled_particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)...) for _ in 1:N_samples]
+traces = [resample(controlled_particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
