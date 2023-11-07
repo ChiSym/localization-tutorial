@@ -1265,7 +1265,7 @@ the_plot
 #
 # Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *importance weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn from $P$.  In fact, we only require that we have on hand this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
 #
-# The pair $(Q,f)$ is said to implement *importance sampling* or a *properly weighted sampler*?! for $P$.
+# The pair $(Q,f)$ is said to implement *importance sampling* for $P$.
 
 # %% [markdown]
 # In our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, and the proposal $Q$ is the path prior $\text{path}$.  The density ratio between these for a path $z_{0:T}$ is
@@ -1284,14 +1284,13 @@ the_plot
 # $$
 # is constant in $z_{0:T}$, we are free to work instead with the explicitly computable quantity
 # $$
-# f(z_{0:T}) := \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)
+# f(z_{0:T}) := Z \cdot \hat f(z_{0:T}) = \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)
 # $$
-# in what follows.
+# in what follows.  (The elimination of the need to compute $Z$ is one of the decisive contributions of the ProbComp/Gen perspective.)
 #
-# Compare to our previous description of `Gen.generate` on `full_model` with the given observations $o_{0:T}$: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight $f(z_{0:T})$.  Thus it implements exactly the importance sampler $(Q,f)$ targeting the posterior $P = \text{full}(\cdot | o_{0:T})$.
-
-# %% [markdown]
-# This reasoning is indicative of the general scenario with conditioning, for which the following code implements importance sampling.  The elimination of the need to compute $Z$ is one of the primary contributions of the ProbComp/Gen perspective.
+# Compare to our previous description of calling `Gen.generate` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight $f(z_{0:T})$.  Thus it implements the importance sampler $(Q,f)$ targeting the posterior $P = \text{full}(\cdot | o_{0:T})$.
+#
+# This reasoning is indicative of the general scenario with conditioning, for which the following code implements importance sampling.
 
 # %%
 function importance_sample(model, args, merged_constraints, N_samples)
@@ -1306,7 +1305,7 @@ function importance_sample(model, args, merged_constraints, N_samples)
 end;
 
 # %% [markdown]
-# The question remains: how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$, and thereby use $Q$ to produce samples from $P$?
+# It remains to show how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$, and thereby use $Q$ to produce samples from (approximately) $P$.
 
 # %% [markdown]
 # ## Generic strategies for inference
