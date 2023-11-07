@@ -959,7 +959,17 @@ path_high_deviation = get_path(trace_high_deviation)
 
 # ...using these data.
 observations_low_deviation = get_sensors(trace_low_deviation)
-observations_high_deviation = get_sensors(trace_high_deviation);
+observations_high_deviation = get_sensors(trace_high_deviation)
+
+# Encode sensor readings into choice map.
+constraint_from_sensors(t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
+    choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
+constraint_from_sensors(tuple :: Tuple) = constraint_from_sensors(tuple...);
+
+constraints_low_deviation = constraint_from_sensors.(enumerate(observations_low_deviation))
+constraints_high_deviation = constraint_from_sensors.(enumerate(observations_high_deviation))
+merged_constraints_low_deviation = merge(constraints_low_deviation...)
+merged_constraints_high_deviation = merge(constraints_high_deviation...);
 
 # %% [markdown]
 # We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.
@@ -1053,13 +1063,6 @@ gif(ani, "imgs/need.gif", fps=1)
 # ### Picturing generated samples
 
 # %%
-# Encode sensor readings into choice map.
-
-constraint_from_sensors(t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
-    choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
-constraint_from_sensors(tuple :: Tuple) = constraint_from_sensors(tuple...);
-
-# %%
 N_samples = 200
 
 selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
@@ -1067,14 +1070,10 @@ traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_sam
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
 hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data")
 
-constraints_low_deviation = constraint_from_sensors.(enumerate(observations_low_deviation))
-merged_constraints_low_deviation = merge(constraints_low_deviation...)
 traces_generated_low_deviation = [generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)[1] for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_generated_low_deviation]
 hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="low dev data")
 
-constraints_high_deviation = constraint_from_sensors.(enumerate(observations_high_deviation))
-merged_constraints_high_deviation = merge(constraints_high_deviation...)
 traces_generated_high_deviation = [generate(full_model, (T, full_model_args...), merged_constraints_high_deviation)[1] for _ in 1:N_samples]
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_generated_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="high dev data")
