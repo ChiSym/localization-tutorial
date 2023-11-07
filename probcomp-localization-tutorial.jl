@@ -1241,7 +1241,7 @@ savefig("imgs/likelihoods")
 the_plot
 
 # %% [markdown]
-# ### The posterior distribution
+# ### The posterior distribution, importance sampling, and `Gen.generate`
 #
 # Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
 # $$
@@ -1257,8 +1257,6 @@ the_plot
 # The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to $\text{full}(\cdot | o_{0:T})$.  The (most evident) problem with doing inference is that the quantity $P_\text{marginal}(o_{0:T})$ is intractable!
 
 # %% [markdown]
-# ### Importance sampling and `Gen.generate`
-#
 # What we have on hand fits into the following common shape.
 #
 # We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the sense that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
