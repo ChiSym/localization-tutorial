@@ -1439,7 +1439,7 @@ sampling_importance_resampling(model, args, merged_constraints, N_SIR) =
 # with each newly generated particle with odds the latter's weight relative to the sum of the
 # preceding weights.
 importance_sample_library(model, args, merged_constraints, N_samples) =
-    Gen.importance_sampling(model, args, merged_constraints, N_samples) |> ((ts, lws, _),) -> (ts, lws)
+    Gen.importance_sampling(model, args, merged_constraints, N_samples)[[1, 2]]
 sampling_importance_resampling_library(model, args, merged_constraints, N_SIR) =
     Gen.importance_resampling(model, args, merged_constraints, N_SIR)[1];
 
