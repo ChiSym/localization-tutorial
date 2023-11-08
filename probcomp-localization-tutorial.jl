@@ -1300,7 +1300,7 @@ the_plot
 #
 # So in our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, the proposal $Q$ is the path prior $\text{path}$, and the importance weight $f$ is the product of the sensor model densities.  We seek a computational model of the first; the second and third are computationally modeled by calling `Gen.generate` on `full_model` constrained by the observations $o_{0:T}$.  (The computation of the second, on its own, simplifies to `path_prior`.)
 #
-# We represent this discussion in the code for future use:
+# We represent this discussion in code for future use:
 
 # %%
 function importance_sample(model, args, merged_constraints, N_samples)
