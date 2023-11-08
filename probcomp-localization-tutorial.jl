@@ -1285,7 +1285,7 @@ the_plot
 # =
 # \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T}) \cdot P_\text{path}(z_{0:T})}
 # =
-# \frac{\prod_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)}{P_\text{marginal}(o_{0:T})}.
+# \frac{\prod_{t=0}^T P_\text{sensor}(o_t)}{P_\text{marginal}(o_{0:T})}.
 # $$
 # (This manipulation is tantamount to invoking Bayes's Rule.)  Noting that the intractable quantity
 # $$
@@ -1293,10 +1293,10 @@ the_plot
 # $$
 # is constant in $z_{0:T}$, we are free to work instead with the explicitly computable quantity
 # $$
-# f(z_{0:T}) := Z \cdot \hat f(z_{0:T}) = \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots).
+# f(z_{0:T}) := Z \cdot \hat f(z_{0:T}) = \prod\nolimits_{t=0}^T P_\text{sensor}(o_t).
 # $$
 #
-# Compare to our previous description of calling `Gen.generate` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight equal to $f(z_{0:T})$.  Thus it implements the importance sampler $(Q,f)$ targeting the posterior $P = \text{full}(\cdot | o_{0:T})$.
+# Compare to our previous description of calling `Gen.generate` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight equal to none other than $f(z_{0:T})$.  Thus it implements the importance sampler $(Q,f)$ targeting the posterior $P = \text{full}(\cdot | o_{0:T})$.
 #
 # This reasoning is indicative of the general scenario with conditioning, represented in the following code.
 
