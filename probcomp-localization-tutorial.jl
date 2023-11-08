@@ -1114,7 +1114,7 @@ the_plot
 # Note the differences in scales along the bottom...
 
 # %% [markdown]
-# ### Inference: main idea and demonstration
+# ### Inference: demonstration
 #
 # In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In the langauge of probability theory, as generative functions induce distributions on traces, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
 
@@ -1243,6 +1243,15 @@ savefig("imgs/likelihoods")
 the_plot
 
 # %% [markdown]
+# ## Generic strategies for inference
+#
+# We now spell out some generic strategies for conditioning the ouputs of a model towards some observed data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.  In terms to be defined shortly, they simply take a pair $(Q,f)$ of a proposal and a weight function that implement importance sampling with target $P$.
+#
+# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  One of the root problems is that proposals $Q$ may provide arbitrarily bad samples relative to our target $P$; if $Q$ still supports all samples of $P$ with microscopic but nonzero density, then the generic algorithm will converge in the limit.
+#
+# Rather, efficiency will become possible when we do the *opposite* of generic: exploit what we actually know about the problem in our design of the inference strategy to propose better traces towards our target.  Gen's aim is to provide the right entry points to enact this exploitation.
+
+# %% [markdown]
 # ### The posterior distribution, importance sampling, and `Gen.generate`
 #
 # Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
@@ -1302,15 +1311,6 @@ function importance_sample(model, args, merged_constraints, N_samples)
 
     return traces, log_weights
 end;
-
-# %% [markdown]
-# ## Generic strategies for inference
-#
-# We now spell out some generic strategies for conditioning the ouputs of our model towards the observed sensor data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.  They simply take a pair $(Q,f)$ of a proposal and a weight function that implement importance sampling with target our posterior $P$.
-#
-# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  One of the root problems is that proposals $Q$ may provide arbitrarily bad samples relative to our target $P$; if $Q$ still supports all samples of $P$ with microscopic but nonzero density, then the generic algorithm will converge in the limit.
-#
-# Rather, efficiency will become possible when we exploit what we actually know about the problem in our design of the inference strategy, namely, to propose better traces towards our target.  Gen's aim is to provide the right entry points to enact this exploitation.
 
 # %% [markdown]
 # ### Rejection sampling
