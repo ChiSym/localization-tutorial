@@ -18,6 +18,10 @@
 # %% [markdown]
 # # TODO
 #
+# * Delete George's code?
+# * "Clean" vs. "logging" versions of inference code?
+# * Check out new expos.
+#
 # * Color sensor reading picture lines via when unexpectedly low likelihood.
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
 # * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
