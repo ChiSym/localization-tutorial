@@ -1050,7 +1050,8 @@ gif(ani, "imgs/need.gif", fps=1)
 # %%
 trace, log_weight = generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)
 
-all(trace[prefix_address(i, :sensor => j => :distance)] == constraints_low_deviation[i][j] for i in 1:(T+1) for j in 1:sensor_settings.num_angles)
+all(trace[prefix_address(i, :sensor => j => :distance)] == merged_constraints_low_deviation[prefix_address(i, :sensor => j => :distance)]
+    for i in 1:(T+1) for j in 1:sensor_settings.num_angles)
 
 # %% [markdown]
 #
@@ -1352,6 +1353,8 @@ function rejection_sample(model, args, merged_constraints, N_burn_in, N_particle
 end;
 
 # %%
+T_short = 6
+
 N_burn_in = 0 # omit burn-in to illustrate early behavior
 N_particles = 20
 MAX_attempts = 5000
@@ -1444,8 +1447,6 @@ sampling_importance_resampling_library(model, args, merged_constraints, N_SIR) =
 # For a short path, SIR can improve from chaos to a somewhat coarse/noisy fit without too much effort.
 
 # %%
-T_short = 6
-
 N_samples = 10
 N_SIR = 500
 t1 = now()
