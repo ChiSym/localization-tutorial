@@ -1252,7 +1252,7 @@ the_plot
 # Rather, efficiency will become possible when we do the *opposite* of generic: exploit what we actually know about the problem in our design of the inference strategy to propose better traces towards our target.  Gen's aim is to provide the right entry points to enact this exploitation.
 
 # %% [markdown]
-# ### The posterior distribution, importance sampling, and `Gen.generate`
+# ### The posterior distribution, `Gen.generate`, and importance sampling
 #
 # Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.  Namely, one defines first the *marginal distribution* over observations to have density
 # $$
@@ -1268,37 +1268,39 @@ the_plot
 # The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed approximately according to $\text{full}(\cdot | o_{0:T})$.  The (most evident) problem with doing inference is that the quantity $P_\text{marginal}(o_{0:T})$ is intractable!
 
 # %% [markdown]
-# What we have on hand fits into the following common shape.
-#
-# We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the sense that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
-#
-# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *importance weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn from $P$.  We only require that we are able to compute this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
-#
-# The pair $(Q,f)$ is said to implement *importance sampling* for $P$.  We will return to the question of how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$, and thereby use $Q$ to produce samples from (approximately) $P$.
-
-# %% [markdown]
-# In our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, and the proposal $Q$ is the path prior $\text{path}$.  The density ratio between these for a path $z_{0:T}$ is
+# Define the function $\hat f(z_{0:T})$ of sample values $z_{0:T}$ to be the ratio of probability densities between the posterior distribution $\text{full}(\cdot | o_{0:T})$ that we wish to sample from, and the prior distribution $\text{path}$ that we are presently able to produce samples from.  Manipulating it à la Bayes's Rule gives:
 # $$
 # \hat f(z_{0:T})
-# =
+# :=
 # \frac{P_\text{full}(z_{0:T} | o_{0:T})}{P_\text{path}(z_{0:T})}
 # =
 # \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T}) \cdot P_\text{path}(z_{0:T})}
 # =
 # \frac{\prod_{t=0}^T P_\text{sensor}(o_t)}{P_\text{marginal}(o_{0:T})}.
 # $$
-# (This manipulation is tantamount to invoking Bayes's Rule.)  Noting that the intractable quantity
+# Noting that the intractable quantity
 # $$
 # Z := P_\text{marginal}(o_{0:T})
 # $$
-# is constant in $z_{0:T}$, we are free to work instead with the explicitly computable quantity
+# is constant in $z_{0:T}$, we define the explicitly computable quantity
 # $$
 # f(z_{0:T}) := Z \cdot \hat f(z_{0:T}) = \prod\nolimits_{t=0}^T P_\text{sensor}(o_t).
 # $$
 #
-# Compare to our previous description of calling `Gen.generate` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight equal to none other than $f(z_{0:T})$.  Thus it implements the importance sampler $(Q,f)$ targeting the posterior $P = \text{full}(\cdot | o_{0:T})$.
+# Compare to our previous description of calling `Gen.generate` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight equal to none other than this $f(z_{0:T})$.
+
+# %% [markdown]
+# This reasoning involving `Gen.generate` is indicative of the general scenario with conditioning, and fits into the following shape.
 #
-# This reasoning is indicative of the general scenario with conditioning, represented in the following code.
+# We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the sense that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
+#
+# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn from $P$.  We only require that we are able to compute the *unnormalized* density ratio, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
+#
+# The pair $(Q,f)$ is said to implement *importance sampling* for $P$, and the values of $f$ are called *importance weights*.  Generic inference attempts to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$, and thereby use $Q$ to produce samples from (approximately) $P$.
+#
+# So in our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, the proposal $Q$ is the path prior $\text{path}$, and the importance weight $f$ is the product of the sensor model densities.  We seek a computational model of the first; the second and third are computationally modeled by calling `Gen.generate` on `full_model` constrained by the observations $o_{0:T}$.  (The computation of the second, on its own, simplifies to `path_prior`.)
+#
+# We represent this discussion in the code for future use:
 
 # %%
 function importance_sample(model, args, merged_constraints, N_samples)
@@ -1481,10 +1483,10 @@ the_plot
 #
 # Above, the function `importance_sample` produced a family of particles, each particle being `generate`d all in one go, together with the density of the observations relative to that path.
 #
-# The following two function `particle_filter_vanilla` constructs an indistinguishable stochastic family of weighted particles, each trace built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  (This comes at a small computational overhead: the static DSL combinator largely eliminates recomputation in performing the `update`s, but there is still extra logic, as well as the repeated allocations of the intermediary traces.)
+# The following two function `particle_filter` constructs an indistinguishable stochastic family of weighted particles, each trace built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  (This comes at a small computational overhead: the static DSL combinator largely eliminates recomputation in performing the `update`s, but there is still extra logic, as well as the repeated allocations of the intermediary traces.)
 
 # %%
-function particle_filter_vanilla(model, T, args, constraints, N_particles)
+function particle_filter(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     
