@@ -1604,7 +1604,10 @@ function mh_step(trace, proposal, proposal_args)
     return (log(rand()) < log_weight_increment ? proposed_trace : trace), 0., viz
 end
 mh_kernel(proposal) =
-    (trace, proposal_args) -> mh_step(trace, proposal, proposal_args);
+    (trace, proposal_args) -> mh_step(trace, proposal, proposal_args)
+
+# See `drift_proposal` from the black box above!
+drift_mh_kernel = mh_kernel(drift_proposal);
 
 # %% [markdown]
 # Then PF+Rejuv code.
@@ -1672,7 +1675,6 @@ drift_step_factor = 1/3.
 drift_proposal_args = (drift_step_factor,)
 N_MH = 10
 drift_args_schedule = [drift_proposal_args for _ in 1:N_MH]
-drift_mh_kernel = mh_kernel(drift_proposal)
 
 N_samples = 10
 
