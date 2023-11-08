@@ -1054,14 +1054,16 @@ all(trace[prefix_address(i, :sensor => j => :distance)] == constraints_low_devia
 
 # %% [markdown]
 #
-# A trace resulting from a call to `Gen.generate` is structurally indistinguishable from one drawn from `Gen.simulate`, having the same kind of choice map, in turn having the same assignments of densities to its nodes according to the primitive distributions.  But there is a key situational difference: the total density is **no longer equal to** the frequency with which the trace is stochastically produced by `Gen.generate`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
+# A trace resulting from a call to `Gen.generate` is structurally indistinguishable from one drawn from `Gen.simulate`, for example having the same shape of choice map.  But there is a key situational difference: the total density is **no longer equal to** the frequency with which the trace is stochastically produced by `Gen.generate`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
 #
-# On the superficial level, since all traces produced by `Gen.generate` are consistent with the constraints, those traces that are inconsistent with the constraints do not occur, and the aggregate of traces that are consistent with the constraints are more likely.
+# On the superficial level, since all traces produced by `Gen.generate` are consistent with the constraints, those traces that are inconsistent with the constraints do not occur, and in aggregate the traces that are consistent with the constraints are more common.
 #
-# More deeply and importantly, the stochastic choice of the constraints under a run of `Gen.simulate` might have any density, perhaps very low, which contributes as always to the overall density of the full trace; whereas it does not influence the frequency of producing this trace under `Gen.generate`.
+# More deeply and importantly, the stochastic choice of the *constraints* under a run of `Gen.simulate` might have any density, perhaps very low, which contributes as always to the overall density of the full trace; whereas it does not influence the frequency of producing this trace under `Gen.generate`.
 #
 # The ratio of the overall trace density, returned by `Gen.get_score` and agreeing with the probability `Gen.simulate` would produce it, to the probability that `Gen.generate` would produce it with the given constraints, is called the *importance weight*.  This number is directly computed as the `Gen.project` of the trace upon the choice map addresses that were constrained in the call to `Gen.generate`.  For convenience, (the log of) this quantity is returned by `Gen.generate` along with the trace.
-#
+
+# %% [markdown]
+# In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
 
 # %%
 project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...)) == log_weight
@@ -1261,9 +1263,9 @@ the_plot
 #
 # We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the sense that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
 #
-# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *importance weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn from $P$.  In fact, we only require that we have on hand this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
+# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then the *importance weight* $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn from $P$.  We only require that we are able to compute this density ratio up to a constant multiple, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
 #
-# The pair $(Q,f)$ is said to implement *importance sampling* for $P$.
+# The pair $(Q,f)$ is said to implement *importance sampling* for $P$.  We will return to the question of how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$, and thereby use $Q$ to produce samples from (approximately) $P$.
 
 # %% [markdown]
 # In our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, and the proposal $Q$ is the path prior $\text{path}$.  The density ratio between these for a path $z_{0:T}$ is
@@ -1282,13 +1284,12 @@ the_plot
 # $$
 # is constant in $z_{0:T}$, we are free to work instead with the explicitly computable quantity
 # $$
-# f(z_{0:T}) := Z \cdot \hat f(z_{0:T}) = \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots)
+# f(z_{0:T}) := Z \cdot \hat f(z_{0:T}) = \prod\nolimits_{t=0}^T P_\text{sensor}(o_t; z_t, \ldots).
 # $$
-# in what follows.  (The elimination of the need to compute $Z$ is one of the decisive contributions of the ProbComp/Gen perspective.)
 #
-# Compare to our previous description of calling `Gen.generate` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight $f(z_{0:T})$.  Thus it implements the importance sampler $(Q,f)$ targeting the posterior $P = \text{full}(\cdot | o_{0:T})$.
+# Compare to our previous description of calling `Gen.generate` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight equal to $f(z_{0:T})$.  Thus it implements the importance sampler $(Q,f)$ targeting the posterior $P = \text{full}(\cdot | o_{0:T})$.
 #
-# This reasoning is indicative of the general scenario with conditioning, for which the following code implements importance sampling.
+# This reasoning is indicative of the general scenario with conditioning, represented in the following code.
 
 # %%
 function importance_sample(model, args, merged_constraints, N_samples)
@@ -1301,9 +1302,6 @@ function importance_sample(model, args, merged_constraints, N_samples)
 
     return traces, log_weights
 end;
-
-# %% [markdown]
-# It remains to show how to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$, and thereby use $Q$ to produce samples from (approximately) $P$.
 
 # %% [markdown]
 # ## Generic strategies for inference
