@@ -1421,7 +1421,7 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 # 1. Importance sample:  Generate $N$ samples $z^1, z^2, \ldots, z^N$ from the proposal $Q$, called *particles*.  Compute also their *importance weights* $w^i := f(z^i)$ for $i = 1, \ldots, N$.
 # 2. Importance resample:  Independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$ as above, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
 #
-# As $N \to \infty$, the samples produced by this algorithm converge to the target $P$.  This strategy is computationally an improvement over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guess among these.
+# As $N \to \infty$ with $M$ fixed, the samples produced by this algorithm converge to the target $P$.  This strategy is computationally an improvement over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guess among these.
 
 # %%
 sampling_importance_resampling(model, args, merged_constraints, N_SIR) =
