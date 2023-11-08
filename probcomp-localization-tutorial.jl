@@ -1067,7 +1067,7 @@ all(trace[prefix_address(i, :sensor => j => :distance)] == merged_constraints_lo
 # In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
 
 # %%
-project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...)) == log_weight
+log_weight == project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...))
 
 # %% [markdown]
 # We will return to this picture shortly, but for now we stress the basic invariant:
@@ -1610,7 +1610,7 @@ mh_kernel(proposal) =
 # Then PF+Rejuv code.
 
 # %%
-function resample!(particles, log_weights, ESS_threshold)
+function resample_ESS!(particles, log_weights, ESS_threshold)
     log_total_weight = logsumexp(log_weights)
     log_norm_weights = log_weights .- log_total_weight
     if effective_sample_size(log_norm_weights) < ESS_threshold
@@ -1619,7 +1619,6 @@ function resample!(particles, log_weights, ESS_threshold)
         log_weights .= log_total_weight - log(length(log_weights))
     end
 end
-
 
 # Compare with the source code for the library calls used by `particle_filter_MH_rejuv_library`!
 
@@ -1635,7 +1634,7 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     push!(infos, (type = :initialize, time = now(), label = "sample from prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
-        resample!(traces, log_weights, ESS_threshold)
+        resample_ESS!(traces, log_weights, ESS_threshold)
         push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         for i in 1:N_particles
@@ -1932,7 +1931,7 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
     push!(infos, (type = :initialize, time = now(), label = "sample from prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
-        resample!(traces, log_weights, ESS_threshold)
+        resample_ESS!(traces, log_weights, ESS_threshold)
         push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         rejuv_count = 0
@@ -1967,7 +1966,7 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
                 # end
                 # push!(infos, (type = :regenerate, label = "regenernate", traces = copy(traces), log_weights = copy(log_weights)))
 
-                resample!(traces, log_weights, ESS_threshold)
+                resample_ESS!(traces, log_weights, ESS_threshold)
                 push!(infos, (type = :resample, time=now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
             end
 
