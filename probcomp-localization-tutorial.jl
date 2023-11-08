@@ -1166,7 +1166,7 @@ end
 
 # Choose one representative particle.
 
-function resample(particles, log_weights)
+function sample(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
     index = categorical(norm_weights)
@@ -1201,14 +1201,14 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [resample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
           for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
 t1 = now()
-traces = [resample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
           for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
@@ -1229,12 +1229,12 @@ traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_sam
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
 hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data under prior")
 
-traces_posterior_low_deviation = [resample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+traces_posterior_low_deviation = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
                                   for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_posterior_low_deviation]
 hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="typical data under posterior: low dev data")
 
-traces_posterior_high_deviation = [resample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
+traces_posterior_high_deviation = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
                                    for _ in 1:N_samples]
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_posterior_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="typical data under posterior: high dev data")
@@ -1420,7 +1420,7 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 # Suppose we are given a list of nonnegative numbers, not all zero: $w^1, w_2, \ldots, w^N$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.  The normalized list $\hat w^1, \hat w^2, \ldots, \hat w^N$ determines a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$. 
 # Note that for any constant $Z > 0$, the scaled list $Zw^1, Zw^2, \ldots, Zw^N$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
 #
-# When some list of data $z^1, z^2, \ldots, z^N$ have been associated with these respective numbers $w^1, w^2, \ldots, w^N$, then to *importance **re**sample* $M$ values from these data according to these weights means to independently sample indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the new list of data $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.  Compare the $M = 1$ case to the function `resample` implemented in the black box above, and the $M = N$ case to the function `resample!` below.
+# When some list of data $z^1, z^2, \ldots, z^N$ have been associated with these respective numbers $w^1, w^2, \ldots, w^N$, then to *importance **re**sample* $M$ values from these data according to these weights means to independently sample indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the new list of data $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.  Compare the $M = 1$ case to the function `sample` implemented in the black box above, and the $M = N$ case to the function `resample!` below.
 #
 # The *sampling / importance resampling* (SIR) strategy for inference runs as follows.  Let counts $N > 0$ and $M > 0$ be given.
 # 1. Importance sample:  Generate $N$ samples $z^1, z^2, \ldots, z^N$ from the proposal $Q$, called *particles*.  Compute also their *importance weights* $w^i := f(z^i)$ for $i = 1, \ldots, N$.
@@ -1430,7 +1430,7 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 
 # %%
 sampling_importance_resampling(model, args, merged_constraints, N_SIR) =
-    resample(importance_sample(model, args, merged_constraints, N_SIR)...)
+    sample(importance_sample(model, args, merged_constraints, N_SIR)...)
 
 # These are generic algorithms, so there are the following library versions.
 # By the way, the library version of SIR includes a constant-memory optimization:
@@ -1550,13 +1550,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [resample(particle_filter_bootstrap(full_model, T, full_model_args, constraints_low_deviation, N_particles)...) for _ in 1:N_samples]
+traces = [sample(particle_filter_bootstrap(full_model, T, full_model_args, constraints_low_deviation, N_particles)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [resample(particle_filter_bootstrap(full_model, T, full_model_args, constraints_high_deviation, N_particles)...) for _ in 1:N_samples]
+traces = [sample(particle_filter_bootstrap(full_model, T, full_model_args, constraints_high_deviation, N_particles)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -1682,13 +1682,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...) for _ in 1:N_samples]
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...) for _ in 1:N_samples]
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -1791,13 +1791,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)...) for _ in 1:N_samples]
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)...) for _ in 1:N_samples]
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_mh_kernel, grid_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -1896,13 +1896,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...) for _ in 1:N_samples]
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [resample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...) for _ in 1:N_samples]
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -2003,13 +2003,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [resample(controlled_particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)...) for _ in 1:N_samples]
+traces = [sample(controlled_particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [resample(controlled_particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)...) for _ in 1:N_samples]
+traces = [sample(controlled_particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(dv(t2 - t1) / N_samples) ms. (Total: $(dv(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
