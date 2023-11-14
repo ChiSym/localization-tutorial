@@ -20,8 +20,8 @@
 #
 # * "Clean" vs. "logging" versions of inference code?
 # * Check out new expos.
-# * Numerical demonstration of inference
 #
+# * Numerical demonstration of inference
 # * Color sensor reading picture lines via when unexpectedly low likelihood.
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
 # * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
@@ -1093,7 +1093,8 @@ log_weight == project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)
 #
 # The strategy is to `generate` traces constrained to the sensor observations, in effect just sampling typical paths from the path model, and tabulate the distribution of the densities of the observations by `project`ing onto their addresses.  We can then compare the density of the observations in the integrated path against this baseline.
 #
-# CODE BELOW DOES NOT DO THIS
+# CODE BELOW DOES NOT DO THIS  
+# REDESIGN WITH VIKASH WHAT THIS IS / SHOULD BE
 
 # %%
 N_samples = 200
