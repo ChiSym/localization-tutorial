@@ -18,8 +18,7 @@
 # %% [markdown]
 # # TODO
 #
-# * "Clean" vs. "logging" versions of inference code?
-# * Check out new expos.
+# * Better signposting of logging code
 #
 # * Numerical demonstration of inference
 # * Color sensor reading picture lines via when unexpectedly low likelihood.
