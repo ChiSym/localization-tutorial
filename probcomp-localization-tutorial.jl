@@ -21,6 +21,7 @@
 # * Delete George's code?
 # * "Clean" vs. "logging" versions of inference code?
 # * Check out new expos.
+# * Numerical demonstration of inference
 #
 # * Color sensor reading picture lines via when unexpectedly low likelihood.
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
