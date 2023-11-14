@@ -1604,23 +1604,6 @@ the_plot
 # Two issues: particle diversity after resampling, and quality of these samples.
 
 # %%
-function mh_step(trace, proposal, proposal_args)
-    _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, viz) = propose(proposal, (trace, proposal_args...))
-    proposed_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
-    bwd_proposal_weight, _ = assess(proposal, (proposed_trace, proposal_args...), bwd_proposal_choicemap)
-    log_weight_increment = model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
-    return (log(rand()) < log_weight_increment ? proposed_trace : trace), 0., viz
-end
-mh_kernel(proposal) =
-    (trace, proposal_args) -> mh_step(trace, proposal, proposal_args)
-
-# See `drift_proposal` from the black box above!
-drift_mh_kernel = mh_kernel(drift_proposal);
-
-# %% [markdown]
-# Then PF+Rejuv code.
-
-# %%
 function resample_ESS(particles, log_weights, ESS_threshold)
     log_total_weight = logsumexp(log_weights)
     log_norm_weights = log_weights .- log_total_weight
@@ -1673,6 +1656,23 @@ final_particles(infos) = (infos[end].traces, infos[end].log_weights)
 
 particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule) =
     final_particles(particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule));
+
+# %% [markdown]
+# Comment on rejuvenation via MCMC/MH...
+
+# %%
+function mh_step(trace, proposal, proposal_args)
+    _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, viz) = propose(proposal, (trace, proposal_args...))
+    proposed_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
+    bwd_proposal_weight, _ = assess(proposal, (proposed_trace, proposal_args...), bwd_proposal_choicemap)
+    log_weight_increment = model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
+    return (log(rand()) < log_weight_increment ? proposed_trace : trace), 0., viz
+end
+mh_kernel(proposal) =
+    (trace, proposal_args) -> mh_step(trace, proposal, proposal_args)
+
+# See `drift_proposal` from the black box above!
+drift_mh_kernel = mh_kernel(drift_proposal);
 
 # %% [markdown]
 # Note usage with drift proposal:
