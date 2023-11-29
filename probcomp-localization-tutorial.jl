@@ -105,7 +105,7 @@ end
 
 function create_segments(verts :: Vector{Vector{Float64}}; loop_around=false) :: Vector{Segment}
     segs = [Segment(p1, p2) for (p1, p2) in zip(verts[1:end-1], verts[2:end])]
-    if loop_around; push!(segs, Segment(verts[end],verts[1])) end
+    if loop_around; push!(segs, Segment(verts[end], verts[1])) end
     return segs
 end
 
@@ -114,7 +114,7 @@ function load_world(file_name)
     walls_vec = Vector{Vector{Float64}}(data["wall_verts"])
     walls = create_segments(walls_vec)
     clutters_vec = Vector{Vector{Vector{Float64}}}(data["clutter_vert_groups"])
-    clutters = create_segments.(clutters_vec)
+    clutters = [create_segments(clutter) for clutter in clutters_vec]
     walls_clutters = [walls ; clutters...]
     start = Pose(Vector{Float64}(data["start_pose"]["p"]), Float64(data["start_pose"]["hd"]))
     controls = Vector{Control}([Control(control["ds"], control["dhd"]) for control in data["program_controls"]])
@@ -1169,8 +1169,7 @@ end
 function sample(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
-    index = categorical(norm_weights)
-    return particles[index]
+    return particles[categorical(norm_weights)]
 end;
 
 # %%
