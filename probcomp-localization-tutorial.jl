@@ -1044,7 +1044,7 @@ gif(ani, "imgs/need.gif", fps=1)
 #
 # We have seen how `Gen.simulate` performs traced execution of a generative function: as the program runs, it draws stochastic choices from all required primitive distributions, and records them in a choice map.
 #
-# The operation `Gen.generate` performs is a generalization of this process.  One also provides a choice map of *constraints* that declare fixed values for some of these primitive choices.  As the program runs, any primitive choice that has been named by the constraints is deterministically given the specified value, and otherwise it is drawn stochastically as in `simulate`.
+# Given a choice map of *constraints* that declare fixed values of some of the primitive choices, the operation `Gen.generate` proposes traces of the generative function that are consistent with these constraints.
 
 # %%
 trace, log_weight = generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)
@@ -1053,33 +1053,33 @@ all(trace[prefix_address(i, :sensor => j => :distance)] == merged_constraints_lo
     for i in 1:(T+1) for j in 1:sensor_settings.num_angles)
 
 # %% [markdown]
+# A trace resulting from a call to `Gen.generate` is structurally indistinguishable from one drawn from `Gen.simulate`.  But there is a key situational difference: while `Gen.get_score` always returns the frequency with which `Gen.simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `Gen.generate`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
 #
-# A trace resulting from a call to `Gen.generate` is structurally indistinguishable from one drawn from `Gen.simulate`, for example having the same shape of choice map.  But there is a key situational difference: the total density is **no longer equal to** the frequency with which the trace is stochastically produced by `Gen.generate`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
+# On the superficial level, since all traces produced by `Gen.generate` are consistent with the constraints, those traces that are inconsistent with the constraints do not occur at all, and in aggregate the traces that are consistent with the constraints are more common.
 #
-# On the superficial level, since all traces produced by `Gen.generate` are consistent with the constraints, those traces that are inconsistent with the constraints do not occur, and in aggregate the traces that are consistent with the constraints are more common.
+# More deeply and importantly, the stochastic choice of the *constraints* under a run of `Gen.simulate` might have any density, perhaps very low.  This constraints density contributes as always to the `Gen.get_score`, whereas it does not influence the frequency of producing this trace under `Gen.generate`.
 #
-# More deeply and importantly, the stochastic choice of the *constraints* under a run of `Gen.simulate` might have any density, perhaps very low, which contributes as always to the overall density of the full trace; whereas it does not influence the frequency of producing this trace under `Gen.generate`.
+# The ratio of the `Gen.get_score` of a trace to the probability density that `Gen.generate` would produce it with the given constraints, is called the *importance weight*.  For convenience, (the log of) this quantity is returned by `Gen.generate` along with the trace.
 #
-# The ratio of the overall trace density, returned by `Gen.get_score` and agreeing with the probability `Gen.simulate` would produce it, to the probability that `Gen.generate` would produce it with the given constraints, is called the *importance weight*.  This number is directly computed as the `Gen.project` of the trace upon the choice map addresses that were constrained in the call to `Gen.generate`.  For convenience, (the log of) this quantity is returned by `Gen.generate` along with the trace.
-
-# %% [markdown]
-# In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
-
-# %%
-log_weight == project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...))
-
-# %% [markdown]
-# We will return to this picture shortly, but for now we stress the basic invariant:
+# We stress the basic invariant:
 # $$
-# (\text{probability of trace under Gen.simulate})
-# =
 # \text{get\_score}(\text{trace})
 # =
-# (\text{probability of trace under Gen.generate with constraints})
+# (\text{importance weight from Gen.generate})
 # \cdot
-# \text{project}(\text{trace}, \text{constraints})
+# (\text{frequency Gen.generate creates this trace}).
 # $$
-# In one extreme case where no constraints have been provided, this says that `Gen.generate` reduces to `Gen.simulate`, along with importance weight $1$.  In the opposite extreme case where the constraints completely determine the trace, `Gen.generate` deterministically returns this trace, along with importance weight equal to the overall density of the trace under the model.
+
+# %% [markdown]
+# The preceding comments apply to generative functions in wide generality.  We can say even more about our present examples, because further assumptions hold.
+# 1. There is no untraced randomness.  Given a full choice map for constraints, everything else is deterministic.  In particular, the importance weight is the `get_score`.
+# 2. The generative function was constructed using Gen's DSLs and primitive distributions.  Ancestral sampling; `Gen.generate` wit empty constraints reduces to `Gen.simulate` with importance weight $1$.
+# 3. Combined, the importance weight is directly computed as the `Gen.project` of the trace upon the choice map addresses that were constrained in the call to `Gen.generate`.
+#   
+#   In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
+
+# %%
+log_weight - project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...))
 
 # %% [markdown]
 # ### Why we need inference: in numbers
