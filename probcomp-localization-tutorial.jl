@@ -81,7 +81,6 @@ struct Segment
     dp :: Vector{Float64}
     Segment(p1 :: Vector{Float64}, p2 :: Vector{Float64}) = new(p1, p2, p2-p1)
 end
-Segment(tuple :: Tuple) = Segment(tuple...)
 Base.show(io :: IO, s :: Segment) = print(io, "Segment($(s.p1), $(s.p2))")
 
 struct Pose
@@ -91,7 +90,6 @@ struct Pose
     Pose(p :: Vector{Float64}, hd :: Float64) = new(p, rem2pi(hd, RoundNearest), [cos(hd), sin(hd)])
 end
 Pose(p :: Vector{Float64}, dp :: Vector{Float64}) = Pose(p, atan(dp[2], dp[1]))
-Pose(tuple :: Tuple) = Pose(tuple...)
 Base.show(io :: IO, p :: Pose) = print(io, "Pose($(p.p), $(p.hd))")
 
 step_along_pose(p :: Pose, s :: Float64) :: Vector{Float64} = p.p + s * p.dp
@@ -104,10 +102,9 @@ struct Control
     ds  :: Float64
     dhd :: Float64
 end
-Control(tuple :: Tuple) = Control(tuple...)
 
 function create_segments(verts :: Vector{Vector{Float64}}; loop_around=false) :: Vector{Segment}
-    segs = Segment.(zip(verts[1:end-1], verts[2:end]))
+    segs = [Segment(p1, p2) for (p1, p2) in zip(verts[1:end-1], verts[2:end])]
     if loop_around; push!(segs, Segment(verts[end],verts[1])) end
     return segs
 end
@@ -967,10 +964,9 @@ observations_high_deviation = get_sensors(trace_high_deviation)
 # Encode sensor readings into choice map.
 constraint_from_sensors(t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
     choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
-constraint_from_sensors(tuple :: Tuple) = constraint_from_sensors(tuple...);
 
-constraints_low_deviation = constraint_from_sensors.(enumerate(observations_low_deviation))
-constraints_high_deviation = constraint_from_sensors.(enumerate(observations_high_deviation))
+constraints_low_deviation = [constraint_from_sensors(t, r) for (t, r) in enumerate(observations_low_deviation)]
+constraints_high_deviation = [constraint_from_sensors(t, r) for (t, r) in enumerate(observations_high_deviation)]
 merged_constraints_low_deviation = merge(constraints_low_deviation...)
 merged_constraints_high_deviation = merge(constraints_high_deviation...);
 
@@ -1186,7 +1182,7 @@ function frame_from_traces(world, title, path, path_label, traces, trace_label; 
     for trace in traces
         poses = get_path(trace)
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=nothing, color=:green, alpha=0.3)
-        plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
+        plot!([Segment(p1, p2) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
               label=trace_label, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
         trace_label = nothing
     end
@@ -1726,7 +1722,7 @@ function frame_from_weighted_traces(world, title, path, path_label, traces, log_
         poses = get_path(trace)
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=trace_label, color=:green, alpha=alpha)
         plot!(poses[end]; color=:green, alpha=alpha, label=nothing)       
-        plot!(Segment.(zip(poses[1:end-1], poses[2:end]));
+        plot!([Segment(p1, p2) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
               label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=alpha)
         trace_label = nothing
     end
