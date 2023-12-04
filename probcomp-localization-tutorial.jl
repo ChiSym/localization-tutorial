@@ -1484,11 +1484,11 @@ the_plot
 # We now begin to exploit the structure of the problem in significant ways to construct good candidate traces for the posterior.  Especially, we use the Markov chain structure to construct these traces step-by-step.  While generic algorithms like SIR and rejection sampling must first construct full paths $\text{trace}_{0:T}$ and then sift among them using the observations $o_{0:T}$, we may instead generate one $\text{trace}_t$ at a time, taking into account the datum $o_t$.  Since then one is working with only a few dimensions any one time step, more intelligent searches become computationally feasible.
 
 # %% [markdown]
-# ### Particle filter: basic refactor
+# ### Particle filter and bootstrap
 #
 # Above, the function `importance_sample` produced a family of particles, each particle being `generate`d all in one go, together with the density of the observations relative to that path.
 #
-# The following two function `particle_filter` constructs an indistinguishable stochastic family of weighted particles, each trace built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  (This comes at a small computational overhead: the static DSL combinator largely eliminates recomputation in performing the `update`s, but there is still extra logic, as well as the repeated allocations of the intermediary traces.)
+# The following function `particle_filter` constructs an indistinguishable stochastic family of weighted particles, each trace built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  (This comes at a small computational overhead: the static DSL combinator largely eliminates recomputation in performing the `update`s, but there is still extra logic, as well as the repeated allocations of the intermediary traces.)
 
 # %%
 function particle_filter(model, T, args, constraints, N_particles)
@@ -1510,12 +1510,9 @@ function particle_filter(model, T, args, constraints, N_particles)
 end;
 
 # %% [markdown]
-# This refactoring is called "particle filter" because it of how it spreads the reasoning out along the time axis.  It has the important effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
-
-# %% [markdown]
-# ### Adding resampling: the bootstrap
+# This refactoring is called a *particle filter* because it of how it spreads the reasoning out along the time axis.  It has the important effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
 #
-# One simple intervention is to prune out the particles that don't appear to be good candidates, and replace them with copies of the better ones in further exploration.  In other words, one can perform importance resampling on the particles in between the `update` steps.  The resulting kind of incremental SIR is often called a *bootstrap filter* in the literature.
+# One simple intervention is to prune out the particles at each time step that don't appear to be good candidates, and replace them with copies of the better ones before further exploration.  In other words, one can perform importance resampling on the particles in between the `update` steps.  The resulting kind of incremental SIR is often called a *bootstrap* in the literature.
 
 # %%
 function resample(particles, log_weights)
