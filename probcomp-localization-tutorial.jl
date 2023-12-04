@@ -1370,7 +1370,8 @@ println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (To
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)], "path to fit", traces[1:i], "RS samples")
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)],
+                                   "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS.gif", fps=1)
@@ -1387,7 +1388,8 @@ println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (To
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)], "path to fit", traces[1:i], "RS samples")
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)],
+                                   "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS_2.gif", fps=1)
@@ -1404,7 +1406,8 @@ println("Time elapsed per run (short path): $(dv(t2 - t1) / N_particles) ms. (To
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)], "path to fit", traces[1:i], "RS samples")
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)],
+                                   "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS_3.gif", fps=1)
