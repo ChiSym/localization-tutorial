@@ -1631,9 +1631,8 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
 
         for i in 1:N_particles
             for rejuv_args in rejuv_args_schedule
-                traces[i], log_weight_increment, viz = rejuv_kernel(traces[i], rejuv_args)
+                traces[i], log_weight_increment, vizs[i] = rejuv_kernel(traces[i], rejuv_args)
                 log_weights[i] += log_weight_increment
-                vizs[i] = viz
             end
         end
         push!(infos, (type = :rejuvenate, time = now(), label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
