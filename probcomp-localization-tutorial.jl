@@ -18,15 +18,22 @@
 # %% [markdown]
 # # TODO
 #
-# * Better signposting of logging code
+# * Hide black box in a file
+# * Drift to bottom; remove MH
+#   * Fix numerical demonstration of inference
+# * Low light: sensor coin flip / normal(max range value)
+# * Hierarchical (sensor) model?
+# * Explain SMCP3 weights
 #
-# * Numerical demonstration of inference
+# * Tweak the numerics parameters to make the case more clearly
+# * Design viz for SMC
+#   * Better signposting of logging code
+#
 # * Color sensor reading picture lines via when unexpectedly low likelihood.
 # * alternate world models for comparison with robot model.  Examples: variants of parameters
 # * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
 # * label all (hyper)parameters in visualizations
 # * fix docstrings, image filenames
-# * Hierarchical (sensor) model?
 # * Rif comments: Correct understanding of initial pose.
 
 # %% [markdown]
@@ -1095,6 +1102,7 @@ log_weight - project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]
 N_samples = 200
 
 selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
+
 traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
 hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data")
