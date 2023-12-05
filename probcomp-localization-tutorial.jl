@@ -1128,49 +1128,12 @@ the_plot
 # In the viewpoint of ProbComp, the goal of *inference* is to produce *likely* traces of a full model, given the observed data.  In the langauge of probability theory, as generative functions induce distributions on traces, and if we view the full model as a program embodying a *prior*, then applying an inference metaprogram to it (together with the observed data) produces a new program that embodies the *posterior*.
 
 # %% [markdown]
-# Let's show what we mean with a picture.  The following short code, which we treat as a *black box* for the present purposes, very mildly exploits the model structure to bring the samples much closer to the true path.
+# Let's show what we mean with a picture, keeping the code black-boxed until we explain it later.
 
 # %%
-# The code in this cell is the black box!
+# Load function `black_box_inference(constraints)`.
 
-# Propose a move for MH.
-
-@gen function drift_proposal(trace, drift_step_factor)
-    t = get_args(trace)[1] + 1
-
-    p_noise = get_args(trace)[4].motion_settings.p_noise
-    hd_noise = get_args(trace)[4].motion_settings.hd_noise
-
-    p = trace[prefix_address(t, :pose => :p)]
-    hd = trace[prefix_address(t, :pose => :hd)]
-
-    # For later visualization.
-    std_devs_radius = 2.
-    viz = (objs = ([p[1]], [p[2]]),
-           params = (color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
-                     markersize=(20. * std_devs_radius * p_noise), markerstrokewidth=0, alpha=0.25))
-
-    # Form expected by `mh` in library code, immediately following.
-    fwd_p = {prefix_address(t, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
-    fwd_hd = {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
-
-    # Form expected by `mh_step`, further below.
-    return choicemap((prefix_address(t, :pose => :p), fwd_p), (prefix_address(t, :pose => :hd), fwd_hd)),
-           choicemap((prefix_address(t, :pose => :p), p), (prefix_address(t, :pose => :hd), hd)),
-           viz
-end
-
-# Use `GenParticleFilters` library code for the generic parts.
-
-function particle_filter_MH_rejuv_library(model, T, args, constraints, N_particles, N_MH, MH_proposal, MH_proposal_args)
-    state = pf_initialize(model, (0, args...), constraints[1], N_particles)
-    for t in 1:T
-        pf_resample!(state)
-        pf_rejuvenate!(state, mh, (MH_proposal, MH_proposal_args), N_MH)
-        pf_update!(state, (t, args...), change_only_T, constraints[t+1])
-    end
-    return state.traces, state.log_weights
-end
+include("black-box.jl")
 
 # Choose one representative particle.
 
@@ -1199,24 +1162,17 @@ end;
 # %%
 N_samples = 10
 
-# Some black box params
-N_particles = 10
-N_MH = 10
-drift_step_factor = 1/3.
-
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
-          for _ in 1:N_samples]
+traces = [sample(black_box_inference(constraints_low_deviation)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
 t1 = now()
-traces = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
-          for _ in 1:N_samples]
+traces = [sample(black_box_inference(constraints_high_deviation)...) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "posterior samples")
@@ -1236,13 +1192,11 @@ traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_sam
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
 hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data under prior")
 
-traces_posterior_low_deviation = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_low_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
-                                  for _ in 1:N_samples]
+traces_posterior_low_deviation = [sample(black_box_inference(constraints_low_deviation)...) for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_posterior_low_deviation]
 hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="typical data under posterior: low dev data")
 
-traces_posterior_high_deviation = [sample(particle_filter_MH_rejuv_library(full_model, T, full_model_args, constraints_high_deviation, N_particles, N_MH, drift_proposal, (drift_step_factor,))...)
-                                   for _ in 1:N_samples]
+traces_posterior_high_deviation = [sample(black_box_inference(constraints_high_deviation)...) for _ in 1:N_samples]
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_posterior_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="typical data under posterior: high dev data")
 
@@ -1619,8 +1573,6 @@ function resample_ESS(particles, log_weights, ESS_threshold)
         return particles, log_weights
     end
 end
-
-# Compare with the source code for the library calls used by `particle_filter_MH_rejuv_library`!
 
 function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
