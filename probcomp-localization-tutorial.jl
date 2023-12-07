@@ -1886,29 +1886,22 @@ gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
 # ### Gaussian drift proposal
 
 # %%
-# Propose a move for MH.
-
-@gen function drift_proposal(trace, drift_step_factor)
-    t = get_args(trace)[1] + 1
-
+@gen function drift_fwd_proposal(trace, drift_step_factor)
+    t = get_args(trace)[1]
     p_noise = get_args(trace)[4].motion_settings.p_noise
     hd_noise = get_args(trace)[4].motion_settings.hd_noise
+    p = trace[prefix_address(t+1, :pose => :p)]
+    hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    p = trace[prefix_address(t, :pose => :p)]
-    hd = trace[prefix_address(t, :pose => :hd)]
+    drift_p ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
+    drift_hd ~ normal(hd, hd_noise)
 
-    # For later visualization.
     std_devs_radius = 2.
     viz = (objs = ([p[1]], [p[2]]),
            params = (color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
                      markersize=(20. * std_devs_radius * p_noise), markerstrokewidth=0, alpha=0.25))
 
-    # Form expected by `mh` in library code, immediately following.
-    fwd_p = {prefix_address(t, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
-    fwd_hd = {prefix_address(t, :pose => :hd)} ~ normal(hd, hd_noise)
-
-    # Form expected by `mh_step`, further below.
-    return choicemap((prefix_address(t, :pose => :p), fwd_p), (prefix_address(t, :pose => :hd), fwd_hd)),
-           choicemap((prefix_address(t, :pose => :p), p), (prefix_address(t, :pose => :hd), hd)),
+    return choicemap((prefix_address(t+1, :pose => :p), drift_p), (prefix_address(t+1, :pose => :hd), drift_hd)),
+           choicemap((:drift_p, p), (:drift_hd, hd)),
            viz
 end;
