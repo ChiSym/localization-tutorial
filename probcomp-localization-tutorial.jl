@@ -1137,11 +1137,16 @@ include("black-box.jl")
 
 # Choose one representative particle.
 
-function sample(particles, log_weights)
+function resample(particles, log_weights; M=nothing)
+    @assert length(particles) == length(log_weights)
+    if isnothing(M); M = length(particles) end
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
-    return particles[categorical(norm_weights)]
-end;
+    return [particles[categorical(norm_weights)]        for _ in 1:M],
+           [log_total_weight - log(length(log_weights)) for _ in 1:M]
+end
+
+sample(particles, log_weights) = resample(particles, log_weights; M=1)[1][1];
 
 # %%
 # Visualize distributions over traces.
@@ -1389,7 +1394,7 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 # Suppose we are given a list of nonnegative numbers, not all zero: $w^1, w^2, \ldots, w^N$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.  The normalized list $\hat w^1, \hat w^2, \ldots, \hat w^N$ determines a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$. 
 # Note that for any constant $Z > 0$, the scaled list $Zw^1, Zw^2, \ldots, Zw^N$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
 #
-# When some list of data $z^1, z^2, \ldots, z^N$ have been associated with these respective numbers $w^1, w^2, \ldots, w^N$, then to *importance **re**sample* $M$ values from these data according to these weights means to independently sample indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the new list of data $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.  Compare the $M = 1$ case to the function `sample` implemented in the black box above, and the $M = N$ case to the function `resample` below.
+# When some list of data $z^1, z^2, \ldots, z^N$ have been associated with these respective numbers $w^1, w^2, \ldots, w^N$, then to *importance **re**sample* $M$ values from these data according to these weights means to independently sample indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the new list of data $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.  Compare to the function `resample` implemented near the black box above.
 #
 # The *sampling / importance resampling* (SIR) strategy for inference runs as follows.  Let counts $N > 0$ and $M > 0$ be given.
 # 1. Importance sample:  Independently sample $N$ data $z^1, z^2, \ldots, z^N$ from the proposal $Q$, called *particles*.  Compute also their *importance weights* $w^i := f(z^i)$ for $i = 1, \ldots, N$.
@@ -1480,13 +1485,6 @@ end;
 # One simple intervention is to prune out the particles at each time step that don't appear to be good candidates, and replace them with copies of the better ones before further exploration.  In other words, one can perform importance resampling on the particles in between the `update` steps.  The resulting kind of incremental SIR is often called a *bootstrap* in the literature.
 
 # %%
-function resample(particles, log_weights)
-    log_total_weight = logsumexp(log_weights)
-    norm_weights = exp.(log_weights .- log_total_weight)
-    return [particles[categorical(norm_weights)]        for _ in particles],
-           [log_total_weight - log(length(log_weights)) for _ in log_weights]
-end
-
 function particle_filter_bootstrap(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1562,17 +1560,10 @@ the_plot
 # Two issues: particle diversity after resampling, and quality of these samples.
 
 # %%
-function resample_ESS(particles, log_weights, ESS_threshold)
-    log_total_weight = logsumexp(log_weights)
-    log_norm_weights = log_weights .- log_total_weight
-    if effective_sample_size(log_norm_weights) < ESS_threshold
-        norm_weights = exp.(log_norm_weights)
-        return [particles[categorical(norm_weights)]        for _ in particles],
-               [log_total_weight - log(length(log_weights)) for _ in log_weights]
-    else
-        return particles, log_weights
-    end
-end
+resample_ESS(particles, log_weights, ESS_threshold; M=nothing) =
+    (effective_sample_size(log_weights .- logsumexp(log_weights)) < ESS_threshold) ?
+        resample(particles, log_weights; M=M) :
+        (particles, log_weights)
 
 function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
