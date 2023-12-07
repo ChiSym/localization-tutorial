@@ -1678,14 +1678,17 @@ end
 inverse_grid_index(grid_n_points :: Vector{Int}, j :: Int) :: Int =
     LinearIndices(Tuple(grid_n_points))[(grid_n_points .+ 1 .- [Tuple(CartesianIndices(Tuple(grid_n_points))[j])...])...]
 
+# Sample from the posterior, restricted/conditioned to the grid.
 @gen function grid_fwd_proposal(trace, grid_n_points, grid_sizes)
-    t = get_args(trace)[1] + 1
-    p = trace[prefix_address(t, :pose => :p)]
-    hd = trace[prefix_address(t, :pose => :hd)]
+    t = get_args(trace)[1]
+    p = trace[prefix_address(t+1, :pose => :p)]
+    hd = trace[prefix_address(t+1, :pose => :hd)]
 
     pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
-    choicemap_grid = [choicemap((prefix_address(t, :pose => :p), [x, y]), (prefix_address(t, :pose => :hd), h))
+    choicemap_grid = [choicemap((prefix_address(t+1, :pose => :p), [x, y]),
+                                (prefix_address(t+1, :pose => :hd), h))
                       for (x, y, h) in pose_grid]
+    # Posterior densities, up to a common renormalization.
     pose_log_weights = [update(trace, cm)[2] for cm in choicemap_grid]
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
 
