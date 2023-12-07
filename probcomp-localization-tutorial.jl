@@ -1701,26 +1701,19 @@ inverse_grid_index(grid_n_points :: Vector{Int}, j :: Int) :: Int =
     return choicemap_grid[fwd_j], choicemap((:bwd_j, bwd_j)), viz
 end
 
+# Sample from the prior, restricted/conditioned to the inverse grid.
 @gen function grid_bwd_proposal(trace, grid_n_points, grid_sizes)
-    prev_t, robot_inputs, world_inputs, settings = get_args(trace)
-    t = prev_t + 1
-    p = trace[prefix_address(t, :pose => :p)]
-    hd = trace[prefix_address(t, :pose => :hd)]
+    t = get_args(trace)[1]
+    p = trace[prefix_address(t+1, :pose => :p)]
+    hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    # TODO: Would be more intuitive if these same weights were obtained by restricting `trace` to `prev_t`,
-    # then updating it back out to `t` with these steps.
-    choicemap_grid = [choicemap((:p, [x, y]), (:hd, h))
-                      for (x, y, h) in vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)]
-    if prev_t == 0
-        assess_model = start_pose_prior
-        assess_args = (robot_inputs.start, settings.motion_settings)
-    else
-        assess_model = step_model
-        prev_p = trace[prefix_address(prev_t, :pose => :p)]
-        prev_hd = trace[prefix_address(prev_t, :pose => :hd)]
-        assess_args = (Pose(prev_p, prev_hd), robot_inputs.controls[prev_t], world_inputs, settings.motion_settings)
-    end
-    pose_log_weights = [assess(assess_model, assess_args, cm)[1] for cm in choicemap_grid]
+    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
+    choicemap_grid = [choicemap((prefix_address(t+1, :pose => :p), [x, y]),
+                                (prefix_address(t+1, :pose => :hd), h))
+                      for (x, y, h) in pose_grid]
+    # Prior densities.
+    pose_log_weights = [project(update(trace, cm)[1], select(prefix_address(t+1, :pose)))
+                        for cm in choicemap_grid]
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
 
     bwd_j ~ categorical(pose_norm_weights)
