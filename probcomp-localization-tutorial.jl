@@ -1135,19 +1135,6 @@ the_plot
 
 include("black-box.jl")
 
-# Choose one representative particle.
-
-function resample(particles, log_weights; M=nothing)
-    @assert length(particles) == length(log_weights)
-    if isnothing(M); M = length(particles) end
-    log_total_weight = logsumexp(log_weights)
-    norm_weights = exp.(log_weights .- log_total_weight)
-    return [particles[categorical(norm_weights)]        for _ in 1:M],
-           [log_total_weight - log(length(log_weights)) for _ in 1:M]
-end
-
-sample(particles, log_weights) = resample(particles, log_weights; M=1)[1][1];
-
 # %%
 # Visualize distributions over traces.
 
@@ -1171,13 +1158,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [sample(black_box_inference(constraints_low_deviation)...) for _ in 1:N_samples]
+traces = [black_box_inference(constraints_low_deviation) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
 t1 = now()
-traces = [sample(black_box_inference(constraints_high_deviation)...) for _ in 1:N_samples]
+traces = [black_box_inference(constraints_high_deviation) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "posterior samples")
@@ -1197,11 +1184,11 @@ traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_sam
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
 hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data under prior")
 
-traces_posterior_low_deviation = [sample(black_box_inference(constraints_low_deviation)...) for _ in 1:N_samples]
+traces_posterior_low_deviation = [black_box_inference(constraints_low_deviation) for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_posterior_low_deviation]
 hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="typical data under posterior: low dev data")
 
-traces_posterior_high_deviation = [sample(black_box_inference(constraints_high_deviation)...) for _ in 1:N_samples]
+traces_posterior_high_deviation = [black_box_inference(constraints_high_deviation) for _ in 1:N_samples]
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_posterior_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="typical data under posterior: high dev data")
 
@@ -1403,6 +1390,17 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 # As $N \to \infty$ with $M$ fixed, the samples produced by this algorithm converge to $M$ independent samples drawn from the target $P$.  This strategy is computationally an improvement over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guesses among these.
 
 # %%
+function resample(particles, log_weights; M=nothing)
+    @assert length(particles) == length(log_weights)
+    if isnothing(M); M = length(particles) end
+    log_total_weight = logsumexp(log_weights)
+    norm_weights = exp.(log_weights .- log_total_weight)
+    return [particles[categorical(norm_weights)]        for _ in 1:M],
+           [log_total_weight - log(length(log_weights)) for _ in 1:M]
+end
+
+sample(particles, log_weights) = resample(particles, log_weights; M=1)[1][1]
+
 sampling_importance_resampling(model, args, merged_constraints, N_SIR) =
     sample(importance_sample(model, args, merged_constraints, N_SIR)...)
 
