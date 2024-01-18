@@ -25,5 +25,5 @@ function black_box_inference(constraints)
         pf_rejuvenate!(state, mh, (drift_mh_proposal, ()), N_MH)
         pf_update!(state, (t, full_model_args...), change_only_T, constraints[t+1])
     end
-    return state.traces[categorical(state.log_weights .- logsumexp(state.log_weights))]
+    return state.traces[categorical(exp.(state.log_weights .- logsumexp(state.log_weights)))]
 end;
