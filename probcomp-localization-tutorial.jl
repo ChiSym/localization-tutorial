@@ -1780,7 +1780,7 @@ gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
     p = trace[prefix_address(t+1, :pose => :p)]
     hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    drift_p ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
+    drift_p ~ mvnormal(p, (drift_step_factor * p_noise)^2 * [1 0 ; 0 1])
     drift_hd ~ normal(hd, hd_noise)
 
     std_devs_radius = 2.
