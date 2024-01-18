@@ -16,27 +16,6 @@
 # ---
 
 # %% [markdown]
-# # TODO
-#
-# * Hide black box in a file
-# * Drift to bottom; remove MH
-#   * Fix numerical demonstration of inference
-# * Low light: sensor coin flip / normal(max range value)
-# * Hierarchical (sensor) model?
-# * Explain SMCP3 weights
-#
-# * Tweak the numerics parameters to make the case more clearly
-# * Design viz for SMC
-#   * Better signposting of logging code
-#
-# * Color sensor reading picture lines via when unexpectedly low likelihood.
-# * alternate world models for comparison with robot model.  Examples: variants of parameters
-# * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
-# * label all (hyper)parameters in visualizations
-# * fix docstrings, image filenames
-# * Rif comments: Correct understanding of initial pose.
-
-# %% [markdown]
 # # ProbComp Localization Tutorial
 #
 # This notebook aims to give an introduction to probabilistic computation (ProbComp).  This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probablistic programming language (PPL).  The programmer can thus encode their probabilistic intuition for solving a problem into an algorithm.  Back-end language work automates the routine but error-prone derivations.
