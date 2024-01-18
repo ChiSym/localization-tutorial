@@ -11,7 +11,7 @@ N_MH = 10
     p = trace[prefix_address(t+1, :pose => :p)]
     hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    {prefix_address(t+1, :pose => :p)} ~ mvnormal(p, drift_step_factor * p_noise^2 * [1 0 ; 0 1])
+    {prefix_address(t+1, :pose => :p)} ~ mvnormal(p, (drift_step_factor * p_noise)^2 * [1 0 ; 0 1])
     {prefix_address(t+1, :pose => :hd)} ~ normal(hd, hd_noise)
 end
 
