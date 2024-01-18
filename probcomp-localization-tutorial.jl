@@ -50,9 +50,6 @@ using JSON: parsefile
 using Plots
 using Gen
 
-# Fix for Jay's Jupytext setup
-if occursin("sharlaon", pwd()); cd("/Users/sharlaon/dev/probcomp-localization-tutorial") end
-
 # Ensure a location for image generation.
 mkpath("imgs");
 
