@@ -1692,7 +1692,7 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
                 end
                 push!(infos, (type = :regenernate_fwd, time=now(), label = "fwd again", traces = copy(traces), log_weights = copy(log_weights)))
 
-                # By the way, the following commented lines would accomplish the same (on traces, not infos) as the above two loops.  You can read about it...
+                # By the way, the following commented lines would accomplish the same (on traces, not infos) as the above two loops.
                 # for i in 1:N_particles
                 #     traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
                 #     log_weights[i] += log_weight_increment
