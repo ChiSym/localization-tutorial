@@ -1777,11 +1777,12 @@ gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
     t = get_args(trace)[1]
     p_noise = get_args(trace)[4].motion_settings.p_noise
     hd_noise = get_args(trace)[4].motion_settings.hd_noise
-    p = trace[prefix_address(t+1, :pose => :p)]
-    hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    drift_p ~ mvnormal(p, (drift_step_factor * p_noise)^2 * [1 0 ; 0 1])
-    drift_hd ~ normal(hd, hd_noise)
+    undrift_p = trace[prefix_address(t+1, :pose => :p)]
+    undrift_hd = trace[prefix_address(t+1, :pose => :hd)]
+
+    drift_p ~ mvnormal(undrift_p, (drift_step_factor * p_noise)^2 * [1 0 ; 0 1])
+    drift_hd ~ normal(undrift_hd, hd_noise)
 
     std_devs_radius = 2.
     viz = (objs = ([p[1]], [p[2]]),
@@ -1789,6 +1790,32 @@ gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
                      markersize=(20. * std_devs_radius * p_noise), markerstrokewidth=0, alpha=0.25))
 
     return choicemap((prefix_address(t+1, :pose => :p), drift_p), (prefix_address(t+1, :pose => :hd), drift_hd)),
-           choicemap((:drift_p, p), (:drift_hd, hd)),
+           choicemap((:undrift_p, undrift_p), (:undrift_hd, undrift_hd)),
            viz
-end;
+end
+
+@gen function drift_bwd_proposal(trace, drift_step_factor)
+    t = get_args(trace)[1]
+    p_noise = get_args(trace)[4].motion_settings.p_noise
+    hd_noise = get_args(trace)[4].motion_settings.hd_noise
+
+    prev_pose = trace[prefix_address(t, :pose)]
+    prev_control = get_args(trace)[2].controls[t]
+    noiseless_p = prev_pose.p + prev_control.dp * prev_pose.dp
+    noiseless_hd = prev_pose.hd + prev_control.dhd
+
+    drift_p = trace[prefix_address(t+1, :pose => :p)]
+    drift_hd = trace[prefix_address(t+1, :pose => :hd)]
+
+    # Optimal choice of `undrift_pose` is obtained from conditioning the motion model that noises `noiseless_pose` upon
+    # the information that the forward drift then further moved it to `drift_pose`.
+    # In this case there is a closed form, which happens to be a Gaussian drift with some other parameters.
+    e = 1/drift_step_factor^2
+    undrift_p ~ mvnormal((noiseless_p + e * drift_p)/(1+e), p_noise^2/(1+e) * [1 0 ; 0 1])
+    undrift_hd ~ normal((noiseless_hd + drift_hd)/2, hd_noise/sqrt(2))
+
+    return choicemap((prefix_address(t+1, :pose => :p), undrift_p), (prefix_address(t+1, :pose => :hd), undrift_hd)),
+           choicemap((:drift_p, p), (:drift_hd, hd))
+end
+
+drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
