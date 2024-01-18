@@ -147,10 +147,6 @@ world, robot_inputs, T = load_world("example_20_program.json");
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
 
 # %%
-"""
-Assumes
-* `robot_inputs` contains fields: `start`, `controls`
-"""
 function integrate_controls_unphysical(robot_inputs :: NamedTuple) :: Vector{Pose}
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
     path[1] = robot_inputs.start
@@ -188,10 +184,6 @@ function distance(p :: Pose, seg :: Segment) :: Float64
     return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
 end
 
-"""
-Assumes
-* `world_inputs` contains fields: `walls`, `bounce`
-"""
 function physical_step(p1 :: Vector{Float64}, p2 :: Vector{Float64}, hd :: Float64, world_inputs :: NamedTuple) :: Pose
     step_pose = Pose(p1, p2 - p1)
     (s, i) = findmin(w -> distance(step_pose, w), world_inputs.walls)
@@ -210,11 +202,6 @@ function physical_step(p1 :: Vector{Float64}, p2 :: Vector{Float64}, hd :: Float
     end
 end
 
-"""
-Assumes
-* `robot_inputs` contains fields: `start`, `controls`
-* `world_inputs` contains fields: `walls`, `bounce`
-"""
 function integrate_controls(robot_inputs :: NamedTuple, world_inputs :: NamedTuple)
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
     path[1] = robot_inputs.start
@@ -292,21 +279,12 @@ the_plot
 # We start with the two building blocks: the starting pose and individual steps of motion.
 
 # %%
-"""
-Assumes
-* `motion_settings` contains fields: `p_noise`, `hd_noise`
-"""
 @gen (static) function start_pose_prior(start :: Pose, motion_settings :: NamedTuple) :: Pose
     p ~ mvnormal(start.p, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd, motion_settings.hd_noise)
     return Pose(p, hd)
 end
 
-"""
-Assumes
-* `world_inputs` contains fields: `walls`, `bounce`
-* `motion_settings` contains fields: `p_noise`, `hd_noise`
-"""
 @gen (static) function step_model(start :: Pose, c :: Control, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
     p ~ mvnormal(start.p + c.ds * start.dp, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd + c.dhd, motion_settings.hd_noise)
@@ -467,12 +445,6 @@ rotated_trace_weight_diff
 # (It is worth acknowledging two strange things in the code below: the extra text "`_loop`" in the function name, and the seemingly redundant new parameter `T`.  Both will be addressed shortly, along with the aforementioned wrapper.)
 
 # %%
-"""
-Assumes
-* `robot_inputs` contains fields: `start`, `controls`
-* `world_inputs` contains fields: `walls`, `bounce`
-* `motion_settings` contains fields: `p_noise`, `hd_noise`
-"""
 @gen function path_model_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
 
@@ -640,12 +612,6 @@ the_plot
 # Owing to the efficiency comparison, we eschew `path_model_loop` in favor of `path_model` in what follows.  Thus we finally write our noisy path integration wrapper.
 
 # %%
-"""
-Assumes
-* `robot_inputs` contains fields: `start`, `controls`
-* `world_inputs` contains fields: `walls`, `bounce`
-* `motion_settings` contains fields: `p_noise`, `hd_noise`
-"""
 function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
     return get_path(simulate(path_model, (length(robot_inputs.controls), robot_inputs, world_inputs, motion_settings)))
 end;
@@ -664,17 +630,9 @@ function sensor_distance(pose :: Pose, walls :: Vector{Segment}, box_size :: Flo
     return isinf(d) ? 2. * box_size : d
 end;
 
-"""
-Assumes
-* `sensor_settings` contains fields: `fov`, `num_angles`
-"""
 sensor_angle(sensor_settings :: NamedTuple, j :: Int64) =
     sensor_settings.fov * (j - (sensor_settings.num_angles - 1) / 2.) / (sensor_settings.num_angles - 1)
 
-"""
-Assumes
-* `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
-"""
 function ideal_sensor(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
     readings = Vector{Float64}(undef, sensor_settings.num_angles)
     for j in 1:sensor_settings.num_angles
@@ -687,10 +645,6 @@ end;
 # %%
 # Plot sensor data.
 
-"""
-Assumes
-* `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`
-"""
 function plot_sensors!(pose, color, readings, label, sensor_settings)
     plot!([pose.p[1]], [pose.p[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
     projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
@@ -726,10 +680,6 @@ gif(ani, "imgs/ideal_distances.gif", fps=1)
 # We assume that the sensor readings are themselves uncertain, say, the distances only knowable up to some noise.  We model this as follows.  (We satisfy ourselves with writing a loop in the dynamic DSL because we will have no need for incremental recomputation within this model.)
 
 # %%
-"""
-Assumes
-* `sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
-"""
 @gen function sensor_model(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
     for j in 1:sensor_settings.num_angles
         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
@@ -787,27 +737,12 @@ gif(ani, "imgs/sensor_1.gif", fps=1)
 # We fold the sensor model into the motion model to form a "full model", which whose traces describe simulations of the entire robot situation as we have described it.
 
 # %%
-"""
-Assumes
-* `robot_inputs` contains fields: `start`
-* `full_settings` contains fields: `motion_settings`, `sensor_settings`
-    * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
-    * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
-"""
 @gen (static) function full_model_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Pose
     pose ~ start_pose_prior(robot_inputs.start, full_settings.motion_settings)
     {:sensor} ~ sensor_model(pose, walls, full_settings.sensor_settings)
     return pose
 end
 
-"""
-Assumes
-* `robot_inputs` contains fields: `controls`
-* `world_inputs` contains fields: `walls`, `bounce`
-* `full_settings` contains fields: `motion_settings`, `sensor_settings`
-    * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
-    * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
-"""
 @gen (static) function full_model_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
                                       full_settings :: NamedTuple) :: Pose
     pose ~ step_model(state, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
@@ -816,14 +751,6 @@ Assumes
 end
 full_model_chain = Unfold(full_model_kernel)
 
-"""
-Assumes
-* `robot_inputs` contains fields: `start`, `controls`
-* `world_inputs` contains fields: `walls`, `bounce`
-* `full_settings` contains fields: `motion_settings`, `sensor_settings`
-    * `full_settings.motion_settings` contains fields: `p_noise`, `hd_noise`
-    * `full_settings.sensor_settings` contains fields: `fov`, `num_angles`, `box_size`, `s_noise`
-"""
 @gen (static) function full_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
     initial ~ full_model_initial(robot_inputs, world_inputs.walls, full_settings)
     steps ~ full_model_chain(T, initial, robot_inputs, world_inputs, full_settings)
