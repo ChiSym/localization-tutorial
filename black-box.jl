@@ -15,7 +15,9 @@ N_MH = 10
     {prefix_address(t+1, :pose => :hd)} ~ normal(hd, hd_noise)
 end
 
-# Use `GenParticleFilters` library code for the generic parts.
+# Use library code for the generic parts.
+using GenParticleFilters
+
 function black_box_inference(constraints)
     state = pf_initialize(full_model, (0, full_model_args...), constraints[1], N_particles)
     for t in 1:T

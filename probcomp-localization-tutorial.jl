@@ -49,7 +49,6 @@ using Dates: now, value
 using JSON: parsefile
 using Plots
 using Gen
-using GenParticleFilters
 
 # Fix for Jay's Jupytext setup
 if occursin("sharlaon", pwd()); cd("/Users/sharlaon/dev/probcomp-localization-tutorial") end
