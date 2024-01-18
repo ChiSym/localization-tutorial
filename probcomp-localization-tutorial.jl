@@ -1773,7 +1773,7 @@ gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
 # ### Gaussian drift proposal
 
 # %%
-@gen function drift_fwd_proposal(trace, drift_step_factor)
+@gen function drift_fwd_proposal(trace, drift_factor)
     t = get_args(trace)[1]
     p_noise = get_args(trace)[4].motion_settings.p_noise
     hd_noise = get_args(trace)[4].motion_settings.hd_noise
@@ -1781,8 +1781,8 @@ gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
     undrift_p = trace[prefix_address(t+1, :pose => :p)]
     undrift_hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    drift_p ~ mvnormal(undrift_p, (drift_step_factor * p_noise)^2 * [1 0 ; 0 1])
-    drift_hd ~ normal(undrift_hd, hd_noise)
+    drift_p ~ mvnormal(undrift_p, (drift_factor * p_noise)^2 * [1 0 ; 0 1])
+    drift_hd ~ normal(undrift_hd, drift_factor * hd_noise)
 
     std_devs_radius = 2.
     viz = (objs = ([p[1]], [p[2]]),
@@ -1794,7 +1794,7 @@ gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
            viz
 end
 
-@gen function drift_bwd_proposal(trace, drift_step_factor)
+@gen function drift_bwd_proposal(trace, drift_factor)
     t = get_args(trace)[1]
     p_noise = get_args(trace)[4].motion_settings.p_noise
     hd_noise = get_args(trace)[4].motion_settings.hd_noise
@@ -1810,9 +1810,9 @@ end
     # Optimal choice of `undrift_pose` is obtained from conditioning the motion model that noises `noiseless_pose` upon
     # the information that the forward drift then further moved it to `drift_pose`.
     # In this case there is a closed form, which happens to be a Gaussian drift with some other parameters.
-    e = 1/drift_step_factor^2
+    e = 1/drift_factor^2
     undrift_p ~ mvnormal((noiseless_p + e * drift_p)/(1+e), p_noise^2/(1+e) * [1 0 ; 0 1])
-    undrift_hd ~ normal((noiseless_hd + drift_hd)/2, hd_noise/sqrt(2))
+    undrift_hd ~ normal((noiseless_hd + e * drift_hd)/(1+e), hd_noise/sqrt(1+e))
 
     return choicemap((prefix_address(t+1, :pose => :p), undrift_p), (prefix_address(t+1, :pose => :hd), undrift_hd)),
            choicemap((:drift_p, p), (:drift_hd, hd))
