@@ -11,6 +11,7 @@
   * Tweak the numerics parameters to make the case more clearly
   * fix any text/comments, add any docstrings?, image filenames
 * Visualization
+  * BOTH notebook and slides
   * Better signposting of SMC logging code
   * Color sensor reading picture lines via when unexpectedly low likelihood.
   * plotting multiple traces: sequencing vs. tiling vs. alpha-blending (in each case indicate weights differently)
