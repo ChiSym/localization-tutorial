@@ -1825,3 +1825,31 @@ end
 end
 
 drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+drift_factor = 1/3
+drift_args_schedule = [drift_factor^j for j=1:3]
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)...) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Drift")
+savefig("imgs/PF_SMCP3_drift")
+the_plot
+
+# %%
