@@ -1545,15 +1545,15 @@ end;
 # Takes the following shape:
 
 # %%
-function smcp3_step(trace, log_weight, fwd_proposal, bwd_proposal, proposal_args)
-    _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, viz) = propose(fwd_proposal, (trace, proposal_args...))
-    proposed_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
-    bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_trace, proposal_args...), bwd_proposal_choicemap)
+function smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args)
+    _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, viz) = propose(fwd_proposal, (particle, proposal_args...))
+    proposed_particle, model_weight_diff, _, _ = update(particle, fwd_model_update)
+    bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_particle, proposal_args...), bwd_proposal_choicemap)
     proposed_log_weight = log_weight + model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
-    return proposed_trace, proposed_log_weight, viz
+    return proposed_particle, proposed_log_weight, viz
 end
 smcp3_kernel(fwd_proposal, bwd_proposal) =
-    (trace, log_weight, proposal_args) -> smcp3_step(trace, log_weight, fwd_proposal, bwd_proposal, proposal_args);
+    (particle, log_weight, proposal_args) -> smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args);
 
 # %% [markdown]
 # Let us write the forward and backward transformations for the grid proposal.
