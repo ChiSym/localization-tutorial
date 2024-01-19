@@ -1785,7 +1785,7 @@ gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
     drift_hd ~ normal(undrift_hd, drift_factor * hd_noise)
 
     std_devs_radius = 2.
-    viz = (objs = ([p[1]], [p[2]]),
+    viz = (objs = ([undrift_p[1]], [undrift_p[2]]),
            params = (color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
                      markersize=(20. * std_devs_radius * p_noise), markerstrokewidth=0, alpha=0.25))
 
@@ -1799,10 +1799,16 @@ end
     p_noise = get_args(trace)[4].motion_settings.p_noise
     hd_noise = get_args(trace)[4].motion_settings.hd_noise
 
-    prev_pose = trace[prefix_address(t, :pose)]
-    prev_control = get_args(trace)[2].controls[t]
-    noiseless_p = prev_pose.p + prev_control.dp * prev_pose.dp
-    noiseless_hd = prev_pose.hd + prev_control.dhd
+    if t == 0
+       start_pose = get_args(trace)[2].start
+       noiseless_p = start_pose.p
+       noiseless_hd = start_pose.hd
+    else
+       prev_pose = trace[prefix_address(t, :pose)]
+       prev_control = get_args(trace)[2].controls[t]
+       noiseless_p = prev_pose.p + prev_control.ds * prev_pose.dp
+       noiseless_hd = prev_pose.hd + prev_control.dhd
+    end
 
     drift_p = trace[prefix_address(t+1, :pose => :p)]
     drift_hd = trace[prefix_address(t+1, :pose => :hd)]
@@ -1815,7 +1821,7 @@ end
     undrift_hd ~ normal((noiseless_hd + e * drift_hd)/(1+e), hd_noise/sqrt(1+e))
 
     return choicemap((prefix_address(t+1, :pose => :p), undrift_p), (prefix_address(t+1, :pose => :hd), undrift_hd)),
-           choicemap((:drift_p, p), (:drift_hd, hd))
+           choicemap((:drift_p, drift_p), (:drift_hd, drift_hd))
 end
 
 drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
