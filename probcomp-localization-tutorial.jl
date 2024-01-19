@@ -1614,6 +1614,34 @@ end
 
 grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal);
 
+# Sample from the prior, restricted/conditioned to the forward kernel sending it to the given trace.
+@gen function grid_bwd_proposal_2(trace, grid_n_points, grid_sizes)
+    t = get_args(trace)[1]
+    p = trace[prefix_address(t+1, :pose => :p)]
+    hd = trace[prefix_address(t+1, :pose => :hd)]
+
+    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
+    choicemap_grid = [choicemap((prefix_address(t+1, :pose => :p), [x, y]),
+                                (prefix_address(t+1, :pose => :hd), h))
+                      for (x, y, h) in pose_grid]
+    # Densities for the conditional distribution of inverse grid upon the information of the forward kernel.
+    pose_log_weights = Vector{Float64}(undef, length(choicemap_grid))
+    for (bwd_j, cm) in enumerate(choicemap_grid)
+        bwd_trace, _, _, fwd_cm = update(trace, cm)
+        pose_log_weights[bwd_j] =
+            project(bwd_trace, select(prefix_address(t+1, :pose))) +
+            assess(grid_fwd_proposal, (bwd_trace, grid_n_points, grid_sizes), choicemap((:fwd_j, inverse_grid_index(grid_n_points, bwd_j))))[1]
+    end
+    pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
+
+    bwd_j ~ categorical(pose_norm_weights)
+    fwd_j = inverse_grid_index(grid_n_points, bwd_j)
+
+    return choicemap_grid[bwd_j], choicemap((:fwd_j, fwd_j))
+end
+
+grid_smcp3_kernel_2 = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_2);
+
 # %%
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
@@ -1640,6 +1668,35 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid")
 savefig("imgs/PF_SMCP3_grid")
 the_plot
+
+# %%
+# The following code runs ~15x slower than the preceding, so it is default disabled.
+
+# N_particles = 10
+# ESS_threshold =  1. + N_particles / 10.
+
+# grid_n_points_start = [3, 3, 3]
+# grid_sizes_start = [.7, .7, π/10]
+# grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
+
+# traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+# prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+
+# t1 = now()
+# traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_2, grid_args_schedule)...)[1] for _ in 1:N_samples]
+# t2 = now()
+# println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+# posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+# t1 = now()
+# traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_2, grid_args_schedule)...)[1] for _ in 1:N_samples]
+# t2 = now()
+# println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+# posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+# the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid")
+# savefig("imgs/PF_SMCP3_grid_2")
+# the_plot
 
 # %% [markdown]
 # ### Adaptive inference controller
