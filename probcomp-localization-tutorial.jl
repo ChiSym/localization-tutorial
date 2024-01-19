@@ -690,7 +690,6 @@ get_selected(get_choices(trace), select((1:5)...))
 # Visualizing the traces of the model is probably more useful for orientation, so we do this now.
 
 # %%
-# TODO: Add settings/(hyper)params display code.
 function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
     readings = [trace[j => :distance] for j in 1:sensor_settings.num_angles]
     return frame_from_sensors(world, title, poses, poses_color, poses_label, pose,
