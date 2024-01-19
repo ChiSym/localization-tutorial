@@ -1540,7 +1540,7 @@ end;
 # Improve later resampling / end-to-end quality.
 
 # %% [markdown]
-# ### SMCP3 rejuvenation
+# ### SMCP3 rejuvenation / grid search proposal
 #
 # Takes the following shape:
 
@@ -1823,7 +1823,7 @@ end
 gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
 
 # %% [markdown]
-# ### MCMC rejuvenation
+# ### MCMC rejuvenation / Gaussian drift proposal
 
 # %%
 function mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
