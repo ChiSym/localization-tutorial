@@ -1482,8 +1482,7 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
 
         for i in 1:N_particles
             for rejuv_args in rejuv_args_schedule
-                traces[i], log_weight_increment, vizs[i] = rejuv_kernel(traces[i], rejuv_args)
-                log_weights[i] += log_weight_increment
+                traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
             end
         end
         push!(infos, (type = :rejuvenate, time = now(), label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
@@ -1547,15 +1546,15 @@ end;
 # Takes the following shape:
 
 # %%
-function smcp3_step(trace, fwd_proposal, bwd_proposal, proposal_args)
+function smcp3_step(trace, log_weight, fwd_proposal, bwd_proposal, proposal_args)
     _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, viz) = propose(fwd_proposal, (trace, proposal_args...))
     proposed_trace, model_weight_diff, _, _ = update(trace, fwd_model_update)
     bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_trace, proposal_args...), bwd_proposal_choicemap)
-    log_weight_increment = model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
-    return proposed_trace, log_weight_increment, viz
+    proposed_log_weight = log_weight + model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
+    return proposed_trace, proposed_log_weight, viz
 end
 smcp3_kernel(fwd_proposal, bwd_proposal) =
-    (trace, proposal_args) -> smcp3_step(trace, fwd_proposal, bwd_proposal, proposal_args);
+    (trace, log_weight, proposal_args) -> smcp3_step(trace, log_weight, fwd_proposal, bwd_proposal, proposal_args);
 
 # %% [markdown]
 # Let us write the forward and backward transformations for the grid proposal.
@@ -1672,9 +1671,7 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
         while logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count <= MAX_rejuv
             for i in 1:N_particles
                 for rejuv_args in rejuv_args_schedule
-                    traces[i], log_weight_increment, viz = rejuv_kernel(traces[i], rejuv_args)
-                    log_weights[i] += log_weight_increment
-                    vizs[i] = viz
+                    traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
                 end
             end
             push!(infos, (type = :rejuvenate, time=now(), label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
