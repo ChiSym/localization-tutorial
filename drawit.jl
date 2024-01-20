@@ -52,6 +52,29 @@ function highlighted_versions(pieces, n_labels, stuffs, varwidth_frac)
     return versions
 end
 
+function build_pic(file_text, file_name)
+    xrap = tempname("./")
+    mkpath(xrap)
+    open("$xrap/$xrap.tex", "w") do f
+        write(f, file_text)
+    end
+    run(`pdflatex -output-directory=$xrap $xrap/$xrap.tex`)
+    run(`convert -colorspace RGB -density 500 -quality 100 -background white -alpha remove -alpha off $xrap/$xrap.pdf $file_name`)
+    run(`rm -rf $xrap`)
+end
+
+function build_highlighted_pics(block, n_labels, stuffs, varwidth_frac, file_name_base)
+    pieces = parse_highlights(block)
+    versions = highlighted_versions(pieces, n_labels, stuffs, varwidth_frac)
+    files = []
+    for (i, file_text) in enumerate(versions)
+        file_name = "$(file_name_base)_$i.png"
+        build_pic(file_text, file_name)
+        push!(files, file_name)
+    end
+    return files
+end
+
 test_stuffs = (
 file_start_start="fss",
 file_start="fs\n",
