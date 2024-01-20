@@ -53,6 +53,14 @@ function highlighted_versions(block, n_labels, stuffs, varwidth_frac)
     return versions
 end
 
+test_stuffs = (
+file_start_start="fss",
+file_start="fs\n",
+file_end="\nfe",
+highlight_start="{",
+highlight_end="}"
+)
+
 math_stuffs = (
 file_start_start = "\\documentclass[crop=true,border={0pt 0pt 0pt 0pt},varwidth=",
 file_start = """
