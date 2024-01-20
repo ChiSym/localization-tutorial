@@ -79,7 +79,7 @@ file_start = """
     numbers=left,
     columns=fullflexible,
     keepspaces=true,
-    literate={~} {$\\sim$}{1},
+    literate={~} {\$\\sim\$}{1},
     %upquote=true,
     % Define . and % and @ as letters to include them in keywords.
     %alsoletter={\\.},%,,\\.,\\%,\\#, \\@, \\?, \\/, \\~, !},
@@ -124,36 +124,36 @@ file_end = """
 \\end{lstlisting}
 """ * math_stuffs.file_end,
 highlight_start = "(*" * math_stuffs.highlight_start,
-highlight_end = math_stuffs.hilight_end * "*)"
+highlight_end = math_stuffs.highlight_end * "*)"
 )
 
 
 test_math = """
-The corresponding mathematical picture is as follows.  We write \$x\_{a:b} = (x_a, x_{a+1}, \\ldots, x_b)\$ to gather items \$x\_t\$ into a vector.
+The corresponding mathematical picture is as follows.  We write \$x_{a:b} = (x_a, x_{a+1}, \\ldots, x_b)\$ to gather items \$x_t\$ into a vector.
 
-In addition to the previous data, we are given an estimated start pose \$r\_0\$ and controls \$r\_t = (s\_t, \\eta\_t)\$ for \$t=1,\\ldots,T\$.  Then `path\_model` corresponds to a distribution over traces denoted \$\\text{path}\$; these traces are identified with vectors, namely, \$z\_{0:T} \\sim \\text{path}(r\_{0:T}, w, \\nu)\$ is the same as \$z\_0 \\sim \\text{start}(r\_0, \\nu)\$ and \$z\_t \\sim \\text{step}(z\_{t-1}, r\_t, w, \\nu)\$ for \$t=1,\\ldots,T\$.  Here and henceforth we use the shorthand \$\\text{step}(z, \\ldots) := \\text{step}(\\text{retval}(z), \\ldots)\$.  The density function is
+In addition to the previous data, we are given an estimated start pose \$r_0\$ and controls \$r_t = (s_t, \\eta_t)\$ for \$t=1,\\ldots,T\$.  Then `path\\_model` corresponds to a distribution over traces denoted \$\\text{path}\$; these traces are identified with vectors, namely, \$z_{0:T} \\sim \\text{path}(r_{0:T}, w, \\nu)\$ is the same as \$z_0 \\sim \\text{start}(r_0, \\nu)\$ and \$z_t \\sim \\text{step}(z_{t-1}, r_t, w, \\nu)\$ for \$t=1,\\ldots,T\$.  Here and henceforth we use the shorthand \$\\text{step}(z, \\ldots) := \\text{step}(\\text{retval}(z), \\ldots)\$.  The density function is
 \$\$
-P\_\\text{path}(z\_{0:T}; r\_{0:T}, w, \\nu)
-= P\_\\text{start}(z\_0; r\_0, \\nu) \\cdot \\prod\\nolimits\_{t=1}^T P\_\\text{step}(z\_t; z\_{t-1}, r\_t, w, \\nu)
+P_\\text{path}(z_{0:T}; r_{0:T}, w, \\nu)
+= P_\\text{start}(z_0; r_0, \\nu) \\cdot \\prod\\nolimits_{t=1}^T P_\\text{step}(z_t; z_{t-1}, r_t, w, \\nu)
 \$\$
 where each term, in turn, factors into a product of two (multivariate) normal densities as described above.
 """
 
 
 test_code = """
-function mcmc\_step(particle, log\_weight, mcmc\_proposal, mcmc\_args, mcmc\_rule)
-    proposed\_particle, proposed\_log_weight, viz = mcmc\_proposal(particle, log\_weight, mcmc\_args)
-    return mcmc\_rule([particle, proposed\_particle], [log\_weight, proposed\_log_weight])..., viz
+function mcmc\\_step(particle, log\\_weight, mcmc\\_proposal, mcmc\\_args, mcmc\\_rule)
+    proposed\\_particle, proposed\\_log_weight, viz = mcmc\\_proposal(particle, log\\_weight, mcmc\\_args)
+    return mcmc\\_rule([particle, proposed\\_particle], [log\\_weight, proposed\\_log\\_weight])..., viz
 end
-mcmc\_kernel(mcmc\_proposal, mcmc\_rule) =
-    (particle, log\_weight, mcmc\_args) -> mcmc\_step(particle, log\_weight, mcmc\_proposal, mcmc\_args, mcmc\_rule)
+mcmc\\_kernel(mcmc\\_proposal, mcmc\\_rule) =
+    (particle, log\\_weight, mcmc\\_args) -> mcmc\\_step(particle, log\\_weight, mcmc\\_proposal, mcmc\\_args, mcmc\\_rule)
 
-boltzmann\_rule = sample
+boltzmann\\_rule = sample
 
 # Assumes `particles` is ordered so that first item is the original and second item is the proposed.
-function mh\_rule(particles, log\_weights)
-    @assert length(particles) == length(log\_weights) == 2
-    acceptance_ratio = min(1., exp(log\_weights[2] - log\_weights[1]))
-    return (bernoulli(acceptance\_ratio) ? particles[2] : particles[1]), log\_weights[1]
+function mh\\_rule(particles, log\\_weights)
+    @assert length(particles) == length(log\\_weights) == 2
+    acceptance_ratio = min(1., exp(log\\_weights[2] - log\\_weights[1]))
+    return (bernoulli(acceptance\\_ratio) ? particles[2] : particles[1]), log\\_weights[1]
 end;
 """
