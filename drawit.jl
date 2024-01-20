@@ -38,7 +38,7 @@ function highlighted_versions(block, n_labels, stuffs, varwidth_frac)
                 version = version * piece
             end
         end
-        version = stuffs.file_end
+        version = version * stuffs.file_end
         push!(versions, version)
     end
     return versions
