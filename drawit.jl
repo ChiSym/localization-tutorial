@@ -16,11 +16,19 @@ function parse_highlights(block)
             remainder = remainder[start_brackets[1]+2:end]
 
             past_digits = findfirst("[", remainder)
-            label = parse(Int, remainder[1:past_digits[1]-1])
+            labels = []
+            labels_str = remainder[1:past_digits[1]-1]
+            chunk = findfirst(",", labels_str)
+            while !isnothing(chunk)
+                push!(labels, parse(Int, labels_str[1:chunk[1]-1]))
+                labels_str = labels_str[chunk[1]+1:end]
+                chunk = findfirst(",", labels_str)
+            end
+            push!(labels, parse(Int, labels_str))
             remainder = remainder[past_digits[1]+1:end]
 
             past_brackets = findfirst("]]!", remainder)
-            push!(pieces, (label, remainder[1:past_brackets[1]-1]))
+            push!(pieces, (labels, remainder[1:past_brackets[1]-1]))
             remainder = remainder[past_brackets[1]+3:end]
         end
     end
@@ -32,8 +40,8 @@ function highlighted_versions(block, n_labels, stuffs, varwidth_frac)
     versions = []
     for i in 1:n_labels
         version = stuffs.file_start_start * "$(varwidth_frac)" * stuffs.file_start
-        for (j, piece) in pieces
-            if j == i
+        for (labels, piece) in pieces
+            if i in labels
                 version = version * stuffs.highlight_start * piece * stuffs.highlight_end
             else
                 version = version * piece
