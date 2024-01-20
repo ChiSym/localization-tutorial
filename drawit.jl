@@ -1,5 +1,6 @@
-# Breakage of `block` is triggered by ("![", followed by a parsable Int, followed by "["),
-# and terminated by "]]!".
+# Breakage of `block` is
+# * triggered by "![", followed by a comma-separated sequence of Ints, followed by "[",
+# * and terminated by "]]!".
 function parse_highlights(block)
     pieces = []
     remainder = block
