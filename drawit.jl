@@ -138,6 +138,7 @@ P_\\text{path}(z_{0:T}; r_{0:T}, w, \\nu)
 \$\$
 where each term, in turn, factors into a product of two (multivariate) normal densities as described above.
 """
+print(test_math)
 
 
 test_code = """
@@ -157,3 +158,4 @@ function mh\\_rule(particles, log\\_weights)
     return (bernoulli(acceptance\\_ratio) ? particles[2] : particles[1]), log\\_weights[1]
 end;
 """
+print(test_code)
