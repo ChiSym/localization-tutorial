@@ -35,8 +35,7 @@ function parse_highlights(block)
     return pieces
 end
 
-function highlighted_versions(block, n_labels, stuffs, varwidth_frac)
-    pieces = parse_highlights(block)
+function highlighted_versions(pieces, n_labels, stuffs, varwidth_frac)
     versions = []
     for i in 1:n_labels
         version = stuffs.file_start_start * "$(varwidth_frac)" * stuffs.file_start
