@@ -1,6 +1,6 @@
-# Breakage of `block` is
-# * triggered by "![", followed by a comma-separated sequence of Ints, followed by "[",
-# * and terminated by "]]!".
+# Breakage of `block` is triggered by
+# ("![", followed by a comma-separated sequence of Ints, followed by "["),
+# and terminated by "]]!".
 function parse_highlights(block)
     pieces = []
     remainder = block
@@ -35,6 +35,7 @@ function parse_highlights(block)
     return pieces
 end
 
+# Marco set `varwidth_frac` to `0.3` for math, and `0.75` or `0.95` for code.
 function highlighted_versions(pieces, n_labels, stuffs, varwidth_frac)
     versions = []
     for i in 1:n_labels
