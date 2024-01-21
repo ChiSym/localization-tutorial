@@ -35,7 +35,7 @@ function parse_highlights(block)
     return pieces
 end
 
-# Marco set `varwidth_frac` to `0.3` for math, and `0.75` or `0.95` for code.
+# The param `varwidth_frac` is roughly (not exactly) an aspect ratio, controls truncation ont he right.
 function highlighted_versions(pieces, n_labels, stuffs, varwidth_frac)
     versions = []
     for i in 1:n_labels
