@@ -55,10 +55,8 @@ end
 
 function build_pic(file_text, file_name)
     xrap = tempname("./")
-    mkpath(xrap)
-    open("$xrap/$xrap.tex", "w") do f
-        write(f, file_text)
-    end
+    run(`mkdir $xrap`)
+    open(f -> write(f, file_text), "$xrap/$xrap.tex", "w")
     run(`pdflatex -output-directory=$xrap $xrap/$xrap.tex`)
     run(`convert -colorspace RGB -density 500 -quality 100 -background white -alpha remove -alpha off $xrap/$xrap.pdf $file_name`)
     run(`rm -rf $xrap`)
