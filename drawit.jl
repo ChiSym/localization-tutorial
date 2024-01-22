@@ -122,8 +122,7 @@ function highlighted_versions(pieces, n_labels, border, varwidth_frac)
         version = stuffs.file_start_1 * "$(border)" * stuffs.file_start_2 * "$(varwidth_frac)" * stuffs.file_start_3
         for (mode, labels, piece) in pieces
             if i in labels
-                processed_piece = process_piece(mode, piece)
-                version = version * stuffs.highlight_start[mode] * processed_piece * stuffs.highlight_end[mode]
+                version = version * stuffs.highlight_start[mode] * process_piece(mode, piece) * stuffs.highlight_end[mode]
             else
                 version = version * piece
             end
