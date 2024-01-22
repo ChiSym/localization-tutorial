@@ -1,5 +1,8 @@
 # Breakage of `block` is triggered by
-# ("![", followed by a comma-separated sequence of Ints, followed by "["),
+# * "!["
+# * followed by an optional charcter 'c' or 'm' for "code" or "math" (as opposed to plain text)
+# * followed by a nonempty comma-separated sequence of Ints
+# * followed by "["
 # and terminated by "]]!".
 function parse_highlights(block)
     pieces = []
@@ -7,13 +10,23 @@ function parse_highlights(block)
     while remainder != ""
         start_brackets = findfirst("![", remainder)
         if isnothing(start_brackets)
-            push!(pieces, (0, remainder))
+            push!(pieces, (:text, 0, remainder))
             remainder = ""
         else
             if start_brackets[1] > 1
-                push!(pieces, (0, remainder[1:start_brackets[1]-1]))
+                push!(pieces, (:text, 0, remainder[1:start_brackets[1]-1]))
             end
             remainder = remainder[start_brackets[1]+2:end]
+
+            if remainder[1] == 'c'
+                mode = :code
+                remainder = remainder[2:end]
+            elseif remainder[1] == 'm'
+                mode = :math
+                remainder = remainder[2:end]
+            else
+                mode = :text
+            end
 
             past_digits = findfirst("[", remainder)
             labels = []
@@ -28,63 +41,19 @@ function parse_highlights(block)
             remainder = remainder[past_digits[1]+1:end]
 
             past_brackets = findfirst("]]!", remainder)
-            push!(pieces, (labels, remainder[1:past_brackets[1]-1]))
+            push!(pieces, (mode, labels, remainder[1:past_brackets[1]-1]))
             remainder = remainder[past_brackets[1]+3:end]
         end
     end
     return pieces
 end
 
-# The param `varwidth_frac` is roughly (not exactly) an aspect ratio, controls truncation ont he right.
-function highlighted_versions(pieces, n_labels, stuffs, varwidth_frac)
-    versions = []
-    for i in 1:n_labels
-        version = stuffs.file_start_start * "$(varwidth_frac)" * stuffs.file_start
-        for (labels, piece) in pieces
-            if i in labels
-                version = version * stuffs.highlight_start * piece * stuffs.highlight_end
-            else
-                version = version * piece
-            end
-        end
-        version = version * stuffs.file_end
-        push!(versions, version)
-    end
-    return versions
-end
-
-function build_pic(file_text, file_name)
-    xrap = tempname("./")
-    run(`mkdir $xrap`)
-    open(f -> write(f, file_text), "$xrap/$xrap.tex", "w")
-    run(`pdflatex -output-directory=$xrap $xrap/$xrap.tex`)
-    run(`convert -colorspace RGB -density 500 -quality 100 -background white -alpha remove -alpha off $xrap/$xrap.pdf $file_name`)
-    run(`rm -rf $xrap`)
-end
-
-function build_highlighted_pics(block, n_labels, stuffs, varwidth_frac, file_name_base)
-    pieces = parse_highlights(block)
-    versions = highlighted_versions(pieces, n_labels, stuffs, varwidth_frac)
-    files = []
-    for (i, file_text) in enumerate(versions)
-        file_name = "$(file_name_base)_$i.png"
-        build_pic(file_text, file_name)
-        push!(files, file_name)
-    end
-    return files
-end
-
-test_stuffs = (
-file_start_start="fss",
-file_start="fs\n",
-file_end="\nfe",
-highlight_start="{",
-highlight_end="}"
-)
-
-math_stuffs = (
-file_start_start = "\\documentclass[crop=true,border={0pt 0pt 0pt 0pt},varwidth=",
-file_start = """
+# The param `varwidth_frac` is roughly (not exactly) an aspect ratio, controls truncation on the right.
+function highlighted_versions(pieces, n_labels, border, varwidth_frac)
+    stuffs = (
+        file_start_1 = "\\documentclass[crop=true,border={",
+        file_start_2 = "pt 0pt 0pt 0pt},varwidth=",
+        file_start_3 = """
 \\linewidth]{standalone}
 %\\usepackage{mdframed}
 \\usepackage{listings}
@@ -94,6 +63,11 @@ file_start = """
 \\usepackage{soul}
 \\definecolor{highlight}{HTML}{ffe70f}
 \\newcommand{\\hlight}[1]{\\setlength{\\fboxsep}{0pt}\\colorbox{highlight}{#1}}
+\\newcommand{\\hlightmath}[1]{\\mathchoice%
+    {\\hlight{\$\\displaystyle #1\$}}%
+    {\\hlight{\$\\textstyle #1\$}}%
+    {\\hlight{\$\\scriptstyle #1\$}}%
+    {\\hlight{\$\\scriptscriptstyle #1\$}}}
 \\definecolor{boldkwcolor}{HTML}{00679e}
 \\lstset{
     escapeinside={(*}{*)},
@@ -130,54 +104,66 @@ file_start = """
 \\newcommand{\\white}[1]{\\setlength{\\fboxsep}{0pt}\\colorbox{white}{#1}}
 \\begin{document}
 """,
-file_end = """
-\\end{document}
-""",
-highlight_start = "\\hlight{",
-highlight_end = "}"
-)
+        file_end = "\\end{document}",
+        highlight_start = (text = "\\hlight{", code = "(*\\hlight{", math = "\\hlightmath{"),
+        highlight_end = (text = "}", code = "}*)", math = "}")
+    )
 
-code_stuffs = (
-file_start_start = "\\documentclass[crop=true,border={20pt 0pt 0pt 0pt},varwidth=",
-file_start = math_stuffs.file_start * """
-\\begin{lstlisting}
-""",
-file_end = """
-\\end{lstlisting}
-""" * math_stuffs.file_end,
-highlight_start = "(*" * math_stuffs.highlight_start,
-highlight_end = math_stuffs.highlight_end * "*)"
-)
+    versions = []
+    for i in 1:n_labels
+        version = stuffs.file_start_1 * "$(border)" * stuffs.file_start_2 * "$(varwidth_frac)" * stuffs.file_start_3
+        for (mode, labels, piece) in pieces
+            if i in labels
+                version = version * stuffs.highlight_start[mode] * piece * stuffs.highlight_end[mode]
+            else
+                version = version * piece
+            end
+        end
+        version = version * stuffs.file_end
+        push!(versions, version)
+    end
+    return versions
+end
 
+function build_pic(file_text, file_name)
+    xrap = tempname("./")
+    run(`mkdir $xrap`)
+    open(f -> write(f, file_text), "$xrap/$xrap.tex", "w")
+    run(`pdflatex -interaction=nonstopmode -output-directory=$xrap $xrap/$xrap.tex`)
+    run(`convert -colorspace RGB -density 500 -quality 100 -background white -alpha remove -alpha off $xrap/$xrap.pdf $file_name`)
+    run(`rm -rf $xrap`)
+end
+
+function build_highlighted_pics(block, n_labels, border, varwidth_frac, file_name_base)
+    pieces = parse_highlights(block)
+    versions = highlighted_versions(pieces, n_labels, border, varwidth_frac)
+    files = []
+    for (i, file_text) in enumerate(versions)
+        file_name = "$(file_name_base)_$i.png"
+        build_pic(file_text, file_name)
+        push!(files, file_name)
+    end
+    return files
+end
 
 test_math = """
-The corresponding mathematical picture is as follows.  We write \$x_{a:b} = (x_a, x_{a+1}, \\ldots, x_b)\$ to gather items \$x_t\$ into a vector.
-
-In addition to the previous data, we are given an estimated start pose \$r_0\$ and controls \$r_t = (s_t, \\eta_t)\$ for \$t=1,\\ldots,T\$.  Then `path\\_model` corresponds to a distribution over traces denoted \$\\text{path}\$; these traces are identified with vectors, namely, \$z_{0:T} \\sim \\text{path}(r_{0:T}, w, \\nu)\$ is the same as \$z_0 \\sim \\text{start}(r_0, \\nu)\$ and \$z_t \\sim \\text{step}(z_{t-1}, r_t, w, \\nu)\$ for \$t=1,\\ldots,T\$.  Here and henceforth we use the shorthand \$\\text{step}(z, \\ldots) := \\text{step}(\\text{retval}(z), \\ldots)\$.  The density function is
 \$\$
-P_\\text{path}(z_{0:T}; r_{0:T}, w, \\nu)
-= P_\\text{start}(z_0; r_0, \\nu) \\cdot \\prod\\nolimits_{t=1}^T P_\\text{step}(z_t; z_{t-1}, r_t, w, \\nu)
+![m1,2,3,4[P_\\text{path}(z_{0:T}; r_{0:T}, w, \\nu)]]!
+= ![m2[P_\\text{start}(z_0; r_0, \\nu)]]! \\cdot ![m3[\\prod\\nolimits_{t=1}^T]]! ![m4[P_\\text{step}(z_t; z_{t-1}, r_t, w, \\nu)]]!
 \$\$
-where each term, in turn, factors into a product of two (multivariate) normal densities as described above.
 """
 print(test_math)
 
 
 test_code = """
-function mcmc\\_step(particle, log\\_weight, mcmc\\_proposal, mcmc\\_args, mcmc\\_rule)
-    proposed\\_particle, proposed\\_log_weight, viz = mcmc\\_proposal(particle, log\\_weight, mcmc\\_args)
-    return mcmc\\_rule([particle, proposed\\_particle], [log\\_weight, proposed\\_log\\_weight])..., viz
+\\begin{lstlisting}
+@gen function ![1,2,3,4[path\\_model\\_loop]]!(T :: Int, robot\\_inputs :: NamedTuple, world\\_inputs :: NamedTuple, motion\\_settings :: NamedTuple) :: Vector{Pose}
+    pose = {:initial => :pose} ~ ![2[start\\_pose\\_prior(robot\\_inputs.start, motion\\_settings)]]!
+
+    ![3[for t in 1:T]]!
+        pose = {:steps => t => :pose} ~ ![4[step\\_model(pose, robot\\_inputs.controls[t], world\\_inputs, motion\\_settings)]]!
+    end
 end
-mcmc\\_kernel(mcmc\\_proposal, mcmc\\_rule) =
-    (particle, log\\_weight, mcmc\\_args) -> mcmc\\_step(particle, log\\_weight, mcmc\\_proposal, mcmc\\_args, mcmc\\_rule)
-
-boltzmann\\_rule = sample
-
-# Assumes `particles` is ordered so that first item is the original and second item is the proposed.
-function mh\\_rule(particles, log\\_weights)
-    @assert length(particles) == length(log\\_weights) == 2
-    acceptance_ratio = min(1., exp(log\\_weights[2] - log\\_weights[1]))
-    return (bernoulli(acceptance\\_ratio) ? particles[2] : particles[1]), log\\_weights[1]
-end;
+\\end{lstlisting}
 """
 print(test_code)
