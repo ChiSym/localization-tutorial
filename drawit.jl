@@ -154,28 +154,28 @@ function build_highlighted_pics(block, n_labels, border, varwidth_frac, file_nam
     return files
 end
 
-test_math = """
-\$\$
-![m1,2,3,4[P_\\text{path}(z_{0:T}; r_{0:T}, w, \\nu)]]!
-= ![m2[P_\\text{start}(z_0; r_0, \\nu)]]! \\cdot ![m3[\\prod\\nolimits_{t=1}^T]]! ![m4[P_\\text{step}(z_t; z_{t-1}, r_t, w, \\nu)]]!
-\$\$
-"""
-print(test_math)
+# test_math = """
+# \$\$
+# ![m1,2,3,4[P_\\text{path}(z_{0:T}; r_{0:T}, w, \\nu)]]!
+# = ![m2[P_\\text{start}(z_0; r_0, \\nu)]]! \\cdot ![m3[\\prod\\nolimits_{t=1}^T]]! ![m4[P_\\text{step}(z_t; z_{t-1}, r_t, w, \\nu)]]!
+# \$\$
+# """
+# print(test_math)
 
 
-# Note that the `\begin{lstlisting}...\end{lstlisting}` is included here in contrast to Marco.
-test_code = """
-\\begin{lstlisting}
-@gen function ![c1,2,3,4[path_model_loop]]!(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
-    pose = {:initial => :pose} ~ ![c2[start_pose_prior(robot_inputs.start, motion_settings)]]!
+# # Note that the `\begin{lstlisting}...\end{lstlisting}` is included here in contrast to Marco.
+# test_code = """
+# \\begin{lstlisting}
+# @gen function ![c1,2,3,4[path_model_loop]]!(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+#     pose = {:initial => :pose} ~ ![c2[start_pose_prior(robot_inputs.start, motion_settings)]]!
 
-    ![c3[for t in 1:T]]!
-        pose = {:steps => t => :pose} ~ ![c4[step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)]]!
-    end
-end
-\\end{lstlisting}
-"""
-print(test_code)
+#     ![c3[for t in 1:T]]!
+#         pose = {:steps => t => :pose} ~ ![c4[step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)]]!
+#     end
+# end
+# \\end{lstlisting}
+# """
+# print(test_code)
 
 
 # using Plots, Images
