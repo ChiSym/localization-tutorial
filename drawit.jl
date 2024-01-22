@@ -180,16 +180,15 @@ print(test_code)
 
 
 # using Plots, Images
-# math_files = build_highlighted_pics(test_math, 4, 0, 0.75, "test_math")
-# code_files = build_highlighted_pics(test_code, 4, 20, 1.5, "test_code")
+# # Math tends to get `0` border...
+# math_files = build_highlighted_pics(test_math, 4, 0, 0.75, "imgs/test_math")
+# # ...while code gets `20` border to not truncate off the line numbers.
+# code_files = build_highlighted_pics(test_code, 4, 20, 1.5, "imgs/test_code")
 # math_imgs = [load(file) for file in math_files]
 # code_imgs = [load(file) for file in code_files]
 # ani = Animation()
 # for (math_img, code_img) in zip(math_imgs, code_imgs)
-#     # math_plot = plot(math_img)
-#     # code_plot = plot(code_img)
-#     # frame_plot = plot(math_plot, code_plot; size=(3000,1500), axes=nothing)
-#     # frame(ani, frame_plot)
 #     frame(ani, plot(mosaicview(math_img, code_img; nrow=1, fillvalue=1.0), axis=([], false), size=(3000,1500)))
 # end
 # gif(ani, "imgs/test.gif", fps=1)
+
