@@ -180,6 +180,7 @@ print(test_code)
 
 
 # using Plots, Images
+# mkpath("imgs")
 # # Math tends to get `0` border...
 # math_files = build_highlighted_pics(test_math, 4, 0, 0.75, "imgs/test_math")
 # # ...while code gets `20` border to not truncate off the line numbers.
