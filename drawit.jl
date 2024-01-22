@@ -48,6 +48,14 @@ function parse_highlights(block)
     return pieces
 end
 
+function process_piece(mode, piece)
+    if mode == :code
+        return replace(piece, "_" => "\\_")
+    else
+        return piece
+    end
+end
+
 # The param `varwidth_frac` is roughly (not exactly) an aspect ratio, controls truncation on the right.
 function highlighted_versions(pieces, n_labels, border, varwidth_frac)
     stuffs = (
@@ -114,7 +122,8 @@ function highlighted_versions(pieces, n_labels, border, varwidth_frac)
         version = stuffs.file_start_1 * "$(border)" * stuffs.file_start_2 * "$(varwidth_frac)" * stuffs.file_start_3
         for (mode, labels, piece) in pieces
             if i in labels
-                version = version * stuffs.highlight_start[mode] * piece * stuffs.highlight_end[mode]
+                processed_piece = process_piece(mode, piece)
+                version = version * stuffs.highlight_start[mode] * processed_piece * stuffs.highlight_end[mode]
             else
                 version = version * piece
             end
@@ -155,13 +164,14 @@ test_math = """
 print(test_math)
 
 
+# Note that the `\begin{lstlisting}...\end{lstlisting}` is included here in contrast to Marco.
 test_code = """
 \\begin{lstlisting}
-@gen function ![1,2,3,4[path\\_model\\_loop]]!(T :: Int, robot\\_inputs :: NamedTuple, world\\_inputs :: NamedTuple, motion\\_settings :: NamedTuple) :: Vector{Pose}
-    pose = {:initial => :pose} ~ ![2[start\\_pose\\_prior(robot\\_inputs.start, motion\\_settings)]]!
+@gen function ![c1,2,3,4[path_model_loop]]!(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+    pose = {:initial => :pose} ~ ![c2[start_pose_prior(robot_inputs.start, motion_settings)]]!
 
-    ![3[for t in 1:T]]!
-        pose = {:steps => t => :pose} ~ ![4[step\\_model(pose, robot\\_inputs.controls[t], world\\_inputs, motion\\_settings)]]!
+    ![c3[for t in 1:T]]!
+        pose = {:steps => t => :pose} ~ ![c4[step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)]]!
     end
 end
 \\end{lstlisting}
