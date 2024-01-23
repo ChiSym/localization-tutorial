@@ -57,11 +57,10 @@ function process_piece(mode, piece)
 end
 
 # The param `varwidth_frac` is roughly (not exactly) an aspect ratio, controls truncation on the right.
-function highlighted_versions(pieces, n_labels, border, varwidth_frac)
-    stuffs = (
-        file_start_1 = "\\documentclass[crop=true,border={",
-        file_start_2 = "pt 0pt 0pt 0pt},varwidth=",
-        file_start_3 = """
+function highlighted_versions(pieces, border, varwidth_frac; n_labels=nothing)
+    file_start_1 = "\\documentclass[crop=true,border={"
+    file_start_2 = "pt 0pt 0pt 0pt},varwidth="
+    file_start_3 = """
 \\linewidth]{standalone}
 %\\usepackage{mdframed}
 \\usepackage{listings}
@@ -111,47 +110,78 @@ function highlighted_versions(pieces, n_labels, border, varwidth_frac)
 \\usepackage{amsmath,amssymb}
 \\newcommand{\\white}[1]{\\setlength{\\fboxsep}{0pt}\\colorbox{white}{#1}}
 \\begin{document}
-""",
-        file_end = "\\end{document}",
-        highlight_start = (text = "\\hlight{", code = "(*\\hlight{", math = "\\hlightmath{"),
-        highlight_end = (text = "}", code = "}*)", math = "}")
-    )
+"""
+    file_end = "\\end{document}"
+    highlight_start = (text = "\\hlight{", code = "(*\\hlight{", math = "\\hlightmath{")
+    highlight_end = (text = "}", code = "}*)", math = "}")
 
-    versions = []
-    for i in 1:n_labels
-        version = stuffs.file_start_1 * "$(border)" * stuffs.file_start_2 * "$(varwidth_frac)" * stuffs.file_start_3
-        for (mode, labels, piece) in pieces
-            if i in labels
-                version = version * stuffs.highlight_start[mode] * process_piece(mode, piece) * stuffs.highlight_end[mode]
+    if isnothing(n_labels)
+        version = file_start_1 * "$(border)" * file_start_2 * "$(varwidth_frac)" * file_start_3
+        for (mode, label, piece) in pieces
+            if !isempty(label)
+                version = version * highlight_start[mode] * process_piece(mode, piece) * highlight_end[mode]
             else
                 version = version * piece
             end
         end
-        version = version * stuffs.file_end
-        push!(versions, version)
+        version = version * file_end
+        return version
+    else
+        versions = []
+        for i in 1:n_labels
+            version = file_start_1 * "$(border)" * file_start_2 * "$(varwidth_frac)" * file_start_3
+            for (mode, labels, piece) in pieces
+                if i in labels
+                    version = version * highlight_start[mode] * process_piece(mode, piece) * highlight_end[mode]
+                else
+                    version = version * piece
+                end
+            end
+            version = version * file_end
+            push!(versions, version)
+        end
+        return versions
     end
-    return versions
 end
 
-function build_pic(file_text, file_name)
-    xrap = tempname("./")
-    run(`mkdir $xrap`)
-    open(f -> write(f, file_text), "$xrap/$xrap.tex", "w")
-    run(`pdflatex -interaction=nonstopmode -output-directory=$xrap $xrap/$xrap.tex`)
-    run(`convert -colorspace RGB -density 500 -quality 100 -background white -alpha remove -alpha off $xrap/$xrap.pdf $file_name`)
-    run(`rm -rf $xrap`)
+backup_stdout = stdout # just in case
+function build_pic(file_text, file_name; silence=false)
+    if silence
+        saved_stdout = stdout
+        redirect_stdout(devnull)
+    end
+    try
+        xrap = tempname("./")
+        run(`mkdir $xrap`)
+        open(f -> write(f, file_text), "$xrap/$xrap.tex", "w")
+        run(`pdflatex -interaction=nonstopmode -output-directory=$xrap $xrap/$xrap.tex`)
+        run(`convert -colorspace RGB -density 500 -quality 100 -background white -alpha remove -alpha off $xrap/$xrap.pdf $file_name`)
+        run(`rm -rf $xrap`)
+    finally
+        if silence
+            redirect_stdout(saved_stdout)
+        end
+    end
 end
 
-function build_highlighted_pics(block, n_labels, border, varwidth_frac, file_name_base)
+function build_highlighted_pics(block, border, varwidth_frac, file_name_base; n_labels=nothing, silence=false)
     pieces = parse_highlights(block)
-    versions = highlighted_versions(pieces, n_labels, border, varwidth_frac)
-    files = []
-    for (i, file_text) in enumerate(versions)
-        file_name = "$(file_name_base)_$i.png"
-        build_pic(file_text, file_name)
-        push!(files, file_name)
+
+    if isnothing(n_labels)
+        file_text = highlighted_versions(pieces, border, varwidth_frac; n_labels=n_labels)
+        file_name = "$(file_name_base).png"
+        build_pic(file_text, file_name; silence=silence)
+        return file_name
+    else
+        versions = highlighted_versions(pieces, border, varwidth_frac; n_labels=n_labels)
+        files = []
+        for (i, file_text) in enumerate(versions)
+            file_name = "$(file_name_base)_$i.png"
+            build_pic(file_text, file_name; silence=silence)
+            push!(files, file_name)
+        end
+        return files
     end
-    return files
 end
 
 # test_math = """
