@@ -91,15 +91,11 @@ function create_segments(verts :: Vector{Vector{Float64}}; loop_around=false) ::
     return segs
 end
 
-function load_world(file_name)
-    data = parsefile(file_name)
-    walls_vec = Vector{Vector{Float64}}(data["wall_verts"])
-    walls = create_segments(walls_vec)
-    clutters_vec = Vector{Vector{Vector{Float64}}}(data["clutter_vert_groups"])
-    clutters = [create_segments(clutter) for clutter in clutters_vec]
+function make_world(walls_vec :: Vector{Vector{Float64}}, clutters_vec :: Vector{Vector{Vector{Float64}}},
+                    start :: Pose, controls :: Vector{Control}; loop_around=false)
+    walls = create_segments(walls_vec; loop_around=loop_around)
+    clutters = [create_segments(clutter; loop_around=loop_around) for clutter in clutters_vec]
     walls_clutters = [walls ; clutters...]
-    start = Pose(Vector{Float64}(data["start_pose"]["p"]), Float64(data["start_pose"]["hd"]))
-    controls = Vector{Control}([Control(control["ds"], control["dhd"]) for control in data["program_controls"]])
     all_points = [walls_vec ; clutters_vec... ; [start.p]]
     x_min = minimum(p[1] for p in all_points)
     x_max = maximum(p[1] for p in all_points)
@@ -113,6 +109,15 @@ function load_world(file_name)
             bounding_box=bounding_box, box_size=box_size, center_point=center_point),
            (start=start, controls=controls),
            T
+end
+
+function load_world(file_name; loop_around=false)
+    data = parsefile(file_name)
+    walls_vec = Vector{Vector{Float64}}(data["wall_verts"])
+    clutters_vec = Vector{Vector{Vector{Float64}}}(data["clutter_vert_groups"])
+    start = Pose(Vector{Float64}(data["start_pose"]["p"]), Float64(data["start_pose"]["hd"]))
+    controls = Vector{Control}([Control(control["ds"], control["dhd"]) for control in data["program_controls"]])
+    return make_world(walls_vec, clutters_vec, start, controls; loop_around=loop_around)
 end;
 
 # %%
