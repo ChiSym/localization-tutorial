@@ -10,11 +10,11 @@ function parse_highlights(block)
     while remainder != ""
         start_brackets = findfirst("![", remainder)
         if isnothing(start_brackets)
-            push!(pieces, (:text, 0, remainder))
+            push!(pieces, (:text, [], remainder))
             remainder = ""
         else
             if start_brackets[1] > 1
-                push!(pieces, (:text, 0, remainder[1:start_brackets[1]-1]))
+                push!(pieces, (:text, [], remainder[1:start_brackets[1]-1]))
             end
             remainder = remainder[start_brackets[1]+2:end]
 
