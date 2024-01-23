@@ -162,10 +162,10 @@ end
 # """
 # print(test_math)
 
-
+lstlisting(s) = "\\begin{lstlisting}\n" * s * (s[end] == '\n' ? "" : "\n") * "\\end{lstlisting}"
 # # Note that the `\begin{lstlisting}...\end{lstlisting}` is included here in contrast to Marco.
-# test_code = """
-# \\begin{lstlisting}
+# test_code = lstlisting(
+# """
 # @gen function ![c1,2,3,4[path_model_loop]]!(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
 #     pose = {:initial => :pose} ~ ![c2[start_pose_prior(robot_inputs.start, motion_settings)]]!
 
@@ -173,8 +173,7 @@ end
 #         pose = {:steps => t => :pose} ~ ![c4[step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)]]!
 #     end
 # end
-# \\end{lstlisting}
-# """
+# """)
 # print(test_code)
 
 
