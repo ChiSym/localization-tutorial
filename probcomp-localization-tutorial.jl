@@ -63,7 +63,7 @@ struct Segment
     dp :: Vector{Float64}
     Segment(p1 :: Vector{Float64}, p2 :: Vector{Float64}) = new(p1, p2, p2-p1)
 end
-Base.show(io :: IO, s :: Segment) = print(io, "Segment($(s.p1), $(s.p2))")
+Base.show(io :: IO, s :: Segment) = Base.show(io, "Segment($(s.p1), $(s.p2))")
 
 struct Pose
     p  :: Vector{Float64}
@@ -72,7 +72,7 @@ struct Pose
     Pose(p :: Vector{Float64}, hd :: Float64) = new(p, rem2pi(hd, RoundNearest), [cos(hd), sin(hd)])
 end
 Pose(p :: Vector{Float64}, dp :: Vector{Float64}) = Pose(p, atan(dp[2], dp[1]))
-Base.show(io :: IO, p :: Pose) = print(io, "Pose($(p.p), $(p.hd))")
+Base.show(io :: IO, p :: Pose) = Base.show(io, "Pose($(p.p), $(p.hd))")
 
 step_along_pose(p :: Pose, s :: Float64) :: Vector{Float64} = p.p + s * p.dp
 rotate_pose(p :: Pose, a :: Float64) :: Pose = Pose(p.p, p.hd + a)
