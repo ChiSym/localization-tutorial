@@ -1572,7 +1572,7 @@ end
 inverse_grid_index(grid_n_points :: Vector{Int}, j :: Int) :: Int =
     LinearIndices(Tuple(grid_n_points))[(grid_n_points .+ 1 .- [Tuple(CartesianIndices(Tuple(grid_n_points))[j])...])...]
 
-# Sample from the posterior, restricted/conditioned to the grid.
+# Sample from the posterior, restricted to the grid.
 @gen function grid_fwd_proposal(trace, grid_n_points, grid_sizes)
     t = get_args(trace)[1]
     p = trace[prefix_address(t+1, :pose => :p)]
@@ -1595,7 +1595,7 @@ inverse_grid_index(grid_n_points :: Vector{Int}, j :: Int) :: Int =
     return choicemap_grid[fwd_j], choicemap((:bwd_j, bwd_j)), viz
 end
 
-# Sample from the prior, restricted/conditioned to the inverse grid.
+# Sample from the prior, restricted to the inverse grid.
 @gen function grid_bwd_proposal(trace, grid_n_points, grid_sizes)
     t = get_args(trace)[1]
     p = trace[prefix_address(t+1, :pose => :p)]
@@ -1618,7 +1618,7 @@ end
 
 grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal);
 
-# Sample from the prior, restricted/conditioned to the forward kernel sending it to the given trace.
+# Sample from the prior, conditioned to the forward kernel sending it to the given trace.
 @gen function grid_bwd_proposal_exact(trace, grid_n_points, grid_sizes)
     t = get_args(trace)[1]
     p = trace[prefix_address(t+1, :pose => :p)]
