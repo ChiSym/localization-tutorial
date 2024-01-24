@@ -933,6 +933,88 @@ for n in 1:N_samples
 end
 gif(ani, "imgs/full_1.gif", fps=2)
 
+# %%
+trace_step_length = 4*sensor_settings.num_angles+10
+trace = simulate(full_model, (T, full_model_args...))
+
+trace_str = [s * "\n" for s in split(sprint(show, MIME("text/plain"), get_choices(trace)), "\n")[1:end-1]]
+
+function clean_step(lines; init=false)
+    head = lines[1:2]
+    pose_i = findfirst(s -> contains(s, ":pose"), lines)-1
+    pose = lines[pose_i:(pose_i+5)]
+    sensor_i = findfirst(s -> contains(s, ":sensor"), lines)-1
+    sensor_label = lines[sensor_i:(sensor_i+1)]
+    sensor = [lines[i:i+3] for i in (sensor_i+2):4:(sensor_i+trace_step_length-11)]
+    sort!(sensor, by=s->parse(Int, s[2][findfirst(r"[0-9]", s[2])[1]:end]))
+    sensor = [sensor[1], "...\n", sensor[end]]
+    return [head..., pose..., sensor_label..., vcat(sensor...)...]
+end
+
+initial_i = findfirst(s -> contains(s, ":initial"), trace_str)-1
+trace_strs = [clean_step(splice!(trace_str, initial_i:(initial_i+trace_step_length-1)); init=true)]
+push!(trace_strs, splice!(trace_str, 1:2))
+for _ in 1:T
+    push!(trace_strs, clean_step(splice!(trace_str, 1:trace_step_length)))
+end
+sort!(view(trace_strs, 3:length(trace_strs)), by=s -> parse(Int, s[2][15:end]))
+
+hlt(s) = lpad("![c1[" * strip(s) * "]]!\n", length(s)+7)
+hlt_pose(strs) = [map(hlt, strs[1:8])..., strs[9:end]...]
+hlt_sensor(strs) = [map(hlt, strs[1:2])..., strs[3:8]..., map(hlt, strs[9:end])...]
+stringify(l) = replace(string([string(s...) for s in l]...), '\u2502' => "|", '\u251C' => "|", '\u2500' => "-", '\u2514' => "|")
+
+slide_texts = []
+push!(slide_texts, stringify([hlt_pose(trace_strs[1]), trace_strs[2:4]...]))
+push!(slide_texts, stringify([hlt_sensor(trace_strs[1]), trace_strs[2:4]...]))
+push!(slide_texts, stringify([trace_strs[1:2]..., hlt_pose(trace_strs[3]), trace_strs[4]]))
+push!(slide_texts, stringify([trace_strs[1:2]..., hlt_sensor(trace_strs[3]), trace_strs[4]]))
+for i in 2:(T-1)
+    push!(slide_texts, stringify([trace_strs[i+1], hlt_pose(trace_strs[i+2]), trace_strs[i+3]]))
+    push!(slide_texts, stringify([trace_strs[i+1], hlt_sensor(trace_strs[i+2]), trace_strs[i+3]]))
+end
+push!(slide_texts, stringify([trace_strs[T:T+1]..., hlt_pose(trace_strs[T+2])]))
+push!(slide_texts, stringify([trace_strs[T:T+1]..., hlt_sensor(trace_strs[T+2])]))
+
+full_trace_slide_files = [build_highlighted_pics(lstlisting(slide_text), 0, 1., "imgs/path_trace_slide_$i"; silence=true) for (i, slide_text) in enumerate(slide_texts)]
+
+full_model_code = """
+@gen (static) function full_model_initial(...)
+    ![c1[pose]]! ~ ![c1[start_pose_prior(robot_inputs.start, ...)]]!
+    ![c2[{:sensor}]]! ~ ![c2[sensor_model(pose, ...)]]!
+    return pose
+end
+
+@gen (static) function full_model_kernel(t :: Int, state :: Pose, ...)
+    ![c3[pose]]! ~ ![c3[step_model(state, robot_inputs.controls[t], ...)]]!
+    ![c4[{:sensor}]]! ~ ![c4[sensor_model(pose, ...)]]!
+    return pose
+end
+full_model_chain = Unfold(full_model_kernel)
+
+@gen (static) function full_model(T :: Int, robot_inputs, ...)
+    ![c1,2[initial]]! ~ ![c1,2[full_model_initial(robot_inputs, world_inputs, ...)]]!
+    ![c3,4[steps]]! ~ ![c3,4[full_model_chain(T, initial, robot_inputs, ...)]]!
+end
+"""
+full_model_code_files = build_highlighted_pics(lstlisting(full_model_code), 20, 1., "imgs/full_model"; n_labels=4, silence=true)
+
+graph_frames = frames_from_full_trace(world, "Full model (sample)", trace)
+
+partners =
+    [(full_trace_slide_files[1], full_model_code_files[1], graph_frames[1]),
+     (full_trace_slide_files[2], full_model_code_files[2], graph_frames[2]),
+     [(f, path_model_loop_files[isodd(i) ? 3 : 4], g) for (i, (f, g)) in enumerate(zip(path_trace_slide_files[3:end], graph_frames[3:end]))]...]
+
+l = @layout [a{0.15h} ; [b c]]
+ani = Animation()
+for (trace_file, code_file, graph) in partners
+    code_plot = plot(load(code_file); axis=([], false), size=(2000,700))
+    trace_plot = plot(load(trace_file); axis=([], false), size=(2000,700))
+    frame(ani, plot(code_plot, trace_plot, graph; layout=l, size=(2000,2000)))
+end
+gif(ani, "imgs/full_model_with_trace.gif", fps=1)
+
 # %% [markdown]
 # ### Aside: abstracting essential features of generative functions, traces, and weights
 
