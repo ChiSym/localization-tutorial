@@ -852,16 +852,16 @@ function frames_from_full_trace(world, title, trace; show_clutters=false, std_de
     plots = Vector{Plots.Plot}(undef, 2*(T+1))
     for t in 1:(T+1)
         frame_plot = plot_world(world, title; show_clutters=show_clutters)
-        plot!(poses[1:t-1]; color=:black, label=nothing)
+        plot!(poses[1:t-1]; color=:black, label="past poses")
         plot!([noiseless_steps[t][1]], [noiseless_steps[t][2]];
-              color=:red, label=nothing, seriestype=:scatter,
+              color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
               markersize=(20. * std_devs_radius * settings.motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
-        plot!(Pose(trace[prefix_address(t, :pose => :p)], poses[t].hd); color=:red, label=nothing)
+        plot!(Pose(trace[prefix_address(t, :pose => :p)], poses[t].hd); color=:red, label="sampled next step")
         plots[2*t-1] = frame_plot
         plots[2*t] = frame_from_sensors(
             world, title,
             poses[1:t], :black, nothing,
-            poses[t], sensor_readings[t], nothing,
+            poses[t], sensor_readings[t], "sampled sensors",
             settings.sensor_settings; show_clutters=show_clutters)
     end
     return plots
