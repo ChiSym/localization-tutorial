@@ -31,7 +31,7 @@ using Gen
 
 # Ensure a location for image generation.
 mkpath("imgs")
-using Images
+using Images: load
 include("drawit.jl");
 
 # %% [markdown]
