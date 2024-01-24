@@ -612,6 +612,61 @@ end
 
 println("Success");
 
+# %%
+trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
+
+trace_str = [s * "\n" for s in split(sprint(show, MIME("text/plain"), get_choices(trace)), "\n")[1:end-1]]
+
+initial_i = findfirst(s -> contains(s, ":initial"), trace_str)-1
+trace_strs = [splice!(trace_str, initial_i:(initial_i+7))]
+
+push!(trace_strs, splice!(trace_str, 1:2))
+
+for _ in 1:T
+    push!(trace_strs, splice!(trace_str, 1:8))
+end
+sort!(view(trace_strs, 3:length(trace_strs)), by=s -> parse(Int, s[2][findfirst(r"[0-9]", s[2])[1]:end]))
+
+hlt(s) = lpad("![c1[" * strip(s) * "]]!\n", length(s)+7)
+stringify(l) = replace(string([string(s...) for s in l]...), '\u2502' => "|", '\u251C' => "|", '\u2500' => "-", '\u2514' => "|")
+
+slide_texts = []
+push!(slide_texts, stringify([map(hlt, trace_strs[1]), trace_strs[2:4]...]))
+push!(slide_texts, stringify([trace_strs[1], map(hlt, trace_strs[2]), trace_strs[3:4]...]))
+for i in 1:(T-1)
+    push!(slide_texts, stringify([trace_strs[i:i+1]..., map(hlt, trace_strs[i+2]), trace_strs[i+3]]))
+end
+push!(slide_texts, stringify([trace_strs[T-1:T+1]..., map(hlt, trace_strs[T+2])]))
+
+path_trace_slide_files = [build_highlighted_pics(lstlisting(slide_text), 0, 1., "imgs/path_trace_slide_$i"; silence=true) for (i, slide_text) in enumerate(slide_texts)]
+
+path_model_loop_code = """
+@gen function path_model_loop(T :: Int, ...)
+    pose = ![c1[{:initial => :pose} ~ start_pose_prior]]!(...)
+
+    for ![c2[t in 1:T]]!
+        pose = {![c2[:steps]]! => ![c3[t => :pose]]!} ~ ![c3[step_model]]!(...)
+    end
+end
+"""
+path_model_loop_files = build_highlighted_pics(lstlisting(path_model_loop_code), 20, 1., "imgs/path_model_loop"; n_labels=3, silence=true)
+
+graph_frames = frames_from_motion_trace(world, "Motion model (sample)", trace)
+
+partners =
+    [(path_trace_slide_files[1], path_model_loop_files[1], graph_frames[1]),
+     (path_trace_slide_files[2], path_model_loop_files[2], graph_frames[1]),
+     [(f, path_model_loop_files[3], g) for (f, g) in zip(path_trace_slide_files[3:end], graph_frames[2:end])]...]
+
+l = @layout [a{0.15h} ; [b c]]
+ani = Animation()
+for (trace_file, code_file, graph) in partners
+    code_plot = plot(load(code_file); axis=([], false), size=(2000,700))
+    trace_plot = plot(load(trace_file); axis=([], false), size=(2000,700))
+    frame(ani, plot(code_plot, trace_plot, graph; layout=l, size=(2000,2000)))
+end
+gif(ani, "imgs/path_model_with_trace.gif", fps=1)
+
 # %% [markdown]
 # Because performing such updates to traces occur frequently, and they seemingly require re-running the entire model, computational complexity considerations become important.  We detour next through an important speedup.
 
