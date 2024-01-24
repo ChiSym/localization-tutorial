@@ -252,7 +252,7 @@ the_plot
 
 # %%
 sw, sri, sT = make_world([[1.,-1.], [1.,1.], [2.,1.], [2.,-1.], [1.,-1.]], Vector{Vector{Float64}}[],
-                         Pose([0.,0.],0.), [Control(1.5,pi/6.), Control(1.,pi/6.)])
+                         Pose([0.,0.],0.), [Control(1.5,pi/6.), Control(1.,2pi/6.), Control(0.75,0.)])
 swi = (walls = sw.walls, bounce = 0.1)
 spi = integrate_controls(sri, swi)
 
@@ -262,7 +262,7 @@ plot!(sri.start; color=:green3, label="given start pose")
 push!(plots, frame_plot)
 # plot!([pose.p[1] for pose in path_integrated], [pose.p[2] for pose in path_integrated];
 #       color=:green2, label="path from integrating controls", seriestype=:scatter, markersize=3, markerstrokewidth=0)
-for i in 1:length(sri.controls)
+for i in 1:sT
     frame_plot = plot_world(sw, "Deterministic path")
     for j in 1:i
         plot!(spi[j]; color=:black, label=nothing)
@@ -296,9 +296,9 @@ end
 \\end{lstlisting}
 """
 codes_norepeat = [plot(load(f); axis=([], false), size=(2000,700))
-                  for f in build_highlighted_pics(code, 3, 20, 0.9, "imgs/code"; silence=true)]
+                  for f in build_highlighted_pics(code, 20, 0.9, "imgs/code"; n_labels=3, silence=true)]
 codes = [codes_norepeat[1]]
-for _ in 1:length(sri.controls); codes = [codes..., codes_norepeat[2:end]...] end
+for _ in 1:sT; codes = [codes..., codes_norepeat[2:end]...] end
 
 input = """
 \\phantom{asdfasdfasdfasdfasdf} \\newline
@@ -306,21 +306,22 @@ Start: \\newline
 \\phantom{asdf} ![1[\$[0,0],\\ 0\$]]! \\newline
 Controls: \\newline
 \\phantom{asdf} 1. ![2[\$1.5,\\ \\pi/6\$]]! \\newline
-\\phantom{asdf} 2. ![3[\$1.0,\\ \\pi/6\$]]!
+\\phantom{asdf} 2. ![3[\$1.0,\\ 2\\pi/6\$]]! \\newline
+\\phantom{asdf} 2. ![4[\$0.75,\\ 0\$]]! \\newline
 \\phantom{asdfasdfasdfasdfasdf} \\newline
 \\phantom{asdfasdfasdfasdfasdf}
 """
 inputs_norepeat = [plot(load(f); axis=([], false), size=(1000,200))
-                   for f in build_highlighted_pics(input, 3, 0, 0.7, "imgs/input"; silence=true)]
+                   for f in build_highlighted_pics(input, 0, 0.7, "imgs/input"; n_labels=(sT+1), silence=true)]
 inputs = [inputs_norepeat[1]]
-for i in 2:(length(sri.controls)+1); inputs = [inputs..., inputs_norepeat[i], inputs_norepeat[i]] end
+for i in 2:(sT+1); inputs = [inputs..., inputs_norepeat[i], inputs_norepeat[i]] end
 l = @layout [[a ; b] c]
 
 ani = Animation()
 for i in 1:length(codes)
     frame(ani, plot(codes[i], inputs[i], plots[i]; layout=l))
 end
-gif(ani, "imgs/test.gif", fps=0.5)
+gif(ani, "imgs/physical_motion.gif", fps=0.5)
 
 # %% [markdown]
 # ## Gen basics
