@@ -797,7 +797,7 @@ N_samples = 5
 
 ani = Animation()
 for n in 1:N_samples
-    trace = simulate(full_model, (T, robot_inputs, world_inputs, full_settings))
+    trace = simulate(full_model, (T, full_model_args...))
     frames = frames_from_full_trace(world, "Full model (samples)", trace)
     for frame_plot in frames; frame(ani, frame_plot) end
 end
