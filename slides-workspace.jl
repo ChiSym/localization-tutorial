@@ -1831,7 +1831,7 @@ end
 grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal);
 
 # Sample from the prior, restricted/conditioned to the forward kernel sending it to the given trace.
-@gen function grid_bwd_proposal_2(trace, grid_n_points, grid_sizes)
+@gen function grid_bwd_proposal_exact(trace, grid_n_points, grid_sizes)
     t = get_args(trace)[1]
     p = trace[prefix_address(t+1, :pose => :p)]
     hd = trace[prefix_address(t+1, :pose => :hd)]
@@ -1856,7 +1856,7 @@ grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal);
     return choicemap_grid[bwd_j], choicemap((:fwd_j, fwd_j))
 end
 
-grid_smcp3_kernel_2 = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_2);
+grid_smcp3_kernel_exact = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_exact);
 
 # %%
 N_particles = 10
@@ -1899,13 +1899,13 @@ the_plot
 # prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 # t1 = now()
-# traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_2, grid_args_schedule)...)[1] for _ in 1:N_samples]
+# traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_exact, grid_args_schedule)...)[1] for _ in 1:N_samples]
 # t2 = now()
 # println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 # posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 # t1 = now()
-# traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_2, grid_args_schedule)...)[1] for _ in 1:N_samples]
+# traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_exact, grid_args_schedule)...)[1] for _ in 1:N_samples]
 # t2 = now()
 # println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 # posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
