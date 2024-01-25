@@ -41,6 +41,7 @@ function parse_highlights(block)
             remainder = remainder[past_digits[1]+1:end]
 
             past_brackets = findfirst("]]!", remainder)
+            @assert !isnothing(past_brackets) "concluding exclamation char?"
             push!(pieces, (mode, labels, remainder[1:past_brackets[1]-1]))
             remainder = remainder[past_brackets[1]+3:end]
         end
