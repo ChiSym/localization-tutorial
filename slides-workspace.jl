@@ -1706,7 +1706,78 @@ function particle_filter_bootstrap(model, T, args, constraints, N_particles)
     end
 
     return traces, log_weights
+end
+
+function particle_filter_bootstrap_infos(model, T, args, constraints, N_particles)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    vizs = Vector{NamedTuple}(undef, N_particles)
+    infos = []
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    
+    for t in 1:T
+        traces, log_weights = resample(traces, log_weights)
+        push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+        push!(infos, (type = :update, time = now(), label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+    end
+
+    return infos
 end;
+
+# %% [markdown]
+# Let's walk through the effect of the resampling:
+
+# %%
+bootstrap_code = """
+function particle_filter_bootstrap(...)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] =
+            ![c1[generate]]!(model, (0, args...), constraints[1])
+    end
+    
+    for t in 1:T
+        traces, log_weights =
+            ![c2[resample]]!(traces, log_weights)
+
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ =
+                ![c3[update]]!(traces[i], (t, args...), ...)
+            log_weights[i] += log_weight_increment
+        end
+    end
+
+    return traces, log_weights
+end
+"""
+bootstrap_code_files = build_highlighted_pics(lstlisting(bootstrap_code), 20, 1., "imgs/bootstrap_code"; n_labels=3, silence=true)
+bootstrap_code_dict = Dict(zip((:initialize, :resample, :update),
+                               [plot(load(f); axis=([], false), size=(2000,700)) for f in bootstrap_code_files]))
+
+N_particles = 10
+infos = particle_filter_bootstrap_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles)
+
+ani = Animation()
+for info in infos
+    code_plot = bootstrap_code_dict[info.type]
+    graph = frame_from_info(world, "Run of PF+Bootstrap", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, plot(code_plot, graph; size=(2000,1000)))
+end
+gif(ani, "imgs/bootstrap_with_code.gif", fps=1)
+
+# %% [markdown]
+# Here is the aggreate behavior:
 
 # %%
 N_particles = 10
@@ -1729,7 +1800,7 @@ println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Tot
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF")
-savefig("imgs/PF_1")
+savefig("imgs/pf_bootstrap_1")
 the_plot
 
 # %% [markdown]
