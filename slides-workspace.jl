@@ -2007,6 +2007,59 @@ end
 grid_smcp3_kernel_exact = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_exact);
 
 # %%
+rejuv_code = """
+function particle_filter_rejuv(...)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] =
+            ![c1[generate]]!(model, (0, args...), constraints[1])
+    end
+
+    for t in 1:T
+        traces, log_weights =
+            ![c2[resample_ESS]]!(traces, log_weights, ESS_threshold)
+
+        for i in 1:N_particles
+            for rejuv_args in rejuv_args_schedule
+                traces[i], log_weights[i] =
+                    ![c3[rejuv_kernel]]!(traces[i], log_weights[i], rejuv_args)
+            end
+        end
+
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ =
+                ![c4[update]]!(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+    end
+
+    return traces, log_weights
+end
+"""
+# rejuv_code_files = build_highlighted_pics(lstlisting(rejuv_code), 20, 1., "imgs/rejuv_code"; n_labels=4, silence=true)
+rejuv_code_plots = Dict(zip((:initialize, :resample, :rejuvenate, :update),
+                            [plot(load(f); axis=([], false), size=(2000,700)) for f in rejuv_code_files]))
+
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+grid_n_points_start = [3, 3, 3]
+grid_sizes_start = [.7, .7, π/10]
+grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
+
+infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)
+
+ani = Animation()
+for info in infos
+    code_plot = rejuv_code_plots[info.type]
+    graph = frame_from_info(world, "Run of PF+SMCP3/Grid", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, plot(code_plot, graph; size=(2000,1000)))
+end
+gif(ani, "imgs/smcp3_with_code.gif", fps=1)
+
+# %%
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
