@@ -2227,7 +2227,7 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
                 # push!(infos, (type = :regenerate, label = "regenernate", traces = copy(traces), log_weights = copy(log_weights)))
 
                 traces, weights = resample_ESS(traces, log_weights, ESS_threshold)
-                push!(infos, (type = :resample, time=now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+                push!(infos, (type = :resample2, time=now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
             end
 
             rejuv_count += 1
@@ -2243,8 +2243,95 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
     end
 
     return infos
-end
+end;
 
+# %%
+controlled_code = """
+function controlled_particle_filter_rejuv(...)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+
+    prev_total_weight = 0.
+    for i in 1:N_particles
+        traces[i], log_weights[i] = ![c1[generate]]!(model, (0, args...), ...)
+    end
+
+    for t in 1:T
+        traces, log_weights = ![c2[resample_ESS]]!(traces, log_weights, ...)
+
+        rejuv_count = 0
+        temp_args_schedule = rejuv_args_schedule
+        while logsumexp(log_weights) - prev_total_weight <
+                weight_change_bound && rejuv_count <= MAX_rejuv
+            for i in 1:N_particles
+                for rejuv_args in rejuv_args_schedule
+                    traces[i], log_weights[i] =
+                        ![c3[rejuv_kernel]]!(traces[i], log_weights[i], rejuv_args)
+                end
+            end
+
+            if logsumexp(log_weights) - prev_total_weight <
+                    weight_change_bound && rejuv_count != MAX_rejuv && t > 1
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ =
+                        ![c4[update]]!(traces[i], (t-2, args...), ...)
+                    log_weights[i] += log_weight_increment
+                end
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ =
+                        ![c5[update]]!(traces[i], (t-1, args...), ...)
+                    log_weights[i] += log_weight_increment
+                end
+
+                traces, weights = [!c6[resample_ESS]]!(traces, log_weights, ...)
+            end
+
+            rejuv_count += 1
+            temp_args_schedule = args_schedule_modifier(temp_args_schedule, rejuv_count)
+        end
+
+        prev_total_weight = logsumexp(log_weights)
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ =
+                ![c7[update]]!(traces[i], (t, args...), ...)
+            log_weights[i] += log_weight_increment
+        end
+    end
+
+    return traces, log_weights
+end
+"""
+# controlled_code_files = build_highlighted_pics(lstlisting(controlled_code), 20, 1., "imgs/controlled_code"; n_labels=7, silence=true)
+# controlled_code_plots = Dict(zip((:initialize, :resample, :rejuvenate, :regenernate_bwd, :regenernate_fwd, :resample2, :update),
+#                                  [plot(load(f); axis=([], false), size=(2000,700)) for f in controlled_code_files]))
+
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+grid_n_points_start = [3, 3, 3]
+grid_sizes_start = [.7, .7, π/10]
+grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
+
+weight_change_bound = (-1. * 10^5)/20
+
+# TODO: FIXME
+grid_args_schedule_modifier(args_schedule, rejuv_count) =
+    (rejuv_count % 1 == 0) ?
+        [(nsteps, sizes .* 0.75) for (nsteps, sizes) in args_schedule] :
+        [(nsteps + 2, sizes)     for (nsteps, sizes) in args_schedule];
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+
+infos = controlled_particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)
+
+ani = Animation()
+for info in infos
+    code_plot = controlled_code_plots[info.type]
+    graph = frame_from_info(world, "Run of Controlled PF+SMCP3/Grid", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, plot(code_plot, graph; size=(2000,1000)))
+end
+gif(ani, "imgs/controlled_smcp3_with_code.gif", fps=1)
 
 # %%
 weight_change_bound = (-1. * 10^5)/20
