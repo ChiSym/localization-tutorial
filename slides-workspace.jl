@@ -1834,6 +1834,9 @@ the_plot
 # Two issues: particle diversity after resampling, and quality of these samples.
 
 # %%
+effective_sample_size(log_weights) =
+    exp(-logsumexp(2. * (log_weights .- logsumexp(log_weights))))
+
 resample_ESS(particles, log_weights, ESS_threshold; M=nothing) =
     (effective_sample_size(log_weights .- logsumexp(log_weights)) < ESS_threshold) ?
         resample(particles, log_weights; M=M) :
