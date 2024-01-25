@@ -2368,26 +2368,6 @@ the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_de
 savefig("imgs/PF_controller")
 the_plot
 
-# %%
-infos = controlled_particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)
-
-ani = Animation()
-for info in infos
-    frame_plot = frame_from_info(world, "Run of Controlled PF + SMCP3/Grid", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/pf_controller_animation_low.gif", fps=1)
-
-# %%
-infos = controlled_particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)
-
-ani = Animation()
-for info in infos
-    frame_plot = frame_from_info(world, "Run of Controlled PF + SMCP3/Grid", path_high_deviation, "path to fit", info, "particles"; min_alpha=0.08)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
-
 # %% [markdown]
 # ### MCMC rejuvenation / Gaussian drift proposal
 
