@@ -2436,6 +2436,17 @@ ESS_threshold =  1. + N_particles / 10.
 drift_factor = 1/3
 drift_args_schedule = [drift_factor^j for j=1:3]
 
+infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)
+
+ani = Animation()
+for info in infos
+    code_plot = rejuv_code_plots[info.type]
+    graph = frame_from_info(world, "Run of PF+SMCP3/Drift", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, plot(code_plot, graph; size=(2000,1000)))
+end
+gif(ani, "imgs/smcp3_drift_with_code.gif", fps=1)
+
+# %% [markdown]
 # A fair criticism is that this forward proposal in no way improves the samples; it only jiggles them.  So, on its own, the resulting algorithm is little different from the bootstrap on the original motion model with a higher motion noise parameter.
 
 # %%
