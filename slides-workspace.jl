@@ -2436,6 +2436,15 @@ ESS_threshold =  1. + N_particles / 10.
 drift_factor = 1/3
 drift_args_schedule = [drift_factor^j for j=1:3]
 
+# A fair criticism is that this forward proposal in no way improves the samples; it only jiggles them.  So, on its own, the resulting algorithm is little different from the bootstrap on the original motion model with a higher motion noise parameter.
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+drift_factor = 1/3
+drift_args_schedule = [drift_factor^j for j=1:3]
+
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
