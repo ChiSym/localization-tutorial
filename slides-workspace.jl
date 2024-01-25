@@ -1804,10 +1804,9 @@ savefig("imgs/pf_bootstrap_1")
 the_plot
 
 # %% [markdown]
-# Pictures and discussion of the drawbacks.
-
-# %% [markdown]
 # ### Prospects for improving accuracy, robustness, and efficiency
+#
+# Discussion of drawbacks.
 #
 # One approach:
 # * Improve accuracy with more particles.
