@@ -1598,12 +1598,89 @@ function particle_filter(model, T, args, constraints, N_particles)
     end
 
     return traces, log_weights
+end
+
+function particle_filter_infos(model, T, args, constraints, N_particles)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    vizs = Vector{NamedTuple}(undef, N_particles)
+    infos = []
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    
+    for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+        push!(infos, (type = :update, time = now(), label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+    end
+
+    return infos
 end;
 
 # %% [markdown]
 # This refactoring is called a *particle filter* because it of how it spreads the reasoning out along the time axis.  It has the important effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
 #
-# One simple intervention is to prune out the particles at each time step that don't appear to be good candidates, and replace them with copies of the better ones before further exploration.  In other words, one can perform importance resampling on the particles in between the `update` steps.  The resulting kind of incremental SIR is often called a *bootstrap* in the literature.
+# Let's begin picturing the step-by-step nature of SMC:
+
+# %%
+function frame_from_weighted_traces(world, title, path, path_label, traces, log_weights, trace_label; show_clutters=false, min_alpha=0.03)
+    the_plot = plot_world(world, title; show_clutters=show_clutters)
+
+    if !isnothing(path)
+        plot!(path; label=path_label, color=:brown)
+        plot!(path[get_args(traces[1])[1]+1]; label=nothing, color=:black)
+    end
+
+    norm_weights = exp.(log_weights .- logsumexp(log_weights))
+    for (trace, weight) in zip(traces, norm_weights)
+        alpha = max(min_alpha, 0.6*sqrt(weight))
+        poses = get_path(trace)
+        plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=trace_label, color=:green, alpha=alpha)
+        plot!(poses[end]; color=:green, alpha=alpha, label=nothing)       
+        plot!([Segment(p1, p2) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
+              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=alpha)
+        trace_label = nothing
+    end
+
+    return the_plot
+end
+
+function frame_from_info(world, title, path, path_label, info, info_label; show_clutters=false, min_alpha=0.03)
+    t = get_args(info.traces[1])[1]
+    the_plot = frame_from_weighted_traces(world, title * "\nt=$t|" * info.label, path, path_label,
+                    info.traces, info.log_weights, info_label; show_clutters=show_clutters, min_alpha=min_alpha)
+    if haskey(info, :vizs)
+        plot!(info.vizs[1].objs...; info.vizs[1].params...)
+    end
+    return the_plot
+end;
+
+# %%
+N_particles = 10
+infos = particle_filter_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles)
+
+ani = Animation()
+for info in infos
+    frame_plot = frame_from_info(world, "Run of PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/pf_animation_low.gif", fps=1)
+
+# %%
+N_particles = 10
+infos = particle_filter_infos(full_model, T, full_model_args, constraints_high_deviation, N_particles)
+
+ani = Animation()
+for info in infos
+    frame_plot = frame_from_info(world, "Run of PF", path_high_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/pf_animation_high.gif", fps=1)
 
 # %% [markdown]
 # ### Bootstrap
