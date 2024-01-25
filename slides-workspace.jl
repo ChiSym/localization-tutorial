@@ -2334,6 +2334,13 @@ end
 gif(ani, "imgs/controlled_smcp3_with_code.gif", fps=1)
 
 # %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+grid_n_points_start = [3, 3, 3]
+grid_sizes_start = [.7, .7, π/10]
+grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
+
 weight_change_bound = (-1. * 10^5)/20
 
 # TODO: FIXME
