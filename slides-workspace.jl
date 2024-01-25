@@ -1876,7 +1876,7 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    push!(infos, (type = :initialize, time = now(), label = "sample from prior", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
@@ -2137,7 +2137,7 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    push!(infos, (type = :initialize, time = now(), label = "sample from prior", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
