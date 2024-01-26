@@ -1,23 +1,23 @@
+function split_first(str, substr)
+    res = split(str, substr; limit=2)
+    return length(res) == 2 ? res : (res[1], nothing)
+end
+
 # Breakage of `block` is triggered by
 # * "!["
 # * followed by an optional charcter 'c' or 'm' for "code" or "math" (as opposed to plain text)
-# * followed by a nonempty comma-separated sequence of Ints
+# * followed by a (possibly empty) comma-separated sequence of Ints
 # * followed by "["
 # and terminated by "]]!".
 function parse_highlights(block)
     pieces = []
     remainder = block
     while remainder != ""
-        start_brackets = findfirst("![", remainder)
-        if isnothing(start_brackets)
-            push!(pieces, (:text, [], remainder))
-            remainder = ""
-        else
-            if start_brackets[1] > 1
-                push!(pieces, (:text, [], remainder[1:start_brackets[1]-1]))
-            end
-            remainder = remainder[start_brackets[1]+2:end]
+        (head, remainder) = split_first(remainder, "![")
 
+        if head != ""; push!(pieces, (:none, [], head)) end
+
+        if !isnothing(remainder)
             if remainder[1] == 'c'
                 mode = :code
                 remainder = remainder[2:end]
@@ -28,22 +28,18 @@ function parse_highlights(block)
                 mode = :text
             end
 
-            past_digits = findfirst("[", remainder)
+            (head, remainder) = split_first(remainder, "[")
             labels = []
-            labels_str = remainder[1:past_digits[1]-1]
-            chunk = findfirst(",", labels_str)
-            while !isnothing(chunk)
-                push!(labels, parse(Int, labels_str[1:chunk[1]-1]))
-                labels_str = labels_str[chunk[1]+1:end]
-                chunk = findfirst(",", labels_str)
+            (num, head) = split_first(head, ",")
+            while !isnothing(head)
+                push!(labels, parse(Int, num))
+                (num, head) = split_first(head, ",")
             end
-            push!(labels, parse(Int, labels_str))
-            remainder = remainder[past_digits[1]+1:end]
+            if num != ""; push!(labels, parse(Int, num)) end
 
-            past_brackets = findfirst("]]!", remainder)
-            @assert !isnothing(past_brackets) "concluding exclamation char?"
-            push!(pieces, (mode, labels, remainder[1:past_brackets[1]-1]))
-            remainder = remainder[past_brackets[1]+3:end]
+            (head, remainder) = split_first(remainder, "]]!")
+            push!(pieces, (mode, labels, head))
+            @assert !isnothing(remainder) "concluding exclamation char?"
         end
     end
     return pieces
@@ -57,7 +53,11 @@ function process_piece(mode, piece)
     end
 end
 
-# The param `varwidth_frac` is roughly (not exactly) an aspect ratio, controls truncation on the right.
+# The param `varwidth_frac` is roughly (not exactly) an aspect ratio,
+# controls truncation on the right.
+# Without `n_labels` param, numerical labels are ignored and all highlights occur in a single output.
+# When `n_labels` param is supplied, a list of this many outputs produced,
+# with only label `i` highlighted in the `i`th output.
 function highlighted_versions(pieces, border, varwidth_frac; n_labels=nothing)
     file_start_1 = "\\documentclass[crop=true,border={"
     file_start_2 = "pt 0pt 0pt 0pt},varwidth="
@@ -118,8 +118,8 @@ function highlighted_versions(pieces, border, varwidth_frac; n_labels=nothing)
 
     if isnothing(n_labels)
         version = file_start_1 * "$(border)" * file_start_2 * "$(varwidth_frac)" * file_start_3
-        for (mode, label, piece) in pieces
-            if !isempty(label)
+        for (mode, _, piece) in pieces
+            if mode != :none
                 version = version * highlight_start[mode] * process_piece(mode, piece) * highlight_end[mode]
             else
                 version = version * piece
@@ -132,7 +132,7 @@ function highlighted_versions(pieces, border, varwidth_frac; n_labels=nothing)
         for i in 1:n_labels
             version = file_start_1 * "$(border)" * file_start_2 * "$(varwidth_frac)" * file_start_3
             for (mode, labels, piece) in pieces
-                if i in labels
+                if mode != :none && i in labels
                     version = version * highlight_start[mode] * process_piece(mode, piece) * highlight_end[mode]
                 else
                     version = version * piece
