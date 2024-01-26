@@ -1005,14 +1005,14 @@ graph_frames = frames_from_full_trace(world, "Full model (sample)", trace)
 partners =
     [(full_trace_slide_files[1], full_model_code_files[1], graph_frames[1]),
      (full_trace_slide_files[2], full_model_code_files[2], graph_frames[2]),
-     [(f, path_model_loop_files[isodd(i) ? 3 : 4], g) for (i, (f, g)) in enumerate(zip(path_trace_slide_files[3:end], graph_frames[3:end]))]...]
+     [(f, full_model_code_files[isodd(i) ? 3 : 4], g) for (i, (f, g)) in enumerate(zip(path_trace_slide_files[3:end], graph_frames[3:end]))]...]
 
-l = @layout [a{0.15h} ; [b c]]
+l = @layout [[a ; b] c]
 ani = Animation()
 for (trace_file, code_file, graph) in partners
     code_plot = plot(load(code_file); axis=([], false), size=(2000,700))
     trace_plot = plot(load(trace_file); axis=([], false), size=(2000,700))
-    frame(ani, plot(code_plot, trace_plot, graph; layout=l, size=(2000,2000)))
+    frame(ani, plot(code_plot, graph, trace_plot; layout=l, size=(2000,2000)))
 end
 gif(ani, "imgs/full_model_with_trace.gif", fps=1)
 
