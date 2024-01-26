@@ -12,7 +12,7 @@ end
 function parse_highlights(block)
     pieces = []
     remainder = block
-    while remainder != ""
+    while !isnothing(remainder) && remainder != ""
         (head, remainder) = split_first(remainder, "![")
 
         if head != ""; push!(pieces, (:none, [], head)) end
@@ -29,6 +29,8 @@ function parse_highlights(block)
             end
 
             (head, remainder) = split_first(remainder, "[")
+            @assert !isnothing(remainder) "![ not followed by ["
+
             labels = []
             (num, head) = split_first(head, ",")
             while !isnothing(head)
@@ -38,8 +40,9 @@ function parse_highlights(block)
             if num != ""; push!(labels, parse(Int, num)) end
 
             (head, remainder) = split_first(remainder, "]]!")
+            @assert !isnothing(remainder) "![...[ not followed by ]]! (concluding exclamation char?)"
+
             push!(pieces, (mode, labels, head))
-            @assert !isnothing(remainder) "concluding exclamation char?"
         end
     end
     return pieces
