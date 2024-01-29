@@ -1901,10 +1901,8 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
     end
 
     return infos
-end
+end;
 
-controlled_particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier; MAX_rejuv=3) =
-    final_particles(controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier; MAX_rejuv=MAX_rejuv));
 
 # %%
 N_particles = 10
