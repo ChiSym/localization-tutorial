@@ -571,36 +571,6 @@ end;
 # %% [markdown]
 # The models `path_model_loop` and `path_model` have been arranged to produce identically structured traces with the same frequencies and return values, and to correspond to identical distributions over traces in the mathematical picture, thereby yielding the same weights.  They give rise to identical computations under `Gen.simulate`, whereas the new model is sometimes more efficient under `Gen.update`.  Here we illustrate the efficiency gain.
 #
-# (The following cell may need to be rerun to ameliorate Julia garbage collection artifacts.)
-
-# %%
-N_repeats = 100
-robot_inputs_long = (robot_inputs..., controls = reduce(vcat, [robot_inputs.controls for _ in 1:N_repeats]))
-
-time_ends_loop = Vector(undef, T * N_repeats)
-time_start = now()
-trace = simulate(path_model_loop, (0, robot_inputs_long, world_inputs, motion_settings))
-for t in 1:(T * N_repeats)
-    trace, _, _, _ = update(trace, (t, robot_inputs_long, world_inputs, motion_settings), change_only_T, choicemap())
-    time_ends_loop[t] = now()
-end
-time_diffs_loop = value.(time_ends_loop - [time_start, time_ends_loop[1:end-1]...])
-println("Explicit loop: $(value(time_ends_loop[end]-time_start))ms")
-
-time_ends_chain = Vector(undef, T * N_repeats)
-time_start = now()
-trace = simulate(path_model, (0, robot_inputs_long, world_inputs, motion_settings))
-for t in 1:(T * N_repeats)
-    trace, _, _, _ = update(trace, (t, robot_inputs_long, world_inputs, motion_settings), change_only_T, choicemap())
-    time_ends_chain[t] = now()
-end
-time_diffs_chain = value.(time_ends_chain - [time_start, time_ends_chain[1:end-1]...])
-println("Markov chain combinator: $(value(time_ends_chain[end]-time_start))ms")
-
-the_plot = plot([range(1, T * N_repeats)...], time_diffs_loop; label="Explicit loop", title="Gen.update steps into trace", xlabel="t'th step", ylabel="time (ms)")
-plot!([range(1, T * N_repeats)...], time_diffs_chain; label="Markov chain combinator")
-savefig("imgs/dynamic_static_comparison")
-the_plot
 # (The noise in the graph is an artifact of Julia's garbage collection.)
 #
 # ![](imgs_stable/dynamic_static_comparison.png)
@@ -1839,45 +1809,8 @@ the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_de
 savefig("imgs/PF_controller")
 the_plot
 
-# %%
-infos = controlled_particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)
-
-ani = Animation()
-for info in infos
-    frame_plot = frame_from_info(world, "Run of Controlled PF + SMCP3/Grid", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/pf_controller_animation_low.gif", fps=1)
-
-# %%
-infos = controlled_particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)
-
-ani = Animation()
-for info in infos
-    frame_plot = frame_from_info(world, "Run of Controlled PF + SMCP3/Grid", path_high_deviation, "path to fit", info, "particles"; min_alpha=0.08)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/pf_controller_animation_high.gif", fps=1)
-
 # %% [markdown]
 # ### MCMC rejuvenation / Gaussian drift proposal
-
-# %%
-function mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
-    proposed_particle, proposed_log_weight, viz = mcmc_proposal(particle, log_weight, mcmc_args)
-    return mcmc_rule([particle, proposed_particle], [log_weight, proposed_log_weight])..., viz
-end
-mcmc_kernel(mcmc_proposal, mcmc_rule) =
-    (particle, log_weight, mcmc_args) -> mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
-
-boltzmann_rule = sample
-
-# Assumes `particles` is ordered so that first item is the original and second item is the proposed.
-function mh_rule(particles, log_weights)
-    @assert length(particles) == length(log_weights) == 2
-    acceptance_ratio = min(1., exp(log_weights[2] - log_weights[1]))
-    return (bernoulli(acceptance_ratio) ? particles[2] : particles[1]), log_weights[1]
-end;
 
 # %%
 @gen function drift_fwd_proposal(trace, drift_factor)
