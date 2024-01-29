@@ -249,6 +249,11 @@ savefig("imgs/given_data")
 the_plot
 
 # %% [markdown]
+# We can also visualize the behavior of the model of physical motion:
+#
+# ![](imgs_stable/physical_motion.gif)
+
+# %% [markdown]
 # ## Gen basics
 #
 # As said initially, we are uncertain about the true initial position and subsequent motion of the robot.  In order to reason about these, we now specify a model using `Gen`.
@@ -485,6 +490,11 @@ function frames_from_motion_trace(world, title, trace; show_clutters=false, std_
     return plots
 end;
 
+# %% [markdown]
+# Here is what a step through the code looks like:
+#
+# ![](imgs_stable/path_model_with_trace.gif)
+
 # %%
 N_samples = 5
 
@@ -591,6 +601,9 @@ the_plot = plot([range(1, T * N_repeats)...], time_diffs_loop; label="Explicit l
 plot!([range(1, T * N_repeats)...], time_diffs_chain; label="Markov chain combinator")
 savefig("imgs/dynamic_static_comparison")
 the_plot
+# (The noise in the graph is an artifact of Julia's garbage collection.)
+#
+# ![](imgs_stable/dynamic_static_comparison.png)
 
 # %% [markdown]
 # Owing to the efficiency comparison, we eschew `path_model_loop` in favor of `path_model` in what follows.  Thus we finally write our noisy path integration wrapper.
@@ -791,6 +804,11 @@ function frames_from_full_trace(world, title, trace; show_clutters=false, std_de
     end
     return plots
 end;
+
+# %% [markdown]
+# Here is a stepping through the code:
+#
+# ![](imgs_stable/full_model_with_trace.gif)
 
 # %%
 N_samples = 5
@@ -1039,7 +1057,7 @@ the_plot
 # %%
 # Load function `black_box_inference(constraints)`.
 
-include("black-box.jl")
+include("black_box.jl")
 
 # %%
 # Visualize distributions over traces.
@@ -1064,13 +1082,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [black_box_inference(constraints_low_deviation) for _ in 1:N_samples]
+traces = [BlackBox.black_box_inference(full_model, full_model_args, T, constraints_low_deviation) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
 t1 = now()
-traces = [black_box_inference(constraints_high_deviation) for _ in 1:N_samples]
+traces = [BlackBox.black_box_inference(full_model, full_model_args, T, constraints_high_deviation) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "posterior samples")
@@ -1409,6 +1427,13 @@ function particle_filter_bootstrap(model, T, args, constraints, N_particles)
     return traces, log_weights
 end;
 
+# %% [markdown]
+# Let's walk through the effect of resampling:
+#
+# ![](imgs_stable/bootstrap_with_code.gif)
+#
+# Here is the aggregate behavior:
+
 # %%
 N_particles = 10
 
@@ -1645,6 +1670,13 @@ grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal);
 end
 
 grid_smcp3_kernel_exact = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_exact);
+
+# %% [markdown]
+# Here is a visual on a run of the algorithm:
+#
+# ![](imgs_stable/smcp3_with_code.gif)
+#
+# And here is the aggregate behavior:
 
 # %%
 N_particles = 10
