@@ -949,34 +949,53 @@ log_weight - project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]
 #
 # We return to how the model offers a numerical benchmark for how good a fit the integrated path is.
 #
-# The strategy is to `generate` traces constrained to the sensor observations, in effect just sampling typical paths from the path model, and tabulate the distribution of the densities of the observations by `project`ing onto their addresses.  We can then compare the density of the observations in the integrated path against this baseline.
-#
-# CODE BELOW DOES NOT DO THIS  
-# REDESIGN WITH VIKASH WHAT THIS IS / SHOULD BE
+# In words, the data are incongruously unlikely for the integrated path.  The (log) density of the measurement data, given the integrated path...
+
+# %%
+constraints_path_integrated =
+    choicemap(((prefix_address(t, :pose => :p), path_integrated[t].p) for t in 1:(T+1))...,
+              ((prefix_address(t, :pose => :hd), path_integrated[t].hd) for t in 1:(T+1))...)
+
+constraints_path_integrated_observations_low_deviation =
+    merge(constraints_path_integrated, merged_constraints_low_deviation)
+constraints_path_integrated_observations_high_deviation =
+    merge(constraints_path_integrated, merged_constraints_high_deviation)
+
+trace_path_integrated_observations_low_deviation, _ =
+    generate(full_model, (T, full_model_args...), constraints_path_integrated_observations_low_deviation)
+trace_path_integrated_observations_high_deviation, _ =
+    generate(full_model, (T, full_model_args...), constraints_path_integrated_observations_high_deviation);
+
+selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
+
+println("Log density of low deviation observations assuming integrated path: $(project(trace_path_integrated_observations_low_deviation, selection))")
+println("Log density of high deviation observations assuming integrated path: $(project(trace_path_integrated_observations_high_deviation, selection))");
+
+# %% [markdown]
+# ...more closely resembles the density of these data back-fitted onto any other typical (random) paths of the model...
 
 # %%
 N_samples = 200
 
-selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
-
-traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
-hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data")
-
 traces_generated_low_deviation = [generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)[1] for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_generated_low_deviation]
-hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="low dev data")
+hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="low dev data, typical paths")
 
 traces_generated_high_deviation = [generate(full_model, (T, full_model_args...), merged_constraints_high_deviation)[1] for _ in 1:N_samples]
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_generated_high_deviation]
-hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="high dev data")
+hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="high dev data, typical paths")
 
-the_plot = plot(hist_typical, hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Log likelihood of observations under the model")
+the_plot = plot(hist_low_deviation, hist_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Log density of observations under the model")
 savefig("imgs/likelihoods")
 the_plot
 
 # %% [markdown]
-# Note the differences in scales along the bottom...
+# ...than the log densities of data typically produced by the complete model run in its natural manner (*compare the scale at the bottom*):
+
+# %%
+traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
+hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="Log density of observations under the model\ntypical traces")
 
 # %% [markdown]
 # ### Inference: demonstration
@@ -1030,15 +1049,10 @@ savefig("imgs/prior_posterior")
 the_plot
 
 # %% [markdown]
-# Numerical comparison FIXME
+# All of the traces thus produced have observations constrained to the data.  The log densities of the observations under their typical samples show some improvement:
 
 # %%
 N_samples = 100
-
-selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
-traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
-hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data under prior")
 
 traces_posterior_low_deviation = [BlackBox.black_box_inference(full_model, full_model_args, T, constraints_low_deviation) for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_posterior_low_deviation]
@@ -1048,7 +1062,7 @@ traces_posterior_high_deviation = [BlackBox.black_box_inference(full_model, full
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_posterior_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="typical data under posterior: high dev data")
 
-the_plot = plot(hist_typical, hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Log likelihood of observations")
+the_plot = plot(hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,2), plot_title="Log likelihood of observations")
 savefig("imgs/likelihoods")
 the_plot
 
