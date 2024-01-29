@@ -1308,7 +1308,7 @@ the_plot
 # We now begin to exploit the structure of the problem in significant ways to construct good candidate traces for the posterior.  Especially, we use the Markov chain structure to construct these traces step-by-step.  While generic algorithms like SIR and rejection sampling must first construct full paths $\text{trace}_{0:T}$ and then sift among them using the observations $o_{0:T}$, we may instead generate one $\text{trace}_t$ at a time, taking into account the datum $o_t$.  Since then one is working with only a few dimensions any one time step, more intelligent searches become computationally feasible.
 
 # %% [markdown]
-# ### Particle filter and bootstrap
+# ### Particle filter
 #
 # Above, the function `importance_sample` produced a family of particles, each particle being `generate`d all in one go, together with the density of the observations relative to that path.
 #
@@ -1362,7 +1362,67 @@ end;
 # %% [markdown]
 # This refactoring is called a *particle filter* because it of how it spreads the reasoning out along the time axis.  It has the important effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
 #
-# One simple intervention is to prune out the particles at each time step that don't appear to be good candidates, and replace them with copies of the better ones before further exploration.  In other words, one can perform importance resampling on the particles in between the `update` steps.  The resulting kind of incremental SIR is often called a *bootstrap* in the literature.
+# Let's begin by picturing the step-by-step nature of SMC:
+
+# %%
+function frame_from_weighted_traces(world, title, path, path_label, traces, log_weights, trace_label; show_clutters=false, min_alpha=0.03)
+    the_plot = plot_world(world, title; show_clutters=show_clutters)
+
+    if !isnothing(path)
+        plot!(path; label=path_label, color=:brown)
+        plot!(path[get_args(traces[1])[1]+1]; label=nothing, color=:black)
+    end
+
+    norm_weights = exp.(log_weights .- logsumexp(log_weights))
+    for (trace, weight) in zip(traces, norm_weights)
+        alpha = max(min_alpha, 0.6*sqrt(weight))
+        poses = get_path(trace)
+        plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=trace_label, color=:green, alpha=alpha)
+        plot!(poses[end]; color=:green, alpha=alpha, label=nothing)       
+        plot!([Segment(p1, p2) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
+              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=alpha)
+        trace_label = nothing
+    end
+
+    return the_plot
+end
+
+function frame_from_info(world, title, path, path_label, info, info_label; show_clutters=false, min_alpha=0.03)
+    t = get_args(info.traces[1])[1]
+    the_plot = frame_from_weighted_traces(world, title * "\nt=$t|" * info.label, path, path_label,
+                    info.traces, info.log_weights, info_label; show_clutters=show_clutters, min_alpha=min_alpha)
+    if haskey(info, :vizs)
+        plot!(info.vizs[1].objs...; info.vizs[1].params...)
+    end
+    return the_plot
+end;
+
+# %%
+N_particles = 10
+infos = particle_filter_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles)
+
+ani = Animation()
+for info in infos
+    frame_plot = frame_from_info(world, "Run of PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/pf_animation_low.gif", fps=1)
+
+# %%
+N_particles = 10
+infos = particle_filter_infos(full_model, T, full_model_args, constraints_high_deviation, N_particles)
+
+ani = Animation()
+for info in infos
+    frame_plot = frame_from_info(world, "Run of PF", path_high_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/pf_animation_high.gif", fps=1)
+
+# %% [markdown]
+# ### Bootstrap
+#
+# One simple observation is that most of the partially proposed paths are clearly bad candidates from an early time.  We may intervene by pruning them out, say, replacing them with copies of the better ones before further exploration.  In other words, one can perform importance resampling on the particles in between the `update` steps.  The resulting kind of incremental SIR is often called a *bootstrap* in the literature.
 
 # %%
 function particle_filter_bootstrap(model, T, args, constraints, N_particles)
@@ -1536,44 +1596,6 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     end
 
     return infos
-end
-
-final_particles(infos) = (infos[end].traces, infos[end].log_weights)
-
-particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule) =
-    final_particles(particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule));
-
-# %%
-function frame_from_weighted_traces(world, title, path, path_label, traces, log_weights, trace_label; show_clutters=false, min_alpha=0.03)
-    the_plot = plot_world(world, title; show_clutters=show_clutters)
-
-    if !isnothing(path)
-        plot!(path; label=path_label, color=:brown)
-        plot!(path[get_args(traces[1])[1]+1]; label=nothing, color=:black)
-    end
-
-    norm_weights = exp.(log_weights .- logsumexp(log_weights))
-    for (trace, weight) in zip(traces, norm_weights)
-        alpha = max(min_alpha, 0.6*sqrt(weight))
-        poses = get_path(trace)
-        plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=trace_label, color=:green, alpha=alpha)
-        plot!(poses[end]; color=:green, alpha=alpha, label=nothing)       
-        plot!([Segment(p1, p2) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
-              label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=alpha)
-        trace_label = nothing
-    end
-
-    return the_plot
-end
-
-function frame_from_info(world, title, path, path_label, info, info_label; show_clutters=false, min_alpha=0.03)
-    t = get_args(info.traces[1])[1]
-    the_plot = frame_from_weighted_traces(world, title * "\nt=$t|" * info.label, path, path_label,
-                    info.traces, info.log_weights, info_label; show_clutters=show_clutters, min_alpha=min_alpha)
-    if haskey(info, :vizs)
-        plot!(info.vizs[1].objs...; info.vizs[1].params...)
-    end
-    return the_plot
 end;
 
 # %% [markdown]
