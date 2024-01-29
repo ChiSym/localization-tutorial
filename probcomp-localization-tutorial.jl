@@ -1137,14 +1137,12 @@ end;
 # The first of many problems with rejection sampling is the tractability of determining an upper bound $C$!  (This is independent of the intractability of determining the constant $Z$ above relating $f$ back to $\hat f$.)
 #
 # We can try to make do anyway, using a number $C > 0$ that is *guess* at an upper bound; when we proceed with this $C$ under the assumption that it bounds $f$, the resulting algorithm is called *approximate rejection sampling*.  But what to do if we encounter a sample $z$ with $f(z) > C$?  If our policy is to replace $C$ with this new larger quantity and keep going, the resulting algorithm is called *adaptive approximate rejection sampling*.  Earlier samples, with a too-low intitial value for $C$, may occur with too high absolute frequency.  But over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
-#
-# ***DISCUSS THE EPISTEMOLOGY***
 
 # %%
 function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_attempts)
-    particles = []
     C = maximum(generate(model, args, merged_constraints)[2] for _ in 1:N_burn_in; init=-Inf)
 
+    particles = []
     for _ in 1:N_particles
         attempts = 0
         while attempts < MAX_attempts
@@ -1152,11 +1150,8 @@ function rejection_sample(model, args, merged_constraints, N_burn_in, N_particle
 
             # The use of `generate` is as explained in the preceding section.
             particle, weight = generate(model, args, merged_constraints)
-            if weight > C
-                C = weight
-                push!(particles, particle)
-                break
-            elseif weight > C + log(rand())
+            if weight > C + log(rand())
+                if weight > C; C = weight end
                 push!(particles, particle)
                 break
             end
@@ -1165,6 +1160,9 @@ function rejection_sample(model, args, merged_constraints, N_burn_in, N_particle
 
     return particles
 end;
+
+# %% [markdown]
+# In the following examples, compare the requested number of particles (`N_particles`) to the number of particles found within the compute budget (`MAX_attempts`), as reported in the graph.
 
 # %%
 T_short = 6
@@ -1180,7 +1178,7 @@ println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. 
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)],
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i of $(length(traces)))", path_low_deviation[1:(T_short+1)],
                                    "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
@@ -1198,7 +1196,7 @@ println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. 
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)],
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i of $(length(traces)))", path_low_deviation[1:(T_short+1)],
                                    "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
@@ -1216,18 +1214,18 @@ println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. 
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i)", path_low_deviation[1:(T_short+1)],
+    frame_plot = frame_from_traces(world, "RS (particles 1 to $i of $(length(traces)))", path_low_deviation[1:(T_short+1)],
                                    "path to fit", traces[1:i], "RS samples")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/RS_3.gif", fps=1)
 
 # %% [markdown]
-# The performance dynamics of this algorithm is a fun EXERCISE!
+# The performance dynamics of this algorithm an instructive exercise to game out.
 #
 # In general, as $C$ increases, the algorithm is increasingly *wasteful*, rejecting more samples overall, and taking longer to find likely hits.
 #
-# So long as it indeed bounds above all values of $f(z)$ that we encounter, the algorithm isn't nonsense, but if the proposal $Q$ is unlikely to generate representative samples for the target $P$ at all, all we are doing is improving the shape of the noise.
+# So long as it indeed bounds above all values of $f(z)$ that we encounter, the algorithm isn't nonsense, but if the proposal $Q$ is unlikely to generate representative samples for the target $P$ at all, all we are doing is adjusting the shape of the noise.
 
 # %% [markdown]
 # ### Sampling / importance resampling
