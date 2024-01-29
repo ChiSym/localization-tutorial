@@ -1738,8 +1738,14 @@ the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_de
 savefig("imgs/PF_SMCP3_grid")
 the_plot
 
+# %% [markdown]
+# The speed of this approach is already perhaps an issue.
+
 # %%
-# The following code runs ~15x slower than the preceding, so it is default disabled.
+# While the above code runs a fast but less mathematically precise backwards proposal,
+# the following code runs the mathematically locally optimal backwards proposal.
+# It turns out this backwards proposal is ~15x slower, without discernably better
+# results, as you can see for yourself if you choose to uncomment, run, and compare it.
 
 # N_particles = 10
 # ESS_threshold =  1. + N_particles / 10.
