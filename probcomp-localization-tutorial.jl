@@ -1885,7 +1885,7 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
                 # push!(infos, (type = :regenerate, label = "regenernate", traces = copy(traces), log_weights = copy(log_weights)))
 
                 traces, weights = resample_ESS(traces, log_weights, ESS_threshold)
-                push!(infos, (type = :resample, time=now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+                push!(infos, (type = :resample2, time=now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
             end
 
             rejuv_count += 1
