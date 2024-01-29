@@ -792,44 +792,6 @@ end
 gif(ani, "imgs/full_1.gif", fps=2)
 
 # %% [markdown]
-# ### Aside: abstracting essential features of generative functions, traces, and weights
-
-# %% [markdown]
-# #### Tree structure
-
-# %%
-@gen function example_sub_gf(p)
-    foo ~ bernoulli(p)
-    return foo ? "asdf" : -4
-end
-
-@gen function example_sup_gf(p)
-    {:call} ~ example_sub_gf(p)
-    {:bar} ~ normal(0., 1.)
-    return 7
-end
-
-example_trace = simulate(example_sup_gf, (0.5,))
-get_choices(example_trace)
-
-# %% [markdown]
-# #### Mathy picture
-#
-# TBD REVISE SIMPLIFY:
-#
-# For a particular GF, we call another function a *well-defined function of its traces* if it is a function of traces that invokes only valid choice addresses for every possible stochastic execution of the GF.
-#
-# [Some particular GFs, upon examination, may be determined to only produce traces satisfying certain constraints, so that certain functions of their traces are valid for all possible stochastic executions.  (For a conservative example, certain addresses might always exist, and the function might extract only these choices from the traces.)  We call the latter function a *well-defined function on traces* of the former GF.]
-#
-# A generative function in Gen can be mathematically modeled as specifying a probability distribution over the space of all traces, with some subset thereof as its support.  A well-defined function of its traces then corresponds to a random variable.
-#
-#
-#
-# Generally, if $P$ is a distribution depending on parameters $\theta$, then we write $P(z; \theta)$ for the probability density associated to the value $z$, and we write $z \sim P(\cdot\,; \theta)$ to declare that the value $z$ has been sampled according to these densities.  Thus the semicolon delimits general parameters.  When parameters are fixed and understood from context, we may delete them and write, say, $P(z)$ or $z \sim P(\cdot)$.
-#
-#
-
-# %% [markdown]
 # ## The data
 #
 # Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.  We will generate two versions, one each with low or high motion deviation.
