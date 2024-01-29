@@ -1903,6 +1903,10 @@ function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_p
     return infos
 end;
 
+# %% [markdown]
+# Here is a stepping through:
+#
+# ![](imgs_stable/controlled_smcp3_with_code.gif)
 
 # %%
 N_particles = 10
