@@ -1040,11 +1040,11 @@ traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_sam
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
 hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="typical data under prior")
 
-traces_posterior_low_deviation = [black_box_inference(constraints_low_deviation) for _ in 1:N_samples]
+traces_posterior_low_deviation = [BlackBox.black_box_inference(full_model, full_model_args, T, constraints_low_deviation) for _ in 1:N_samples]
 log_likelihoods_low_deviation = [project(trace, selection) for trace in traces_posterior_low_deviation]
 hist_low_deviation = histogram(log_likelihoods_low_deviation; label=nothing, bins=20, title="typical data under posterior: low dev data")
 
-traces_posterior_high_deviation = [black_box_inference(constraints_high_deviation) for _ in 1:N_samples]
+traces_posterior_high_deviation = [BlackBox.black_box_inference(full_model, full_model_args, T, constraints_high_deviation) for _ in 1:N_samples]
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_posterior_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="typical data under posterior: high dev data")
 
