@@ -1273,6 +1273,8 @@ sampling_importance_resampling_library(model, args, merged_constraints, N_SIR) =
 # For a short path, SIR can improve from chaos to a somewhat coarse/noisy fit without too much effort.
 
 # %%
+T_short = 6
+
 N_samples = 10
 N_SIR = 500
 t1 = now()
@@ -1742,9 +1744,14 @@ controlled_particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_t
     final_particles(controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier; MAX_rejuv=MAX_rejuv));
 
 # %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
 weight_change_bound = (-1. * 10^5)/20
 
-# TODO: FIXME
+grid_n_points_start = [3, 3, 3]
+grid_sizes_start = [.7, .7, π/10]
+grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
+
 grid_args_schedule_modifier(args_schedule, rejuv_count) =
     (rejuv_count % 1 == 0) ?
         [(nsteps, sizes .* 0.75) for (nsteps, sizes) in args_schedule] :
