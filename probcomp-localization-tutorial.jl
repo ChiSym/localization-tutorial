@@ -1943,6 +1943,10 @@ the_plot
 
 # %% [markdown]
 # ### MCMC rejuvenation / Gaussian drift proposal
+#
+# A faster rejuvenation strategy than a grid search is to simply giggle the point.
+#
+# This proposal is fast enough that we need not use the inference controller.
 
 # %%
 @gen function drift_fwd_proposal(trace, drift_factor)
@@ -1996,9 +2000,10 @@ end
            choicemap((:drift_p, drift_p), (:drift_hd, drift_hd))
 end
 
-drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal)
-drift_boltzmann_kernel = mcmc_kernel(drift_smcp3_kernel, boltzmann_rule)
-drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
+drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
+
+# %% [markdown]
+# A fair criticism is that this forward proposal in no way improves the samples; it only jiggles them.  So, on its own, the resulting algorithm is little different from the bootstrap on the original motion model with a higher motion noise parameter.
 
 # %%
 N_particles = 10
@@ -2025,6 +2030,35 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Drift")
 savefig("imgs/PF_SMCP3_drift")
 the_plot
+
+# %% [markdown]
+# We can compromise between the grid search and giggling.  The idea is to perform a mere two-element search that compares the given point with the random one, or rather to resample from the pair.  This would have a chance of improving sample quality, without spending much time searching for the improvement.
+#
+# The resulting algorithm is conventionally called "MCMC rejuvenation", and our strategy to resample between the pair amounts to the "Boltzmann acceptance rule".  A even more common acceptance rule that slightly biases in favor of the jiggled sample is called the "Metropolis–Hastings acceptance rule".
+
+# %%
+function mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
+    proposed_particle, proposed_log_weight, viz = mcmc_proposal(particle, log_weight, mcmc_args)
+    return mcmc_rule([particle, proposed_particle], [log_weight, proposed_log_weight])..., viz
+end
+mcmc_kernel(mcmc_proposal, mcmc_rule) =
+    (particle, log_weight, mcmc_args) -> mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
+
+boltzmann_rule = sample
+
+# Assumes `particles` is ordered so that first item is the original and second item is the proposed.
+# Notes:
+# * If the proposed item has higher weight, it is accepted unconditionally.  There is an overall bias.
+# * In all cases, the weight is unchanged.
+function mh_rule(particles, log_weights)
+    @assert length(particles) == length(log_weights) == 2
+    acceptance_ratio = min(1., exp(log_weights[2] - log_weights[1]))
+    return (bernoulli(acceptance_ratio) ? particles[2] : particles[1]), log_weights[1]
+end;
+
+# %%
+drift_boltzmann_kernel = mcmc_kernel(drift_smcp3_kernel, boltzmann_rule)
+drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
 
 # %%
 N_particles = 10
