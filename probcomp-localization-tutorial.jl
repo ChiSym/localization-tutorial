@@ -1516,30 +1516,6 @@ savefig("imgs/PF_1")
 the_plot
 
 # %% [markdown]
-# ### Prospects for improving accuracy, robustness, and efficiency
-#
-# Discussion of drawbacks.
-#
-# One approach:
-# * Improve accuracy with more particles.
-# * Improve efficiency with smarter resamples (ESS, stratified...).
-# * Hope robustness is good enough.
-#
-# Clearly not going to be fundamentally better than scaling a large NN, which is similar, just with offline training.
-#
-# ProbComp advocates instead:
-# * A smart algorithm that fixes probable mistakes as it goes along.
-# * One idea: fix mistakes by running MH on each particle.  If MH changes them, then mistakes were fixed.
-#   * With generic Gaussian drift proposal.
-#   * An improvement: grid MH.
-# * Another idea: run SMCP3.
-#   * Get correct weights —>
-#     * algorithm has an estimate of its inference quality (math TBE: AIDE, EEVI papers)
-#     * higher quality resampling
-# * How good can we do, even with one particle?
-#   * Controller
-
-# %% [markdown]
 # ### Rejuvenation
 #
 # Two issues: particle diversity after resampling, and quality of these samples.
@@ -1610,11 +1586,6 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
 
     return infos
 end;
-
-# %% [markdown]
-# ### Properly weighted samples
-#
-# Improve later resampling / end-to-end quality.
 
 # %% [markdown]
 # ### SMCP3 rejuvenation / grid search proposal
