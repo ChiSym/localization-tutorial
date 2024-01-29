@@ -1315,6 +1315,10 @@ the_plot
 # The following function `particle_filter` constructs an indistinguishable stochastic family of weighted particles, each trace built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  (This comes at a small computational overhead: the static DSL combinator largely eliminates recomputation in performing the `update`s, but there is still extra logic, as well as the repeated allocations of the intermediary traces.)
 
 # %%
+# For this algorithm and each of its variants to come,
+# we will present first a plain version of the code for clarity,
+# followed by a logged version for display purposes.
+
 function particle_filter(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1331,6 +1335,28 @@ function particle_filter(model, T, args, constraints, N_particles)
     end
 
     return traces, log_weights
+end
+
+function particle_filter_infos(model, T, args, constraints, N_particles)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    vizs = Vector{NamedTuple}(undef, N_particles)
+    infos = []
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    
+    for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+        push!(infos, (type = :update, time = now(), label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+    end
+
+    return infos
 end;
 
 # %% [markdown]
@@ -1357,6 +1383,31 @@ function particle_filter_bootstrap(model, T, args, constraints, N_particles)
     end
 
     return traces, log_weights
+end
+
+function particle_filter_bootstrap_infos(model, T, args, constraints, N_particles)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    vizs = Vector{NamedTuple}(undef, N_particles)
+    infos = []
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    
+    for t in 1:T
+        traces, log_weights = resample(traces, log_weights)
+        push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+        push!(infos, (type = :update, time = now(), label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+    end
+
+    return infos
 end;
 
 # %% [markdown]
@@ -1421,10 +1472,39 @@ the_plot
 # Two issues: particle diversity after resampling, and quality of these samples.
 
 # %%
+effective_sample_size(log_weights) =
+    exp(-logsumexp(2. * (log_weights .- logsumexp(log_weights))))
+
 resample_ESS(particles, log_weights, ESS_threshold; M=nothing) =
     (effective_sample_size(log_weights .- logsumexp(log_weights)) < ESS_threshold) ?
         resample(particles, log_weights; M=M) :
         (particles, log_weights)
+
+function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+
+    for t in 1:T
+        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+
+        for i in 1:N_particles
+            for rejuv_args in rejuv_args_schedule
+                traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+            end
+        end
+
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+    end
+
+    return traces, log_weights
+end
 
 function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
@@ -1674,6 +1754,62 @@ the_plot
 # We, the inference programmers, do not have to be stuck here; we get to choose how much computing resource to spend on any given example.  For example, we can check a quantitative test for our particle population's suitabiliy as hypotheses, such as a marginal likelihood estimate, and only do as much work is needed to bring this measure to target.
 
 # %%
+function controlled_particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
+    MAX_rejuv=3)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+
+    prev_total_weight = 0.
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+    end
+
+    for t in 1:T
+        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+
+        rejuv_count = 0
+        temp_args_schedule = rejuv_args_schedule
+        while logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count <= MAX_rejuv
+            for i in 1:N_particles
+                for rejuv_args in rejuv_args_schedule
+                    traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                end
+            end
+
+            if logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count != MAX_rejuv && t > 1
+                # Produce entirely new extensions to the last time step by first backing out and then readvancing.
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-2, args...), change_only_T, choicemap())
+                    log_weights[i] += log_weight_increment
+                end
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-1, args...), change_only_T, constraints[t])
+                    log_weights[i] += log_weight_increment
+                end
+
+                # By the way, the following commented lines would accomplish the same (on traces, not infos) as the above two loops.
+                # for i in 1:N_particles
+                #     traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
+                #     log_weights[i] += log_weight_increment
+                # end
+
+                traces, weights = resample_ESS(traces, log_weights, ESS_threshold)
+            end
+
+            rejuv_count += 1
+            temp_args_schedule = args_schedule_modifier(temp_args_schedule, rejuv_count)
+        end
+
+        prev_total_weight = logsumexp(log_weights)
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+    end
+
+    return traces, log_weights
+end
+
 function controlled_particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
                                                 MAX_rejuv=3)
     traces = Vector{Trace}(undef, N_particles)
