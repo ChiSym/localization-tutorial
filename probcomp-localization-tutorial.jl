@@ -241,7 +241,7 @@ end;
 # Following this initial display of the given data, we *suppress the clutters* until much later in the notebook.
 
 # %%
-the_plot = plot_world(world, "Given data", label_world=true, show_clutters=true)
+the_plot = plot_world(world, "Given data", label_world=true)
 plot!(robot_inputs.start; color=:green3, label="given start pose")
 plot!([pose.p[1] for pose in path_integrated], [pose.p[2] for pose in path_integrated];
       color=:green2, label="path from integrating controls", seriestype=:scatter, markersize=3, markerstrokewidth=0)
@@ -343,6 +343,9 @@ trace[:hd]
 get_gen_fn(trace)
 
 # %%
+println("\"Pose([2.0075832118790586, 17.561518944532445],\n      0.06837604385286415)\"")
+
+# %%
 get_args(trace)
 
 # %%
@@ -367,8 +370,31 @@ get_retval(trace)
 # A pose consists of a pair $z = (z_\text p, z_\text{hd})$ where $z_\text p$ is a position vector and $z_\text{hd}$ is an angle.  A control consists of a pair $(s, \eta)$ where $s$ is a distance of displacement and $\eta$ is a change in angle.  Write $u(\theta) = (\cos\theta, \sin\theta)$ for the unit vector in the direction $\theta$.  We are given a "world" $w$ and "motion settings" parameters $\nu = (\nu_\text p, \nu_\text{hd})$.
 #
 # The models `start_pose_prior` and `step_model` correspond to distributions over their traces, respectively written $\text{start}$ and $\text{step}$.  In both cases these traces consist of the choices at addresses `:p` and `:hd`, so they may be identified with poses $z$ as above.  The distributions are defined as follows, when $y$ is a pose:
-# * $z \sim \text{start}(y, \nu)$ means that $z_\text p \sim \text{mvnormal}(y_\text p, \nu_\text p^2 I)$ and $z_\text{hd} \sim \text{normal}(y_\text{hd}, \nu_\text{hd})$ independently.
-# * $z \sim \text{step}(y, (s, \eta), w, \nu)$ means that $z_\text p \sim \text{mvnormal}(y_\text p + s\,u(y_\text{hd}), \nu_\text p^2 I)$ and $z_\text{hd} \sim \text{normal}(y_\text{hd} + \eta, \nu_\text {hd})$ independently.
+#
+# $$
+# \begin{aligned}
+# z \sim \text{start}(y, \nu)
+# &\longleftrightarrow
+# \begin{cases}
+# z_\text p \sim \text{mvnormal}(y_\text p, \nu_\text p^2 I) \\
+# z_\text{hd} \sim \text{normal}(y_\text{hd}, \nu_\text{hd})
+# \end{cases}
+# &
+# P_\text{start}(z)
+# &= P_\text{mvnormal}(z_\text p)
+# \cdot P_\text{normal}(z_\text{hd}) \\
+# z \sim \text{step}(y, (s, \eta))
+# &\longleftrightarrow
+# \begin{cases}
+# z_\text p \sim \text{mvnormal}(y_\text p + s\,u(y_\text{hd}), \nu_\text p^2 I) \\
+# z_\text{hd} \sim \text{normal}(y_\text{hd} + \eta, \nu_\text {hd})
+# \end{cases}
+# &
+# P_\text{step}(z)
+# &= P_\text{mvnormal}(z_\text p)
+# \cdot P_\text{normal}(z_\text{hd})
+# \end{aligned}
+# $$
 #
 # The return values $\text{retval}(z)$ of these models are obtained from traces $z$ by reducing $z_\text{hd}$ modulo $2\pi$, and in the second case applying collision physics (relative to $w$) to the path from $y_\text p$ to $z_\text p$.  (We invite the reader to imagine if PropComp required us to compute the marginal density of the return value here!)  We have the following closed form for the density functions:
 # $$\begin{align*}
@@ -462,8 +488,8 @@ get_selected(get_choices(trace), select((prefix_address(t, :pose) for t in 1:6).
 #
 # In addition to the previous data, we are given an estimated start pose $r_0$ and controls $r_t = (s_t, \eta_t)$ for $t=1,\ldots,T$.  Then `path_model` corresponds to a distribution over traces denoted $\text{path}$; these traces are identified with vectors, namely, $z_{0:T} \sim \text{path}(r_{0:T}, w, \nu)$ is the same as $z_0 \sim \text{start}(r_0, \nu)$ and $z_t \sim \text{step}(z_{t-1}, r_t, w, \nu)$ for $t=1,\ldots,T$.  Here and henceforth we use the shorthand $\text{step}(z, \ldots) := \text{step}(\text{retval}(z), \ldots)$.  The density function is
 # $$
-# P_\text{path}(z_{0:T}; r_{0:T}, w, \nu)
-# = P_\text{start}(z_0; r_0, \nu) \cdot \prod\nolimits_{t=1}^T P_\text{step}(z_t; z_{t-1}, r_t, w, \nu)
+# P_\text{path}(z_{0:T})
+# = P_\text{start}(z_0) \cdot \prod\nolimits_{t=1}^T P_\text{step}(z_t; z_{t-1})
 # $$
 # where each term, in turn, factors into a product of two (multivariate) normal densities as described above.
 
@@ -496,6 +522,63 @@ end;
 # ![](imgs_stable/path_model_with_trace.gif)
 
 # %%
+# trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
+
+# trace_str = [s * "\n" for s in split(sprint(show, MIME("text/plain"), get_choices(trace)), "\n")[1:end-1]]
+
+# initial_i = findfirst(s -> contains(s, ":initial"), trace_str)-1
+# trace_strs = [splice!(trace_str, initial_i:(initial_i+7))]
+
+# push!(trace_strs, splice!(trace_str, 1:2))
+
+# for _ in 1:T
+#     push!(trace_strs, splice!(trace_str, 1:8))
+# end
+# sort!(view(trace_strs, 3:length(trace_strs)), by=s -> parse(Int, s[2][findfirst(r"[0-9]", s[2])[1]:end]))
+
+# hlt(s) = lpad("![c1[" * strip(s) * "]]!\n", length(s)+7)
+# stringify(l) = replace(string([string(s...) for s in l]...), '\u2502' => "|", '\u251C' => "|", '\u2500' => "-", '\u2514' => "|")
+
+# slide_texts = []
+# push!(slide_texts, stringify([map(hlt, trace_strs[1]), trace_strs[2:4]...]))
+# push!(slide_texts, stringify([trace_strs[1], map(hlt, trace_strs[2]), trace_strs[3:4]...]))
+# for i in 1:(T-1)
+#     push!(slide_texts, stringify([trace_strs[i:i+1]..., map(hlt, trace_strs[i+2]), trace_strs[i+3]]))
+# end
+# push!(slide_texts, stringify([trace_strs[T-1:T+1]..., map(hlt, trace_strs[T+2])]))
+
+# path_trace_slide_files = [build_highlighted_pics(lstlisting(slide_text), 0, 1., "imgs/path_trace_slide_$i"; silence=true) for (i, slide_text) in enumerate(slide_texts)]
+
+# path_model_loop_code = """
+# @gen function path_model_loop(T :: Int, ...)
+#     pose = ![c1[{:initial => :pose} ~ start_pose_prior]]!(...)
+
+#     for ![c2[t in 1:T]]!
+#         pose = {![c2[:steps]]! => ![c3[t => :pose]]!} ~ ![c3[step_model]]!(...)
+#     end
+# end
+# """
+# path_model_loop_files = build_highlighted_pics(lstlisting(path_model_loop_code), 20, 1., "imgs/path_model_loop"; n_labels=3, silence=true)
+
+# graph_frames = frames_from_motion_trace(world, "Motion model (sample)", trace)
+
+# partners =
+#     [(path_trace_slide_files[1], path_model_loop_files[1], graph_frames[1]),
+#     (path_trace_slide_files[2], path_model_loop_files[2], graph_frames[1]),
+#     [(f, path_model_loop_files[3], g) for (f, g) in zip(path_trace_slide_files[3:end], graph_frames[2:end])]...]
+
+# formula_plot = plot(load("imgs/path_prob_formula.png"); axis=([], false), size=(2000,700))
+
+l = @layout [[a ; b{0.7h}] [c ; d{0.8h}]]
+ani = Animation()
+for (trace_file, code_file, graph) in partners
+    code_plot = plot(load(code_file); axis=([], false), size=(2000,700))
+    trace_plot = plot(load(trace_file); axis=([], false), size=(2000,700))
+    frame(ani, plot(code_plot, trace_plot, formula_plot, graph; layout=l, size=(2000,1000)))
+end
+gif(ani, "imgs/path_model_with_trace.gif", fps=1)
+
+# %%
 N_samples = 5
 
 ani = Animation()
@@ -522,6 +605,10 @@ plot!(get_path(trace); color=:green, label="some path")
 plot!(get_path(rotated_first_step); color=:red, label="with heading at first step modified")
 savefig("imgs/modify_trace_1")
 the_plot
+
+# %%
+trace = simulate(path_model_loop, (T, ...))
+longer_trace, _, _, _ = update(trace, (T+1, ...), ...)
 
 # %% [markdown]
 # In the above picture, the green path is apparently missing, having been near-completely overdrawn by the red path.  This is because in the execution of the model, the only change in the stochastic choices took place where we specified.  In particular, the stochastic choice of pose at the second step was left unchanged.  This choice was typical relative to the first step's heading in the old trace, and while it is not impossible relative to the first step's heading in the new trace, it is *far unlikelier* under the mulitvariate normal distribution supporting it:
@@ -558,15 +645,15 @@ println("Success");
 # But we humans understand that incrementing the argument `T` simply requires running the loop body once more.  This operation runs in $O(1)$ time, so the outer loop should require only $O(T)$ time.  Gen can intelligently work this way if we encode the structure of Markov chain in this model using a *combinator* for the static DSL, as follows.
 
 # %%
-@gen (static) function motion_path_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
-    return {:pose} ~ step_model(state, robot_inputs.controls[t], world_inputs, motion_settings)
+@gen (static) function motion_path_kernel(t :: Int, state :: Pose, ...) :: Pose
+    return {:pose} ~ step_model(state, controls[t], ...)
 end
 motion_path_chain = Unfold(motion_path_kernel)
 
-@gen (static) function path_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
-    initial = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
-    {:steps} ~ motion_path_chain(T, initial, robot_inputs, world_inputs, motion_settings)
-end;
+@gen (static) function path_model(T :: Int, ...) :: Vector{Pose}
+    initial = {:initial => :pose} ~ start_pose_prior(start, ...)
+    {:steps} ~ motion_path_chain(T, initial, ...)
+end
 
 # %% [markdown]
 # The models `path_model_loop` and `path_model` have been arranged to produce identically structured traces with the same frequencies and return values, and to correspond to identical distributions over traces in the mathematical picture, thereby yielding the same weights.  They give rise to identical computations under `Gen.simulate`, whereas the new model is sometimes more efficient under `Gen.update`.  Here we illustrate the efficiency gain.
@@ -690,7 +777,7 @@ ani = Animation()
 for pose in path_integrated
     trace = simulate(sensor_model, (pose, world.walls, sensor_settings))
     frame_plot = frame_from_sensors_trace(
-        world, "Sensor model (samples)",
+        world, "Noisy sensor readings",
         path_integrated, :green2, "some path",
         pose, trace)
     frame(ani, frame_plot)
@@ -744,7 +831,7 @@ get_selected(get_choices(trace), selection)
 # P_\text{full}(z_{0:T}, o_{0:T})
 # &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
 # &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
-#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
+#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big)
 # \end{align*}$$
 #
 # By this point, visualization is essential.
@@ -790,6 +877,88 @@ for n in 1:N_samples
     for frame_plot in frames; frame(ani, frame_plot) end
 end
 gif(ani, "imgs/full_1.gif", fps=2)
+
+# %%
+# trace_step_length = 4*sensor_settings.num_angles+10
+# trace = simulate(full_model, (T, full_model_args...))
+
+# trace_str = [s * "\n" for s in split(sprint(show, MIME("text/plain"), get_choices(trace)), "\n")[1:end-1]]
+
+# function clean_step(lines; init=false)
+#     head = lines[1:2]
+#     pose_i = findfirst(s -> contains(s, ":pose"), lines)-1
+#     pose = lines[pose_i:(pose_i+5)]
+#     sensor_i = findfirst(s -> contains(s, ":sensor"), lines)-1
+#     sensor_label = lines[sensor_i:(sensor_i+1)]
+#     sensor = [lines[i:i+3] for i in (sensor_i+2):4:(sensor_i+trace_step_length-11)]
+#     sort!(sensor, by=s->parse(Int, s[2][findfirst(r"[0-9]", s[2])[1]:end]))
+#     sensor = [sensor[1], "...\n", sensor[end]]
+#     return [head..., pose..., sensor_label..., vcat(sensor...)...]
+# end
+
+# initial_i = findfirst(s -> contains(s, ":initial"), trace_str)-1
+# trace_strs = [clean_step(splice!(trace_str, initial_i:(initial_i+trace_step_length-1)); init=true)]
+# push!(trace_strs, splice!(trace_str, 1:2))
+# for _ in 1:T
+#     push!(trace_strs, clean_step(splice!(trace_str, 1:trace_step_length)))
+# end
+# sort!(view(trace_strs, 3:length(trace_strs)), by=s -> parse(Int, s[2][15:end]))
+
+# hlt(s) = lpad("![c1[" * strip(s) * "]]!\n", length(s)+7)
+# hlt_pose(strs) = [map(hlt, strs[1:8])..., strs[9:end]...]
+# hlt_sensor(strs) = [map(hlt, strs[1:2])..., strs[3:8]..., map(hlt, strs[9:end])...]
+# stringify(l) = replace(string([string(s...) for s in l]...), '\u2502' => "|", '\u251C' => "|", '\u2500' => "-", '\u2514' => "|")
+
+# slide_texts = []
+# push!(slide_texts, stringify([hlt_pose(trace_strs[1]), trace_strs[2:4]...]))
+# push!(slide_texts, stringify([hlt_sensor(trace_strs[1]), trace_strs[2:4]...]))
+# push!(slide_texts, stringify([trace_strs[1:2]..., hlt_pose(trace_strs[3]), trace_strs[4]]))
+# push!(slide_texts, stringify([trace_strs[1:2]..., hlt_sensor(trace_strs[3]), trace_strs[4]]))
+# for i in 2:(T-1)
+#     push!(slide_texts, stringify([trace_strs[i+1], hlt_pose(trace_strs[i+2]), trace_strs[i+3]]))
+#     push!(slide_texts, stringify([trace_strs[i+1], hlt_sensor(trace_strs[i+2]), trace_strs[i+3]]))
+# end
+# push!(slide_texts, stringify([trace_strs[T:T+1]..., hlt_pose(trace_strs[T+2])]))
+# push!(slide_texts, stringify([trace_strs[T:T+1]..., hlt_sensor(trace_strs[T+2])]))
+
+# full_trace_slide_files = [build_highlighted_pics(lstlisting(slide_text), 0, 1., "imgs/path_trace_slide_$i"; silence=true) for (i, slide_text) in enumerate(slide_texts)]
+
+# full_model_code = """
+# @gen (static) function full_model_initial(...)
+#     ![c1[pose]]! ~ ![c1[start_pose_prior(robot_inputs.start, ...)]]!
+#     ![c2[{:sensor}]]! ~ ![c2[sensor_model(pose, ...)]]!
+#     return pose
+# end
+
+# @gen (static) function full_model_kernel(t :: Int, state :: Pose, ...)
+#     ![c3[pose]]! ~ ![c3[step_model(state, robot_inputs.controls[t], ...)]]!
+#     ![c4[{:sensor}]]! ~ ![c4[sensor_model(pose, ...)]]!
+#     return pose
+# end
+# full_model_chain = Unfold(full_model_kernel)
+
+# @gen (static) function full_model(T :: Int, robot_inputs, ...)
+#     ![c1,2[initial]]! ~ ![c1,2[full_model_initial(robot_inputs, world_inputs, ...)]]!
+#     ![c3,4[steps]]! ~ ![c3,4[full_model_chain(T, initial, robot_inputs, ...)]]!
+# end
+# """
+# full_model_code_files = build_highlighted_pics(lstlisting(full_model_code), 20, 1., "imgs/full_model"; n_labels=4, silence=true)
+
+# graph_frames = frames_from_full_trace(world, "Full model (sample)", trace)
+
+# partners =
+#     [(full_trace_slide_files[1], full_model_code_files[1], graph_frames[1]),
+#     (full_trace_slide_files[2], full_model_code_files[2], graph_frames[2]),
+#     [(f, full_model_code_files[isodd(i) ? 3 : 4], g) for (i, (f, g)) in enumerate(zip(path_trace_slide_files[3:end], graph_frames[3:end]))]...]
+
+l = @layout [a{0.4w} b c]
+ani = Animation()
+for (trace_file, code_file, graph) in partners
+    code_plot = plot(load(code_file); axis=([], false), size=(2000,700))
+    trace_plot = plot(load(trace_file); axis=([], false), size=(2000,700))
+    frame(ani, plot(code_plot, graph, trace_plot; layout=l, size=(2000,1000)))
+end
+gif(ani, "imgs/full_model_with_trace.gif", fps=1)
 
 # %% [markdown]
 # ## The data
@@ -910,10 +1079,7 @@ gif(ani, "imgs/need.gif", fps=1)
 # Given a choice map of *constraints* that declare fixed values of some of the primitive choices, the operation `Gen.generate` proposes traces of the generative function that are consistent with these constraints.
 
 # %%
-trace, log_weight = generate(full_model, (T, full_model_args...), merged_constraints_low_deviation)
-
-all(trace[prefix_address(i, :sensor => j => :distance)] == merged_constraints_low_deviation[prefix_address(i, :sensor => j => :distance)]
-    for i in 1:(T+1) for j in 1:sensor_settings.num_angles)
+trace, log_weight = generate(model, args, constraints_choicemap)
 
 # %% [markdown]
 # A trace resulting from a call to `Gen.generate` is structurally indistinguishable from one drawn from `Gen.simulate`.  But there is a key situational difference: while `Gen.get_score` always returns the frequency with which `Gen.simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `Gen.generate`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
@@ -1104,9 +1270,16 @@ the_plot
 # =
 # \frac{\prod_{t=0}^T P_\text{sensor}(o_t)}{P_\text{marginal}(o_{0:T})}.
 # $$
+# $$
+# P_\text{full}(z_{0:T} | o_{0:T})
+# =
+# \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T})}
+# =
+# \frac{P_\text{path}(z_{0:T}) \cdot \prod_{t=0}^T P_\text{sensor}(o_t; z_t)}{P_\text{marginal}(o_{0:T})}
+# $$
 # Noting that the intractable quantity
 # $$
-# Z := P_\text{marginal}(o_{0:T})
+# Z := P_\text{marginal}(o_{0:T}) = \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
 # $$
 # is constant in $z_{0:T}$, we define the explicitly computable quantity
 # $$
@@ -1115,6 +1288,12 @@ the_plot
 # The right hand side has been written sloppily, but we remind the reader that $P_\text{sensor}(o_t)$ is a product of densities of normal distributions that *does depend* on $z_t$ as well as "sensor" and "world" parameters.
 #
 # Compare to our previous description of calling `Gen.generate` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight equal to none other than this $f(z_{0:T})$.
+
+# %% [markdown]
+# $\prod_{t=0}^T P_\text{sensor}(o_{0:T}; z_{0:T})$
+
+# %% [markdown]
+# $o_{0:T}$
 
 # %% [markdown]
 # This reasoning involving `Gen.generate` is indicative of the general scenario with conditioning, and fits into the following shape.
@@ -1142,106 +1321,6 @@ function importance_sample(model, args, merged_constraints, N_samples)
 end;
 
 # %% [markdown]
-# ### Rejection sampling
-#
-# One approach to inference, called *rejection sampling*, is to interfere with the probabilities of samples by throttling them in the correct proportions.  In other words, we go ahead and generate samples from $Q$, but accept (return) only some of them while rejecting (discarding) others, the probability of acceptance depending on the sampled value.  If for each sampled value $z$ the probability of acceptance is a constant times $f(z)$ (or equivalently $\hat f(z)$), then the samples that make it through will be distributed according to $P$.
-#
-# More precisely, in deciding whether to accept or reject a sample $z$, we flip a weight-$p(z)$ coin where $p(z) = f(z)/C$ for some constant $C > 0$, accepting if heads and rejecting of tails.  In order for this to make sense, $p(z)$ must always lie in the interval $[0,1]$.  This is equivalent to having $f(z) \leq C$, that is, we need $C$ to be an *upper bound* on the outputs of the function $f$.  There is an optimal upper bound constant, namely the supremum value $C_\text{opt} = \max_z f(z)$.  If we only know *some* upper bound $C \geq C_\text{opt}$, then rejection sampling with this constant still provides a correct algorithm, but it is inefficient by drawing a factor of $C/C_\text{opt}$ too many samples on average.
-#
-# The first of many problems with rejection sampling is the tractability of determining an upper bound $C$!  (This is independent of the intractability of determining the constant $Z$ above relating $f$ back to $\hat f$.)
-#
-# We can try to make do anyway, using a number $C > 0$ that is *guess* at an upper bound; when we proceed with this $C$ under the assumption that it bounds $f$, the resulting algorithm is called *approximate rejection sampling*.  But what to do if we encounter a sample $z$ with $f(z) > C$?  If our policy is to replace $C$ with this new larger quantity and keep going, the resulting algorithm is called *adaptive approximate rejection sampling*.  Earlier samples, with a too-low intitial value for $C$, may occur with too high absolute frequency.  But over time as $C$ appropriately increases, the behavior tends towards the true distribution.  We may consider some of this early phase to be an *exploration* or *burn-in period*, and accordingly draw samples but keep only the maximum of their weights, before moving on to the rejection sampling *per se*.
-
-# %%
-function rejection_sample(model, args, merged_constraints, N_burn_in, N_particles, MAX_attempts)
-    C = maximum(generate(model, args, merged_constraints)[2] for _ in 1:N_burn_in; init=-Inf)
-
-    particles = []
-    for _ in 1:N_particles
-        attempts = 0
-        while attempts < MAX_attempts
-            attempts += 1
-
-            # The use of `generate` is as explained in the preceding section.
-            particle, weight = generate(model, args, merged_constraints)
-            if weight > C + log(rand())
-                if weight > C; C = weight end
-                push!(particles, particle)
-                break
-            end
-        end
-    end
-
-    return particles
-end;
-
-# %% [markdown]
-# In the following examples, compare the requested number of particles (`N_particles`) to the number of particles found within the compute budget (`MAX_attempts`), as reported in the graph.
-
-# %%
-T_short = 6
-
-N_burn_in = 0 # omit burn-in to illustrate early behavior
-N_particles = 20
-MAX_attempts = 5000
-
-t1 = now()
-traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
-t2 = now()
-println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. (Total: $(value(t2 - t1)) ms.)")
-
-ani = Animation()
-for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i of $(length(traces)))", path_low_deviation[1:(T_short+1)],
-                                   "path to fit", traces[1:i], "RS samples")
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/RS.gif", fps=1)
-
-# %%
-N_burn_in = 100
-N_particles = 20
-MAX_attempts = 5000
-
-t1 = now()
-traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
-t2 = now()
-println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. (Total: $(value(t2 - t1)) ms.)")
-
-ani = Animation()
-for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i of $(length(traces)))", path_low_deviation[1:(T_short+1)],
-                                   "path to fit", traces[1:i], "RS samples")
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/RS_2.gif", fps=1)
-
-# %%
-N_burn_in = 1000
-N_particles = 20
-MAX_attempts = 5000
-
-t1 = now()
-traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
-t2 = now()
-println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. (Total: $(value(t2 - t1)) ms.)")
-
-ani = Animation()
-for (i, trace) in enumerate(traces)
-    frame_plot = frame_from_traces(world, "RS (particles 1 to $i of $(length(traces)))", path_low_deviation[1:(T_short+1)],
-                                   "path to fit", traces[1:i], "RS samples")
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/RS_3.gif", fps=1)
-
-# %% [markdown]
-# The performance dynamics of this algorithm an instructive exercise to game out.
-#
-# In general, as $C$ increases, the algorithm is increasingly *wasteful*, rejecting more samples overall, and taking longer to find likely hits.
-#
-# So long as it indeed bounds above all values of $f(z)$ that we encounter, the algorithm isn't nonsense, but if the proposal $Q$ is unlikely to generate representative samples for the target $P$ at all, all we are doing is adjusting the shape of the noise.
-
-# %% [markdown]
 # ### Sampling / importance resampling
 #
 # We turn to inference strategies that require only our proposal $Q$ and unnormalized weight function $f$ for the target $P$, *without* forcing us to wrangle any intractable integrals or upper bounds.
@@ -1253,35 +1332,32 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 #
 # The *sampling / importance resampling* (SIR) strategy for inference runs as follows.  Let counts $N > 0$ and $M > 0$ be given.
 # 1. Importance sample:  Independently sample $N$ data $z^1, z^2, \ldots, z^N$ from the proposal $Q$, called *particles*.  Compute also their *importance weights* $w^i := f(z^i)$ for $i = 1, \ldots, N$.
-# 2. Importance resample:  Independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
+# 2. Importance resample:  Independently sample $M$ indices 
+#
+# $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$
+#
+# where $\hat w^i = w^i / \sum_{j=1}^N w^j$, and return
+#
+# $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$
+#
+# . These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
 #
 # As $N \to \infty$ with $M$ fixed, the samples produced by this algorithm converge to $M$ independent samples drawn from the target $P$.  This strategy is computationally an improvement over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guesses among these.
 
+# %% [markdown]
+# $N \to \infty$
+
+# %% [markdown]
+# $\hat w^i = w^i / \sum_{j=1}^N w^j$
+
 # %%
-function resample(particles, log_weights; M=nothing)
-    @assert length(particles) == length(log_weights)
-    if isnothing(M); M = length(particles) end
+function resample(particles, log_weights)
     log_total_weight = logsumexp(log_weights)
+    log_average_weight = log_total_weight - log(length(log_weights))
     norm_weights = exp.(log_weights .- log_total_weight)
-    return [particles[categorical(norm_weights)]        for _ in 1:M],
-           [log_total_weight - log(length(log_weights)) for _ in 1:M]
+    return [particles[categorical(norm_weights)] for _ in 1:length(particles)],
+           [log_average_weight                   for _ in 1:length(log_weights)]
 end
-
-sample(particles, log_weights) = first.(resample(particles, log_weights; M=1))
-
-sampling_importance_resampling(model, args, merged_constraints, N_SIR) =
-    sample(importance_sample(model, args, merged_constraints, N_SIR)...)[1]
-
-# These are generic algorithms, so there are the following library versions.
-# By the way, the library version of SIR includes a constant-memory optimization:
-# It is not necessary to store all particles and categorically select one at the end.  Mathematically
-# it amounts to the same instead to store just one candidate selection, and stochastically replace it
-# with each newly generated particle with odds the latter's weight relative to the sum of the
-# preceding weights.
-importance_sample_library(model, args, merged_constraints, N_samples) =
-    Gen.importance_sampling(model, args, merged_constraints, N_samples)[[1, 2]]
-sampling_importance_resampling_library(model, args, merged_constraints, N_SIR) =
-    Gen.importance_resampling(model, args, merged_constraints, N_SIR)[1];
 
 # %% [markdown]
 # For a short path, SIR can improve from chaos to a somewhat coarse/noisy fit without too much effort.
@@ -1312,8 +1388,21 @@ traces = [sampling_importance_resampling(full_model, (T, full_model_args...), me
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 
-the_plot = frame_from_traces(world, "SIR (low dev)", path_low_deviation, "path to fit", traces, "RS samples")
+the_plot = frame_from_traces(world, "SIR (low motion deviaton)", path_low_deviation, "path to fit", traces, "RS samples")
 savefig("imgs/SIR_final")
+the_plot
+
+# %%
+N_samples = 10
+N_SIR = 500
+
+t1 = now()
+traces = [sampling_importance_resampling(full_model, (T, full_model_args...), merged_constraints_high_deviation, N_SIR) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+
+the_plot = frame_from_traces(world, "SIR (high motion deviation)", path_high_deviation, "path to fit", traces, "RS samples")
+savefig("imgs/SIR_final_high")
 the_plot
 
 # %% [markdown]
@@ -1329,49 +1418,25 @@ the_plot
 # The following function `particle_filter` constructs an indistinguishable stochastic family of weighted particles, each trace built by `update`ing one timestep of path at a time, incorporating also the density of that timestep's observations.  (This comes at a small computational overhead: the static DSL combinator largely eliminates recomputation in performing the `update`s, but there is still extra logic, as well as the repeated allocations of the intermediary traces.)
 
 # %%
-# For this algorithm and each of its variants to come,
-# we will present first a plain version of the code for clarity,
-# followed by a logged version for display purposes.
-
-function particle_filter(model, T, args, constraints, N_particles)
+function particle_filter(...)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (0, args...), ...)
     end
     
     for t in 1:T
+        # <-- PERFORM ACTIONS THAT IMPROVE THE TRACES AND/OR THEIR WEIGHTS
+
         for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), ...)
             log_weights[i] += log_weight_increment
         end
     end
 
     return traces, log_weights
 end
-
-function particle_filter_infos(model, T, args, constraints, N_particles)
-    traces = Vector{Trace}(undef, N_particles)
-    log_weights = Vector{Float64}(undef, N_particles)
-    vizs = Vector{NamedTuple}(undef, N_particles)
-    infos = []
-    
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
-    end
-    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
-    
-    for t in 1:T
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
-        end
-        push!(infos, (type = :update, time = now(), label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
-    end
-
-    return infos
-end;
 
 # %% [markdown]
 # This refactoring is called a *particle filter* because it of how it spreads the reasoning out along the time axis.  It has the important effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
@@ -1497,22 +1562,22 @@ N_particles = 10
 N_samples = 10
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+prior_plot = frame_from_traces(world, "Prior on paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
 traces = [sample(particle_filter_bootstrap(full_model, T, full_model_args, constraints_low_deviation, N_particles)...)[1] for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+posterior_plot_low_deviation = frame_from_traces(world, "Low motion dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [sample(particle_filter_bootstrap(full_model, T, full_model_args, constraints_high_deviation, N_particles)...)[1] for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+posterior_plot_high_deviation = frame_from_traces(world, "High motion dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF")
-savefig("imgs/PF_1")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF+Bootstrap")
+savefig("imgs/PF_2")
 the_plot
 
 # %% [markdown]
@@ -1521,33 +1586,28 @@ the_plot
 # Two issues: particle diversity after resampling, and quality of these samples.
 
 # %%
-effective_sample_size(log_weights) =
-    exp(-logsumexp(2. * (log_weights .- logsumexp(log_weights))))
-
-resample_ESS(particles, log_weights, ESS_threshold; M=nothing) =
-    (effective_sample_size(log_weights .- logsumexp(log_weights)) < ESS_threshold) ?
-        resample(particles, log_weights; M=M) :
-        (particles, log_weights)
-
-function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
+function particle_filter_bootstrap_rejuv(...)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (0, args...), ...)
     end
 
     for t in 1:T
-        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+        traces, log_weights =
+            resample(traces, log_weights, ESS_threshold)
 
         for i in 1:N_particles
             for rejuv_args in rejuv_args_schedule
-                traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                traces[i], log_weights[i] =
+                    rejuvenate(traces[i], log_weights[i], rejuv_args)
             end
         end
 
         for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            traces[i], log_weight_increment, _, _ =
+                update(traces[i], (t, args...), ...)
             log_weights[i] += log_weight_increment
         end
     end
@@ -1555,42 +1615,32 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_thr
     return traces, log_weights
 end
 
-function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
-    traces = Vector{Trace}(undef, N_particles)
-    log_weights = Vector{Float64}(undef, N_particles)
-    vizs = Vector{NamedTuple}(undef, N_particles)
-    infos = []
-    
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
-    end
-    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
-
-    for t in 1:T
-        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
-        push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
-
-        for i in 1:N_particles
-            for rejuv_args in rejuv_args_schedule
-                traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
-            end
-        end
-        push!(infos, (type = :rejuvenate, time = now(), label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
-
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
-        end
-        push!(infos, (type = :update, time = now(), label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
-    end
-
-    return infos
-end;
-
 # %% [markdown]
 # ### SMCP3 rejuvenation / grid search proposal
 #
 # Takes the following shape:
+
+# %%
+@gen fwd_proposal(trace :: Trace) :: Tuple{Trace, Choicemap}
+@gen bwd_proposal(trace :: Trace) :: Tuple{Trace, Choicemap}
+
+# %%
+function smcp3_step(old_trace, old_log_weight)
+    fwd_proposal_trace =
+        simulate(fwd_proposal, old_trace)
+    fwd_proposal_log_weight =
+        get_score(fwd_proposal_trace)
+    (fwd_modification, bwd_choices) =
+        get_retval(fwd_proposal_trace)
+    new_trace, model_log_weight_diff =
+        update(old_trace, fwd_modification)
+    _, bwd_proposal_log_weight =
+        generate(bwd_proposal, new_trace, bwd_choices)
+    new_log_weight =
+        log_weight + model_log_weight_diff +
+        bwd_proposal_log_weight - fwd_proposal_log_weight
+    return new_trace, new_log_weight
+end
 
 # %%
 function smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args)
@@ -1711,15 +1761,15 @@ t1 = now()
 traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...)[1] for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+smcp3_posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)...)[1] for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+smcp3_posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid")
+the_plot = plot(smcp3_posterior_plot_low_deviation, smcp3_posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
 savefig("imgs/PF_SMCP3_grid")
 the_plot
 
@@ -1894,9 +1944,93 @@ end;
 # ![](imgs_stable/controlled_smcp3_with_code.gif)
 
 # %%
+controlled_code = """
+function controlled_particle_filter_rejuv(...)
+    prev_total_weight = 0.
+    for i in 1:N_particles
+        traces[i], log_weights[i] = ![c1[generate]]!(model, (0, args...), ...)
+    end
+
+    for t in 1:T
+        traces, log_weights = ![c2[resample]]!(traces, log_weights, ...)
+
+        temp_args_schedule = rejuv_args_schedule
+        while logsumexp(log_weights) - prev_total_weight <
+                weight_change_bound
+            for i in 1:N_particles
+                for rejuv_args in rejuv_args_schedule
+                    traces[i], log_weights[i] =
+                        ![c3[rejuv_kernel]]!(traces[i], log_weights[i], rejuv_args)
+                end
+            end
+
+            if logsumexp(log_weights) - prev_total_weight <
+                    weight_change_bound
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ =
+                        ![c4[update]]!(traces[i], (t-2, args...), ...)
+                    log_weights[i] += log_weight_increment
+                end
+                for i in 1:N_particles
+                    traces[i], log_weight_increment, _, _ =
+                        ![c5[update]]!(traces[i], (t-1, args...), ...)
+                    log_weights[i] += log_weight_increment
+                end
+
+                traces, weights = [!c6[resample_ESS]]!(traces, log_weights, ...)
+            end
+
+            temp_args_schedule = args_schedule_modifier(temp_args_schedule)
+        end
+
+        prev_total_weight = logsumexp(log_weights)
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ =
+                ![c7[update]]!(traces[i], (t, args...), ...)
+            log_weights[i] += log_weight_increment
+        end
+    end
+
+    return traces, log_weights
+end
+"""
+# controlled_code_files = build_highlighted_pics(lstlisting(controlled_code), 20, 1., "imgs/controlled_code"; n_labels=7, silence=true)
+# controlled_code_plots = Dict(zip((:initialize, :resample, :rejuvenate, :regenernate_bwd, :regenernate_fwd, :resample2, :update),
+#                                  [plot(load(f); axis=([], false), size=(2000,700)) for f in controlled_code_files]))
+
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
-weight_change_bound = (-1. * 10^5)/20
+
+grid_n_points_start = [3, 3, 3]
+grid_sizes_start = [.7, .7, π/10]
+grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
+
+weight_change_bound = (-2. * 10^3)
+
+# TODO: FIXME
+grid_args_schedule_modifier(args_schedule, rejuv_count) =
+    (rejuv_count % 1 == 0) ?
+        [(nsteps, sizes .* 0.75) for (nsteps, sizes) in args_schedule] :
+        [(nsteps + 2, sizes)     for (nsteps, sizes) in args_schedule];
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+
+infos = controlled_particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier)
+
+ani = Animation()
+for info in infos
+    code_plot = controlled_code_plots[info.type]
+    graph = frame_from_info(world, "Run of Controlled PF+SMCP3/Grid", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, plot(code_plot, graph; size=(2000,1000)))
+end
+gif(ani, "imgs/controlled_smcp3_with_code.gif", fps=1)
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+# weight_change_bound = (-1. * 10^5)/20
+weight_change_bound = (-2. * 10^3)
 
 grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
@@ -1922,177 +2056,8 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Controlled PF + SMCP3/Grid")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Controlled PF + SMCP3/Grid")
 savefig("imgs/PF_controller")
 the_plot
 
-# %% [markdown]
-# ### MCMC rejuvenation / Gaussian drift proposal
-#
-# A faster rejuvenation strategy than a grid search is to simply giggle the point.
-#
-# This proposal is fast enough that we need not use the inference controller.
-
 # %%
-@gen function drift_fwd_proposal(trace, drift_factor)
-    t = get_args(trace)[1]
-    p_noise = get_args(trace)[4].motion_settings.p_noise
-    hd_noise = get_args(trace)[4].motion_settings.hd_noise
-
-    undrift_p = trace[prefix_address(t+1, :pose => :p)]
-    undrift_hd = trace[prefix_address(t+1, :pose => :hd)]
-
-    drift_p ~ mvnormal(undrift_p, (drift_factor * p_noise)^2 * [1 0 ; 0 1])
-    drift_hd ~ normal(undrift_hd, drift_factor * hd_noise)
-
-    std_devs_radius = 2.
-    viz = (objs = ([undrift_p[1]], [undrift_p[2]]),
-           params = (color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
-                     markersize=(20. * std_devs_radius * p_noise), markerstrokewidth=0, alpha=0.25))
-
-    return choicemap((prefix_address(t+1, :pose => :p), drift_p), (prefix_address(t+1, :pose => :hd), drift_hd)),
-           choicemap((:undrift_p, undrift_p), (:undrift_hd, undrift_hd)),
-           viz
-end
-
-@gen function drift_bwd_proposal(trace, drift_factor)
-    t = get_args(trace)[1]
-    p_noise = get_args(trace)[4].motion_settings.p_noise
-    hd_noise = get_args(trace)[4].motion_settings.hd_noise
-
-    if t == 0
-       start_pose = get_args(trace)[2].start
-       noiseless_p = start_pose.p
-       noiseless_hd = start_pose.hd
-    else
-       prev_pose = trace[prefix_address(t, :pose)]
-       prev_control = get_args(trace)[2].controls[t]
-       noiseless_p = prev_pose.p + prev_control.ds * prev_pose.dp
-       noiseless_hd = prev_pose.hd + prev_control.dhd
-    end
-
-    drift_p = trace[prefix_address(t+1, :pose => :p)]
-    drift_hd = trace[prefix_address(t+1, :pose => :hd)]
-
-    # Optimal choice of `undrift_pose` is obtained from conditioning the motion model that noises `noiseless_pose` upon
-    # the information that the forward drift then further moved it to `drift_pose`.
-    # In this case there is a closed form, which happens to be a Gaussian drift with some other parameters.
-    e = 1/drift_factor^2
-    undrift_p ~ mvnormal((noiseless_p + e * drift_p)/(1+e), p_noise^2/(1+e) * [1 0 ; 0 1])
-    undrift_hd ~ normal((noiseless_hd + e * drift_hd)/(1+e), hd_noise/sqrt(1+e))
-
-    return choicemap((prefix_address(t+1, :pose => :p), undrift_p), (prefix_address(t+1, :pose => :hd), undrift_hd)),
-           choicemap((:drift_p, drift_p), (:drift_hd, drift_hd))
-end
-
-drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
-
-# %% [markdown]
-# A fair criticism is that this forward proposal in no way improves the samples; it only jiggles them.  So, on its own, the resulting algorithm is little different from the bootstrap on the original motion model with a higher motion noise parameter.
-
-# %%
-N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
-
-drift_factor = 1/3
-drift_args_schedule = [drift_factor^j for j=1:3]
-
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
-
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Drift")
-savefig("imgs/PF_SMCP3_drift")
-the_plot
-
-# %% [markdown]
-# We can compromise between the grid search and giggling.  The idea is to perform a mere two-element search that compares the given point with the random one, or rather to resample from the pair.  This would have a chance of improving sample quality, without spending much time searching for the improvement.
-#
-# The resulting algorithm is conventionally called "MCMC rejuvenation", and our strategy to resample between the pair amounts to the "Boltzmann acceptance rule".  A even more common acceptance rule that slightly biases in favor of the jiggled sample is called the "Metropolis–Hastings acceptance rule".
-
-# %%
-function mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
-    proposed_particle, proposed_log_weight, viz = mcmc_proposal(particle, log_weight, mcmc_args)
-    return mcmc_rule([particle, proposed_particle], [log_weight, proposed_log_weight])..., viz
-end
-mcmc_kernel(mcmc_proposal, mcmc_rule) =
-    (particle, log_weight, mcmc_args) -> mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
-
-boltzmann_rule = sample
-
-# Assumes `particles` is ordered so that first item is the original and second item is the proposed.
-# Notes:
-# * If the proposed item has higher weight, it is accepted unconditionally.  There is an overall bias.
-# * In all cases, the weight is unchanged.
-function mh_rule(particles, log_weights)
-    @assert length(particles) == length(log_weights) == 2
-    acceptance_ratio = min(1., exp(log_weights[2] - log_weights[1]))
-    return (bernoulli(acceptance_ratio) ? particles[2] : particles[1]), log_weights[1]
-end;
-
-# %%
-drift_boltzmann_kernel = mcmc_kernel(drift_smcp3_kernel, boltzmann_rule)
-drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
-
-# %%
-N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
-
-drift_factor = 1/3
-drift_args_schedule = [drift_factor^j for j=1:3]
-
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
-
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + Boltzmann/Drift")
-savefig("imgs/PF_boltzmann_drift")
-the_plot
-
-# %%
-N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
-
-drift_factor = 1/3
-drift_args_schedule = [drift_factor^j for j=1:3]
-
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
-
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Drift")
-savefig("imgs/PF_mh_drift")
-the_plot
