@@ -1666,26 +1666,21 @@ inverse_grid_index(grid_n_points :: Vector{Int}, j :: Int) :: Int =
     LinearIndices(Tuple(grid_n_points))[(grid_n_points .+ 1 .- [Tuple(CartesianIndices(Tuple(grid_n_points))[j])...])...]
 
 # Sample from the posterior, restricted to the grid.
-@gen function grid_fwd_proposal(trace, grid_n_points, grid_sizes)
-    t = get_args(trace)[1]
-    p = trace[prefix_address(t+1, :pose => :p)]
-    hd = trace[prefix_address(t+1, :pose => :hd)]
-
-    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
-    choicemap_grid = [choicemap((prefix_address(t+1, :pose => :p), [x, y]),
-                                (prefix_address(t+1, :pose => :hd), h))
+@gen function grid_fwd_proposal(trace, ...)
+    t, p, hd = # extract from trace
+    pose_grid = # form a numerical grid around [p[1], p[2], hd]
+    choicemap_grid = [choicemap((t => :pose => :p, [x, y]),
+                                (t => :pose => :hd, h))
                       for (x, y, h) in pose_grid]
+
     # Posterior densities, up to a common renormalization.
     pose_log_weights = [update(trace, cm)[2] for cm in choicemap_grid]
     pose_norm_weights = exp.(pose_log_weights .- logsumexp(pose_log_weights))
 
     fwd_j ~ categorical(pose_norm_weights)
-    bwd_j = inverse_grid_index(grid_n_points, fwd_j)
+    bwd_j = inverse_grid_index(fwd_j)
 
-    viz = (objs = ([Pose([x, y], h) for (x, y, h) in pose_grid],),
-           params = (color=:red, label="pose grid"))
-
-    return choicemap_grid[fwd_j], choicemap((:bwd_j, bwd_j)), viz
+    return choicemap_grid[fwd_j], choicemap((:bwd_j, bwd_j))
 end
 
 # Sample from the prior, restricted to the inverse grid.
@@ -2061,3 +2056,25 @@ savefig("imgs/PF_controller")
 the_plot
 
 # %%
+
+# %% [markdown]
+# $q \colon X \dashrightarrow U$
+
+# %% [markdown]
+# $f \colon X \times U \to X \times U$
+
+# %% [markdown]
+# $$
+# w' := w \cdot \frac{p(x')\, q_L(u';x')}{p(x)\, q_K(u;x)} \frac{\mathrm{d}\mu}{\mathrm{d}f_{K*}\mu}(x',u')
+# $$
+
+# %% [markdown]
+# $f_L(f_K(x,u)) = (x,u)$
+
+# %% [markdown]
+# $p(x)q_K(u;x)>0$
+#
+#
+# $(x,u) = f_L(x',u')$
+#
+# $u \sim q(\cdot ; x)$
