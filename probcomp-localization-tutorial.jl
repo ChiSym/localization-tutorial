@@ -403,30 +403,6 @@ project(trace, select(:hd))
 project(trace, select(:p, :hd)) == get_score(trace)
 
 # %% [markdown]
-# ### Updating traces
-#
-# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `Gen.update` takes as inputs a trace, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace.  It also returns (the log of) the ratio of the updated trace's density to the original trace's density, together with a precise record of the resulting modifications that played out.
-
-# %% [markdown]
-# In our example, one could, for instance, replace the first step's stochastic choice of heading with a specific value.
-
-# %%
-trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
-rotated_trace, rotated_trace_weight_diff, _, _ =
-    update(trace, (robot_inputs.start, motion_settings), (NoChange(), NoChange()), choicemap((:hd, π/2.)))
-the_plot = plot_world(world, "Modifying a heading")
-plot!(get_retval(trace); color=:green, label="some pose")
-plot!(get_retval(rotated_trace); color=:red, label="with heading modified")
-savefig("imgs/modify_trace_1")
-the_plot
-
-# %% [markdown]
-# The original trace was typical under the pose prior model, whereas the modified one is rather less likely.  This is the log of how much unlikelier:
-
-# %%
-rotated_trace_weight_diff
-
-# %% [markdown]
 # ### Modeling a full path
 #
 # The model contains all information in its trace, rendering its return value redundant.  The the noisy path integration will just be a wrapper around its functionality, extracting what it needs from the trace.
@@ -507,9 +483,31 @@ end
 gif(ani, "imgs/motion.gif", fps=2)
 
 # %% [markdown]
-# ### Updating traces, revisited
+# ### Modfying traces
 #
-# In our example, suppose we replaced the $t = 1$ step's stochastic choice of heading with some specific value.
+# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `Gen.update` takes as inputs a trace, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace.  It also returns (the log of) the ratio of the updated trace's density to the original trace's density, together with a precise record of the resulting modifications that played out.
+
+# %% [markdown]
+# One could, for instance, consider just the placement of the first pose, and replace its stochastic choice of heading with a specific value.
+
+# %%
+trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
+rotated_trace, rotated_trace_weight_diff, _, _ =
+    update(trace, (robot_inputs.start, motion_settings), (NoChange(), NoChange()), choicemap((:hd, π/2.)))
+the_plot = plot_world(world, "Modifying a heading")
+plot!(get_retval(trace); color=:green, label="some pose")
+plot!(get_retval(rotated_trace); color=:red, label="with heading modified")
+savefig("imgs/modify_trace_1")
+the_plot
+
+# %% [markdown]
+# The original trace was typical under the pose prior model, whereas the modified one is rather less likely.  This is the log of how much unlikelier:
+
+# %%
+rotated_trace_weight_diff
+
+# %% [markdown]
+# It is worth carefully thinking through a tricker instance of this.  Suppose instead, within the full path, we replaced the $t = 1$ step's stochastic choice of heading with some specific value.
 
 # %%
 trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
@@ -903,7 +901,7 @@ gif(ani, "imgs/need.gif", fps=1)
 # We are not limited to visual judgments here: the model can quantitatively assess how good a fit the integrated path is for the data.  In order to do this, we detour to explain how to produce samples from our model that agree with the fixed observation data.
 
 # %% [markdown]
-# ### Generating samples with constraints
+# ### Producing samples with constraints
 #
 # We have seen how `Gen.simulate` performs traced execution of a generative function: as the program runs, it draws stochastic choices from all required primitive distributions, and records them in a choice map.
 #
