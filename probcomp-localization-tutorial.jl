@@ -355,7 +355,7 @@ get_retval(trace)
 #
 # One tempting view identifies a GF with a *distribution over its return values*.  In this view, the correct score/weight/density would be $1$.  Pursuing this approach for all GFs requires knowlege of all execution histories that might have produced any output, and then performing a sum over them.  For some small finite situations this may be fine, but this general problem of computing marginalizations is computationally impossible.  (More on this elsewhere, below a fold, or in an exercise?)  Therefore, this is ***not the viewpoint of Gen***, and the score/weight/density being introduced here is a ***different number***.
 #
-# The only thing a program can reasonably be expected to know is the score/weight/density of its arriving at its return value *via the particular stochastic computation path* that got it there, and the approach of Gen (ProbComp in general?!) is to report this number.  The corresponding mathematical picture imagines GFs as factored into *distributions over choice maps*, whose the score/weight/density is computable, together with deterministic functions on these data that produce the return value from them.  In the toy example, the data of the choice map consists of the sampled Boolean value, its correct score/weight/density is $p$ or $1-p$, accordingly, and its return value function chooses $x$ or $y$, regardless of whether they are equal.
+# The only thing a program can reasonably be expected to know is the score/weight/density of its arriving at its return value *via the particular stochastic computation path* that got it there, and the approach of Gen (ProbComp in general?!) is to report this number.  The corresponding mathematical picture imagines GFs as factored into *distributions over choice maps*, whose score/weight/density is computable, together with deterministic functions on these data that produce the return value from them.  In the toy example, the data of the choice map consists of the sampled Boolean value, its correct score/weight/density is $p$ or $1-p$, accordingly, and its return value function chooses $x$ or $y$, regardless of whether they are equal.
 #
 # One may still be concerned with the distribution on return values.  This information arises in the aggregate of the sampled stochastic executions that lead to any return value, together with their weights.  (Check that this is true even in this simple example.)  In a sense, when we kick the can of marginalization down the road, we can proceed without difficulty.
 #
@@ -405,7 +405,7 @@ project(trace, select(:p, :hd)) == get_score(trace)
 # %% [markdown]
 # ### Modeling a full path
 #
-# The model contains all information in its trace, rendering its return value redundant.  The the noisy path integration will just be a wrapper around its functionality, extracting what it needs from the trace.
+# The model contains all information in its trace, rendering its return value redundant.  The noisy path integration will just be a wrapper around its functionality, extracting what it needs from the trace.
 #
 # (It is worth acknowledging two strange things in the code below: the extra text "`_loop`" in the function name, and the seemingly redundant new parameter `T`.  Both will be addressed shortly, along with the aforementioned wrapper.)
 
@@ -444,7 +444,7 @@ get_selected(get_choices(trace), select((prefix_address(t, :pose) for t in 1:6).
 # where each term, in turn, factors into a product of two (multivariate) normal densities as described above.
 
 # %% [markdown]
-# As our truncation of the example trace above might suggest, visualization is an essential practice in ProbComp.  We could very pass the output of the above `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit: writing interpretive code for GFs in terms of their traces rather than their return values.  This enables the programmer include the parameters of the model in the display for clarity.
+# As our truncation of the example trace above might suggest, visualization is an essential practice in ProbComp.  We could very well pass the output of the above `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit: writing interpretive code for GFs in terms of their traces rather than their return values.  This enables the programmer include the parameters of the model in the display for clarity.
 
 # %%
 function frames_from_motion_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
@@ -667,7 +667,7 @@ trace = simulate(sensor_model, (robot_inputs.start, world.walls, sensor_settings
 get_selected(get_choices(trace), select((1:5)...))
 
 # %% [markdown]
-# The mathematical picture is as follows.  Given the parameters of a pose $y$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(y, w, \nu)$ over the traces of `sensor_model`, and when $z$ is a motion model trace we set $\text{sensor}(z, w, \nu) := \text{sensor}(\text{retval}(z), w, \nu)$.  It samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{(J)})$, where $J := \nu_\text{num\_angles}$, each $o^{(j)}$ independently following a certain normal distribution (depending, notably, on the distance from the pose to the nearest wall).  Thus the density of $o$ factors into a product of the form
+# The mathematical picture is as follows.  Given the parameters of a pose $y$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(y, w, \nu)$ over the traces of `sensor_model`, and when $z$ is a motion model trace we set $\text{sensor}(z, w, \nu) := \text{sensor}(\text{retval}(z), w, \nu)$.  Its samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{(J)})$, where $J := \nu_\text{num\_angles}$, each $o^{(j)}$ independently following a certain normal distribution (depending, notably, on the distance from the pose to the nearest wall).  Thus the density of $o$ factors into a product of the form
 # $$
 # P_\text{sensor}(o) = \prod\nolimits_{j=1}^J P_\text{normal}(o^{(j)})
 # $$
@@ -936,7 +936,7 @@ all(trace[prefix_address(i, :sensor => j => :distance)] == merged_constraints_lo
 # 1. There is no untraced randomness.  Given a full choice map for constraints, everything else is deterministic.  In particular, the importance weight is the `get_score`.
 # 2. The generative function was constructed using Gen's DSLs and primitive distributions.  Ancestral sampling; `Gen.generate` wit empty constraints reduces to `Gen.simulate` with importance weight $1$.
 # 3. Combined, the importance weight is directly computed as the `Gen.project` of the trace upon the choice map addresses that were constrained in the call to `Gen.generate`.
-#   
+#
 #   In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
 
 # %%
@@ -1244,7 +1244,7 @@ gif(ani, "imgs/RS_3.gif", fps=1)
 #
 # We turn to inference strategies that require only our proposal $Q$ and unnormalized weight function $f$ for the target $P$, *without* forcing us to wrangle any intractable integrals or upper bounds.
 #
-# Suppose we are given a list of nonnegative numbers, not all zero: $w^1, w^2, \ldots, w^N$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.  The normalized list $\hat w^1, \hat w^2, \ldots, \hat w^N$ determines a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$. 
+# Suppose we are given a list of nonnegative numbers, not all zero: $w^1, w^2, \ldots, w^N$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.  The normalized list $\hat w^1, \hat w^2, \ldots, \hat w^N$ determines a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$.
 # Note that for any constant $Z > 0$, the scaled list $Zw^1, Zw^2, \ldots, Zw^N$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
 #
 # When some list of data $z^1, z^2, \ldots, z^N$ have been associated with these respective numbers $w^1, w^2, \ldots, w^N$, then to *importance **re**sample* $M$ values from these data according to these weights means to independently sample indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the new list of data $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.  Compare to the function `resample` implemented near the black box above.
@@ -1334,11 +1334,11 @@ the_plot
 function particle_filter(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    
+
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    
+
     for t in 1:T
         for i in 1:N_particles
             traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -1354,12 +1354,12 @@ function particle_filter_infos(model, T, args, constraints, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
-    
+
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
     push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
-    
+
     for t in 1:T
         for i in 1:N_particles
             traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -1390,7 +1390,7 @@ function frame_from_weighted_traces(world, title, path, path_label, traces, log_
         alpha = max(min_alpha, 0.6*sqrt(weight))
         poses = get_path(trace)
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=trace_label, color=:green, alpha=alpha)
-        plot!(poses[end]; color=:green, alpha=alpha, label=nothing)       
+        plot!(poses[end]; color=:green, alpha=alpha, label=nothing)
         plot!([Segment(p1, p2) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
               label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=alpha)
         trace_label = nothing
@@ -1440,11 +1440,11 @@ gif(ani, "imgs/pf_animation_high.gif", fps=1)
 function particle_filter_bootstrap(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    
+
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    
+
     for t in 1:T
         traces, log_weights = resample(traces, log_weights)
 
@@ -1462,12 +1462,12 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
     log_weights = Vector{Float64}(undef, N_particles)
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
-    
+
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
     push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
-    
+
     for t in 1:T
         traces, log_weights = resample(traces, log_weights)
         push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
@@ -1530,7 +1530,7 @@ resample_ESS(particles, log_weights, ESS_threshold; M=nothing) =
 function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    
+
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
@@ -1558,7 +1558,7 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     log_weights = Vector{Float64}(undef, N_particles)
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
-    
+
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
