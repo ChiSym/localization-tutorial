@@ -698,7 +698,7 @@ gif(ani, "imgs/sensor_1.gif", fps=1)
 # %% [markdown]
 # ### Full model
 #
-# We fold the sensor model into the motion model to form a "full model", which whose traces describe simulations of the entire robot situation as we have described it.
+# We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
 
 # %%
 @gen (static) function full_model_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Pose
@@ -832,7 +832,7 @@ merged_constraints_low_deviation = merge(constraints_low_deviation...)
 merged_constraints_high_deviation = merge(constraints_high_deviation...);
 
 # %% [markdown]
-# We summarize the information available to the robot to determine its location.  On the one hand, one has guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path.  On the other hand, one has the sensor data.
+# We summarize the information available to the robot to determine its location. On the one hand, one has to produce a guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path. On the other hand, one has the sensor data.
 
 # %%
 function plot_bare_sensors(world, title, readings, label, sensor_settings)
@@ -934,7 +934,7 @@ all(trace[prefix_address(i, :sensor => j => :distance)] == merged_constraints_lo
 # %% [markdown]
 # The preceding comments apply to generative functions in wide generality.  We can say even more about our present examples, because further assumptions hold.
 # 1. There is no untraced randomness.  Given a full choice map for constraints, everything else is deterministic.  In particular, the importance weight is the `get_score`.
-# 2. The generative function was constructed using Gen's DSLs and primitive distributions.  Ancestral sampling; `Gen.generate` wit empty constraints reduces to `Gen.simulate` with importance weight $1$.
+# 2. The generative function was constructed using Gen's DSLs and primitive distributions.  Ancestral sampling; `Gen.generate` with empty constraints reduces to `Gen.simulate` with importance weight $1$.
 # 3. Combined, the importance weight is directly computed as the `Gen.project` of the trace upon the choice map addresses that were constrained in the call to `Gen.generate`.
 #
 #   In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
