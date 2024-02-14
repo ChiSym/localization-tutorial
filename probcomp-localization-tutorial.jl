@@ -1372,7 +1372,7 @@ function particle_filter_infos(model, T, args, constraints, N_particles)
 end;
 
 # %% [markdown]
-# This refactoring is called a *particle filter* because it of how it spreads the reasoning out along the time axis.  It has the important effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
+# This refactoring is called a *particle filter* because of how it spreads the reasoning out along the time axis.  It has the important effect of allowing the inference programmer to intervene, possibly modifying the particles at each time step.
 #
 # Let's begin by picturing the step-by-step nature of SMC:
 
@@ -1761,7 +1761,7 @@ the_plot
 #
 # For a low deviation path, a particle filter with mere resampling performed decent inference: the MCMC rejuvenation is overkill!  The issue was when the path deviation is higher.
 #
-# We, the inference programmers, do not have to be stuck here; we get to choose how much computing resource to spend on any given example.  For example, we can check a quantitative test for our particle population's suitabiliy as hypotheses, such as a marginal likelihood estimate, and only do as much work is needed to bring this measure to target.
+# We, the inference programmers, do not have to be stuck here; we get to choose how much computing resource to spend on any given example.  For example, we can check a quantitative test for our particle population's suitabiliy as hypotheses, such as a marginal likelihood estimate, and only do as much work as needed to bring this measure to target.
 
 # %%
 function controlled_particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
@@ -2017,7 +2017,7 @@ the_plot
 # %% [markdown]
 # We can compromise between the grid search and giggling.  The idea is to perform a mere two-element search that compares the given point with the random one, or rather to resample from the pair.  This would have a chance of improving sample quality, without spending much time searching for the improvement.
 #
-# The resulting algorithm is conventionally called "MCMC rejuvenation", and our strategy to resample between the pair amounts to the "Boltzmann acceptance rule".  A even more common acceptance rule that slightly biases in favor of the jiggled sample is called the "Metropolis–Hastings acceptance rule".
+# The resulting algorithm is conventionally called "MCMC rejuvenation", and our strategy to resample between the pair amounts to the "Boltzmann acceptance rule".  An even more common acceptance rule that slightly biases in favor of the jiggled sample is called the "Metropolis–Hastings acceptance rule".
 
 # %%
 function mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
