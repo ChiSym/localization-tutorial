@@ -1161,9 +1161,9 @@ function rejection_sample(model, args, merged_constraints, N_burn_in, N_particle
             attempts += 1
 
             # The use of `generate` is as explained in the preceding section.
-            particle, weight = generate(model, args, merged_constraints)
-            if weight > C + log(rand())
-                if weight > C; C = weight end
+            particle, log_weight = generate(model, args, merged_constraints)
+            if log_weight > C + log(rand())
+                if log_weight > C; C = log_weight end
                 push!(particles, particle)
                 break
             end
