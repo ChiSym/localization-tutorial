@@ -1594,7 +1594,7 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
 end;
 
 # %% [markdown]
-# ### Proper handling of weights in rejuvenation: SMCP<sup>3</sup>
+# ### Proper weighting in rejuvenation: SMCP<sup>3</sup>
 #
 # We will need to generalize our means of approximating some target distribution $P$ beyond the importance sampling setup from above.  Now there is an extended distribution $\~Q$ that samples *pairs* $(w,z)$ where the $w\text{s}$ belong to $\mathbf{R}_{\geq 0}$ and the $z\text{s}$ are of the type sampled by $P$.  We let $Q$ be the distribution on $z\text{s}$ provided by $\~Q$ upon forgetting the $w\text{s}$ (i.e., marginalizing out that component); complementarily, we define $f(z_0)$ to be the expected value of $w\text{s}$ produced by $\~Q$ conditionally on the value $z = z_0$.  We say that $\~Q$ is *properly weighted* for $P$ if these $(Q,f)$ implement importance sampling for $P$.
 #
