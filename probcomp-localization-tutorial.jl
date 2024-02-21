@@ -351,11 +351,19 @@ get_retval(trace)
 # %% [markdown]
 # ### Traces: scores/weights/densities
 #
-# Traced execution of a generative function also produces a particular kind of score/weight/density.  It is very important to be clear about which score/weight/density value is to be expected, and why.  Consider a generative function of two inputs $x,y$ that flips a coin with weight $p$, and accordingly returns $x$ or $y$.  When $x$ and $y$ are unequal, a sensible reporting of the score/weight/density in the sampling process would produce $p$ or $1-p$ accordingly.  If the user supplied equal values $x = y$, then which score/weight/density should be returned?
+# Traced execution of a generative function also produces a particular kind of score/weight/density.  It is very important to be clear about which score/weight/density value is to be expected, and why.  Consider the following generative function
+# ```
+# p = 0.25
+# @gen function g(x,y)
+#   flip ~ bernoulli(p)
+#   return flip ? x : y
+# end
+# ```
+# that, given two inputs `x` and `y`, flips a coin with weight `p`, and accordingly returns `x` or `y`.  When `x` and `y` are unequal, a sensible reporting of the score/weight/density in the sampling process would produce `p` or `1.0-p` accordingly.  If the user supplied equal values `x == y`, then which score/weight/density should be returned?
 #
 # One tempting view identifies a GF with a *distribution over its return values*.  In this view, the correct score/weight/density would be $1$.  Pursuing this approach for all GFs requires knowlege of all execution histories that might have produced any output, and then performing a sum over them.  For some small finite situations this may be fine, but this general problem of computing marginalizations is computationally impossible.  (More on this elsewhere, below a fold, or in an exercise?)  Therefore, this is ***not the viewpoint of Gen***, and the score/weight/density being introduced here is a ***different number***.
 #
-# The only thing a program can reasonably be expected to know is the score/weight/density of its arriving at its return value *via the particular stochastic computation path* that got it there, and the approach of Gen (ProbComp in general?!) is to report this number.  The corresponding mathematical picture imagines GFs as factored into *distributions over choice maps*, whose score/weight/density is computable, together with deterministic functions on these data that produce the return value from them.  In the toy example, the data of the choice map consists of the sampled Boolean value; the deterministic return value function chooses $x$ or $y$ using the sampled Boolean; and the score/weight/density is $p$ or $1-p$, regardless of whether the inputs are equal.
+# The only thing a program can reasonably be expected to know is the score/weight/density of its arriving at its return value *via the particular stochastic computation path* that got it there, and the approach of Gen (ProbComp in general?!) is to report this number.  The corresponding mathematical picture imagines GFs as factored into *distributions over choice maps*, whose score/weight/density is computable, together with *deterministic functions on these data* that produce the return value from them.  In the toy example `g` above, choice map consists of `flip`; the deterministic computation amounts to the `return` statement; and the score/weight/density is `p` or `1.0-p`, regardless of whether the inputs are equal.
 #
 # One may still be concerned with the distribution on return values.  This information arises in the aggregate of the sampled stochastic executions that lead to any return value, together with their weights.  (Consider that this is true even in the simple example.)  In a sense, when we kick the can of marginalization down the road, we can proceed without difficulty.
 #
