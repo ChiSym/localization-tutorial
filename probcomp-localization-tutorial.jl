@@ -1594,7 +1594,7 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
 end;
 
 # %% [markdown]
-# ### SMCP3 rejuvenation / grid search proposal
+# ### Proper handling of weights in rejuvenation: SMCP<sup>3</sup>
 #
 # Takes the following shape:
 
@@ -1610,6 +1610,8 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
     (particle, log_weight, proposal_args) -> smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args);
 
 # %% [markdown]
+# ### Grid search proposal
+#
 # Let us write the forward and backward transformations for the grid proposal.
 
 # %%
