@@ -1596,7 +1596,25 @@ end;
 # %% [markdown]
 # ### Proper handling of weights in rejuvenation: SMCP<sup>3</sup>
 #
-# Takes the following shape:
+# We will need to generalize our means of approximating some target distribution $P$ beyond the importance sampling setup from above.  Now there is an extended distribution $\~Q$ that samples *pairs* $(w,z)$ where the $w\text{s}$ belong to $\mathbf{R}_{\geq 0}$ and the $z\text{s}$ are of the type sampled by $P$.  We let $Q$ be the distribution on $z\text{s}$ provided by $\~Q$ upon forgetting the $w\text{s}$ (i.e., marginalizing out that component); complementarily, we define $f(z_0)$ to be the expected value of $w\text{s}$ produced by $\~Q$ conditionally on the value $z = z_0$.  We say that $\~Q$ is *properly weighted* for $P$ if these $(Q,f)$ implement importance sampling for $P$.
+#
+# If we already can compute $(Q,f)$ as in importance sampling, then we immediately get such a $\~Q$ by sampling $z$ from $Q$ then returning $(f(z),z)$.  The point of a properly weighted sampler $\~Q$, however, is that we need not compute $f(z)$ directly, but only provide stochastic estimates of this quantity—yielding far more general notion.
+#
+# The following question soon arises: when some generative function stochastically transforms values $z$ of type $X$ into values $z'$ of type $X'$, and we wish to target some distribution $P'$ on $X'$, how to transform a properly weighted sampler $\~Q$ for $P$ into a properly weighted sampler $\~Q'$ for $P'$?  More precisely, granted we first sample $(w,z) \sim \~Q$ then apply the GF to $z$ to get $z'$, what choice *incremental weight* $\~w$ and $w' := w \cdot \~w$ makes $(w',z')$ properly weighted for $P'$?  The concept of *SMCP<sup>3</sup>* (which generalizes so-called *SMC samplers* under composition) provides an answer, whose shape we now describe.
+#
+# As described early on, the generative function that stochastically transforms $z$ to $z'$ can be factored into two stages.  First, the stochasticity of its execution amounts to sampling a choice map from some distribution depending on the input $z$.  For varying $z$ these distributions fit into a "forward" probability kernel $k \colon X \dashrightarrow U$, where $U$ can be any auxiliary space that contains the trace information.  Second, the return value is deterministic in the input $z$ and the trace, so it amounts to a function $g \colon X \times U \to X'$.
+#
+# For SMCP3 we program designers must add two further pieces to this picture.  First we must specify another auxiliary space $U'$ and that captures all the information thrown away by $g$, so that we may augment $g$ to a *bijection* $\~g \colon X \times U \to X' \times U'$.  (In order to get a bijection, it is sometimes necessary to enlarge both $U$ and $U'$.)  Second, we must specify a "backwards" probability kernel $\ell \colon X' \dashrightarrow U'$.
+#
+# Now we have our properly weighted sampler $\~Q$ for $P$, producing $(w,z) \sim \~Q$.  We then run the generative function transformation on it by sampling $u \sim k_z$ and setting $(z',u') = \~g(z,u)$.  Along the way, we let $J$ be the absolute value of the Jacobian determinant of $\~g$ at $(z,u)$.  The take for our incremental weight
+# $$
+# \~w := \frac{P'(z')}{P(z)} \cdot \frac{\ell_{z'}(u')}{k_z(u)} \cdot J,
+# $$
+# and again set $w' = w \cdot \~w$.  (There is no problem if we instead compute $Z \cdot \~w$ for some constant $Z>0$, for instance, because we only know $P$ and $P'$ up to such constant multiples.)  The conclusion of SMCP<sup>3</sup> this total process $\~Q'$ that produces the pair $(w',z')$ is properly weighted for $P'$.
+#
+# The leeway of choice of backwards kernel $\ell$ may be less surprising when we are reminded of all the leeway $\~Q$ had in stochastically estimating $f(z)$ to begin with.  But the choice of $\ell$ is not at all arbitrary from a practical point of view.  Namely, the variance of $\~w$ is determined by how well $\ell$ approximates the following ideal: given a value $z'$, the samples $u' \sim \ell_{z'}$ guess the auxiliary data such that $(z',u') = \~g(z,u)$ where $(z,u)$ are *likely* for $z \sim Q$ and $u \sim k_z$
+#
+# In this notebook we will only apply SMCP<sup>3</sup> to generative function transformations upon a single space $X = X'$ with a single target distribution $P = P'$.  We will choose the transformation so that it *improves sample quality*, that is, so that the resulting new proposal distribution $Q'$ better approximates $P$.  Moreover, in our case, the bijection $\~g$ will amount to a permutation of some tuple components, so the Jacobian factor will be $J = 1$.  Thus SMCP<sup>3</sup> takes the following shape:
 
 # %%
 function smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args)
