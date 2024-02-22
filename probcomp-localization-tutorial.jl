@@ -1650,7 +1650,7 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
 #
 # A simple idea is to try searching near a given pose $z_t$, say, ranging through a grid of poses around it.  We can then replace $z_t$ with a grid member in proportion to the likelihood of the data $o_t$ at that pose.  In other words, we sample exactly from the restriction of the posterior to this finite set.
 #
-# Bringing this into the langauge of SMCP<sup>3</sup>, the forward kernel's auxiliary randomness $U$ records an index that addresses a grid member $z'_t$, and then $g(z_t,j) = z'_t$.  Reciprocally the grid around $z'_t$ contains $z_t$ at a unique "inverse" index $j'$ that can be computed from $j$.  Therefore, we can take $U'$ to record the indices too, and set $\~g(z_t,j) = (z'_t,j')$ to get a bijection.
+# Bringing this into the langauge of SMCP<sup>3</sup>, the forward kernel's auxiliary randomness $U$ records an index $j$ that addresses a grid member $z'_t$, and then $g(z_t,j) = z'_t$.  Reciprocally the grid around $z'_t$ contains $z_t$ at a unique "inverse" index $j'$ that can be computed from $j$.  Therefore, we can take $U'$ to record indices too, and set $\~g(z_t,j) = (z'_t,j')$ to get a bijection.
 #
 # This idea is implemented by `grid_fwd_proposal` below.  The (log) likelihoods of the poses in the grid are, up to a common constant, encoded in `pose_log_weights`.
 #
