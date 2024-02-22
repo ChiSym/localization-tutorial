@@ -2,8 +2,6 @@
 
 * Expos
   * See "Prospects..." below
-  * "Properly weighted samples":  Improve later resampling / end-to-end quality.
-  * Explain SMCP3 weights
   * Rif comments: Correct understanding of initial pose.
 
 * Debugging
