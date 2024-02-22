@@ -1633,13 +1633,28 @@ end;
 # In this notebook we will only apply SMCP<sup>3</sup> to generative function transformations upon a single space $X = X'$ with a single target distribution $P = P'$.  We will try to engineer the transformation so that it *improves sample quality*, that is, so that the resulting new proposal distribution $Q'$ might better approximate $P$ than $Q$ did (and, correspondingly, the variance of the weights should decrease as one passes from $\~Q$ to $\~Q'$).  Moreover, in our case, the bijection $\~g$ will amount to a permutation of some tuple components, so the Jacobian factor will be $J = 1$.  Thus SMCP<sup>3</sup> simplifies to take the following shape:
 
 # %%
+# The argument `fwd_proposal` sends a trace `t` to `(cm_t, cm_u, viz)` where
+# * `t2, _ = update(t, cm_t)` is the proposed new particle trace,
+# * `cm_u` is a choice map for `bwd_proposal`, and
+# * `viz` is data we supply for use in visualization.
+# The argument `bwd_proposal` works vice versa, sans the `viz`.
 function smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args)
-    _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, viz) = propose(fwd_proposal, (particle, proposal_args...))
+    fwd_proposal_trace = simulate(fwd_proposal, (particle, proposal_args...))
+    (fwd_model_update, bwd_proposal_choicemap, viz) = get_retval(fwd_proposal_trace)
+    fwd_proposal_weight = get_score(fwd_proposal_trace)
+    # Gen shorthand for the above lines:
+    # _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, viz) = propose(fwd_proposal, (particle, proposal_args...))
+
     proposed_particle, model_weight_diff, _, _ = update(particle, fwd_model_update)
-    bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_particle, proposal_args...), bwd_proposal_choicemap)
+
+    _, bwd_proposal_weight = generate(bwd_proposal, (proposed_particle, proposal_args), bwd_proposal_choicemap)
+    # One might also see the equivalent Gen code:
+    # bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_particle, proposal_args...), bwd_proposal_choicemap)
+
     proposed_log_weight = log_weight + model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
     return proposed_particle, proposed_log_weight, viz
 end
+
 smcp3_kernel(fwd_proposal, bwd_proposal) =
     (particle, log_weight, proposal_args) -> smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args);
 
