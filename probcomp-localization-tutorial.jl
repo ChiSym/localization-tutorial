@@ -1540,7 +1540,7 @@ the_plot
 # %% [markdown]
 # ### Rejuvenation
 #
-# Two issues: particle diversity after resampling, and quality of these samples.
+# After resampling, our particles are more concentrated on the more likely ones, but they have the defficiency of being redundant.  We may again intervene by independently modifying the particles, for example by adding noise to increase diversity, and possibly using our knowledge of the target distrubtion to better approximate it.  Such modification is called *rejuvenation*.  The general structure is as follows.
 
 # %%
 effective_sample_size(log_weights) =
@@ -1612,13 +1612,15 @@ end;
 # %% [markdown]
 # ### Proper weighting in rejuvenation: SMCP<sup>3</sup>
 #
+# As particles get modified in rejuvenation, what should happen to the weights?  The idea is to maintain the property that they properly weight the samples, and that SMCP<sup>3</sup> gives a means of modifying the weights to ensure this.
+#
 # We will need to generalize our means of approximating some target distribution $P$ beyond the importance sampling setup from above.  Now there is an extended distribution $\~Q$ that samples *pairs* $(w,z)$ where the $w\text{s}$ belong to $\mathbf{R}_{\geq 0}$ and the $z\text{s}$ are of the type sampled by $P$.  We let $Q$ be the distribution on $z\text{s}$ provided by $\~Q$ upon forgetting the $w\text{s}$ (i.e., marginalizing out that component); complementarily, we define $f(z_0)$ to be the expected value of $w\text{s}$ produced by $\~Q$ conditionally on the value $z = z_0$.  We say that $\~Q$ is *properly weighted* for $P$ if these $(Q,f)$ implement importance sampling for $P$.
 #
 # If we already can compute $Q$ and $f$ as in importance sampling, then we immediately get such a $\~Q$ by sampling $z$ from $Q$ then returning $(f(z),z)$.  The point of a properly weighted sampler $\~Q$, however, is that we need not compute $f(z)$ directly, but only provide stochastic estimates of this quantity—yielding a far more general notion.
 #
 # The following question soon arises: supposing we have on hand some properly weighted sampler $\~Q$ for $P$, where the values $z$ have type $X$, as well as some other target distribution $P'$ on values $z'$ of type $X'$, how might we concoct a properly weighted sampler $\~Q'$ for $P'$?  We might start by writing a generative function $g$ from $X$ to $X'$ to transform values $z$ into values $z'$.  So sampling $(w,z) \sim \~Q$ then applying $g$ to $z$ determines a proposal $Q'$ on $X'$.  It clearly would behoove us to engineer $g$ so to bring $Q'$ as near as possible to $P'$ in the first place.  But to close the remaining gap, for what construction of an *incremental weight* $\~w$ is it true that, setting $w' := w \cdot \~w$, the resulting distribution $(w',z') \sim \~Q'$ is properly weighted for $P'$?  The concept of *SMCP<sup>3</sup>* (which generalizes so-called *SMC samplers* and is composable) provides an answer to the incremental weight question, whose shape we now describe.
 #
-# As described early on, the generative function that stochastically transforms $z$ to $z'$ corresponds to the following mathematical data: a probability kernel $k := k_g \colon X \dashrightarrow U$, where $U := U_g$ can be any auxiliary space that contains the trace information, together with a return value function written $g \colon X \times U \to X'$.  For SMCP3 we program designers must extend the GF $g$ with the following interlocking pieces.  We must specify another auxiliary space $U'$ and that captures all the information thrown away by the return value function $g$, so that we may augment it to a *bijection* $\~g \colon X \times U \to X' \times U'$.  (In order to get a bijection, it is sometimes necessary to enlarge $U$ while designing $U'$.)  And, we must specify a "backwards" probability kernel $\ell \colon X' \dashrightarrow U'$.  In effect, $(k,\~g)$ determines a GF from $X$ to $X' \times U'$, while $(\ell,\~g^{-1})$ determines a GF back from $X'$ to $X \times U$.
+# As described early on, the generative function that stochastically transforms $z$ to $z'$ corresponds to the following mathematical data: a probability kernel $k := k_g \colon X \dashrightarrow U$, where $U := U_g$ can be any auxiliary space that contains the trace information, together with a return value function written $g \colon X \times U \to X'$.  For SMCP3 we program designers must extend the GF $g$ with the following interlocking pieces.  We must specify another auxiliary space $U'$ and that captures all the information in $X \times U$ thrown away by the return value function $g$, so that we may augment it to a *bijection* $\~g \colon X \times U \to X' \times U'$.  (In order to get a bijection, it is sometimes necessary to enlarge $U$ while designing $U'$.)  And, we must specify a "backwards" probability kernel $\ell \colon X' \dashrightarrow U'$.  In effect, $(k,\~g)$ determines a GF from $X$ to $X' \times U'$, while $(\ell,\~g^{-1})$ determines a GF back from $X'$ to $X \times U$.
 #
 # Now we have our properly weighted sampler $\~Q$ for $P$, producing $(w,z) \sim \~Q$.  We then run $\~g$ on it by sampling $u \sim k$ and setting $(z',u') = \~g(z,u)$.  Along the way, we let $J$ be the absolute value of the Jacobian determinant of $\~g$ at $(z,u)$.  The take for our incremental weight
 # $$
@@ -1642,9 +1644,21 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
     (particle, log_weight, proposal_args) -> smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args);
 
 # %% [markdown]
-# ### Grid search proposal
+# ### Grid search rejuvenation
 #
-# Let us write the forward and backward transformations for the grid proposal.
+# Having set up the apparatus of rejuvenation of particles and adjustment of their weights, we now specify a particular strategy of doing so.
+#
+# A simple idea is to try searching near a given pose $z_t$, say, ranging through a grid of poses around it.  We can then replace $z_t$ with a grid member in proportion to the likelihood of the data $o_t$ at that pose.  In other words, we sample exactly from the restriction of the posterior to this finite set.
+#
+# Bringing this into the langauge of SMCP<sup>3</sup>, the forward kernel's auxiliary randomness $U$ records an index that addresses a grid member $z'_t$, and then $g(z_t,j) = z'_t$.  Reciprocally the grid around $z'_t$ contains $z_t$ at a unique "inverse" index $j'$ that can be computed from $j$.  Therefore, we can take $U'$ to record the indices too, and set $\~g(z_t,j) = (z'_t,j')$ to get a bijection.
+#
+# This idea is implemented by `grid_fwd_proposal` below.  The (log) likelihoods of the poses in the grid are, up to a common constant, encoded in `pose_log_weights`.
+#
+# We illustrate the leeway in the design of the reverse kernel by providing two examples for this one forward kernel.  In both cases, given $z'_t$ are to guess a reverse index $j'$ so that $\~g^{-1}(z'_t,j') = (z_t,j)$ where $z_t$ was likely the pose prior to rejuvenation.
+#
+# The optimal way, from the point of view of minimizing the variance of the incremental weight, would be to sample $z_t$ from (the restriction to the grid of) the path model conditioned on the information that the forward kernel used the data $o_t$ to send $z_t$ to $z'_t$.  This strategy is implemented by `grid_bwd_proposal_exact` below.  While this design is admirable, it is computationally resource-intensive: one must search over the backwards grid, and at each grid member search over its forwards grid.
+#
+# There is a much faster and simpler way, at the cost of some incremental weight variance, but having empirically negligible impact on inference: ignore the data $o_t$, and just draw $z_t$ from (the restriction to the grid of) the path model.  This strategy is implemented by `grid_bwd_proposal` below.
 
 # %%
 function vector_grid(center :: Vector{Float64}, grid_n_points :: Vector{Int}, grid_sizes :: Vector{Float64}) :: Vector{Vector{Float64}}
@@ -1764,14 +1778,9 @@ savefig("imgs/PF_SMCP3_grid")
 the_plot
 
 # %% [markdown]
-# The speed of this approach is already perhaps an issue.
+# The speed of this approach is already perhaps an issue.  The performance is even worse (a factor of ~15x slower) using the "exact" backwards kernel, with no discernible improvement in inference, as can be seen by uncommenting and running the code below.
 
 # %%
-# While the above code runs a fast but less mathematically precise backwards proposal,
-# the following code runs the mathematically locally optimal backwards proposal.
-# It turns out this backwards proposal is ~15x slower, without discernably better
-# results, as you can see for yourself if you choose to uncomment, run, and compare it.
-
 # N_particles = 10
 # ESS_threshold =  1. + N_particles / 10.
 
