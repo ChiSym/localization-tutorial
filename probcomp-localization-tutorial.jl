@@ -23,7 +23,12 @@
 # %%
 # Global setup code
 
-# The dependencies consist of the following Juila packages.
+# Install dependencies listed in Project.toml
+using Pkg 
+Pkg.activate(".")
+Pkg.instantiate()
+
+# The dependencies consist of the following Julia packages.
 using Dates: now, value
 using JSON: parsefile
 using Plots
