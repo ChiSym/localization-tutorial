@@ -1654,7 +1654,7 @@ function smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_a
 
     proposed_particle, model_weight_diff, _, _ = update(particle, fwd_model_update)
 
-    _, bwd_proposal_weight = generate(bwd_proposal, (proposed_particle, proposal_args), bwd_proposal_choicemap)
+    _, bwd_proposal_weight = generate(bwd_proposal, (proposed_particle, proposal_args...), bwd_proposal_choicemap)
     # One might also see the equivalent Gen code:
     # bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_particle, proposal_args...), bwd_proposal_choicemap)
 
