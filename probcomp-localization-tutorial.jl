@@ -1774,7 +1774,7 @@ grid_smcp3_kernel_exact = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_exac
 
 # %%
 N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
+ESS_threshold = 1. + N_particles / 10.
 
 grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
