@@ -1638,11 +1638,13 @@ end;
 # In this notebook we will only apply SMCP<sup>3</sup> to generative function transformations upon a single space $X = X'$ with a single target distribution $P = P'$.  We will try to engineer the transformation so that it *improves sample quality*, that is, so that the resulting new proposal distribution $Q'$ might better approximate $P$ than $Q$ did (and, correspondingly, the variance of the importance weights should decrease as one passes from $\~Q$ to $\~Q'$).  Moreover, in our case, the bijection $\~g$ will amount to a permutation of some tuple components, so the Jacobian factor will be $J = 1$.  Thus SMCP<sup>3</sup> boils down to take the following shape:
 
 # %%
-# The argument `fwd_proposal` sends a trace `t` to `(cm_t, cm_u, viz)` where
-# * `t2, _ = update(t, cm_t)` is the proposed new particle trace,
-# * `cm_u` is a choice map for `bwd_proposal`, and
+# The argument `fwd_proposal` corresponds to `(k,\~g)` above.
+# Its input, a trace `t`, corresponds to `z` above.
+# Its output has the form `(cm_t, cm_u, viz)` where
+# * `t2, _ = update(t, cm_t)` is the proposed new particle trace, corresponding to `z'` above,
+# * `cm_u` is a choice map for `bwd_proposal`, corresponding to `u'` above, and
 # * `viz` is data we supply for use in visualization.
-# The argument `bwd_proposal` works vice versa, sans the `viz`.
+# The argument `bwd_proposal` works vice versa for `(\ell,\~g^{-1})` above, sans the `viz`.
 function smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args)
     fwd_proposal_trace = simulate(fwd_proposal, (particle, proposal_args...))
     (fwd_model_update, bwd_proposal_choicemap, viz) = get_retval(fwd_proposal_trace)
