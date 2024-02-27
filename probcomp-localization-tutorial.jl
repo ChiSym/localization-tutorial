@@ -1893,6 +1893,186 @@ the_plot
 # Here we see some degredation in the inference quality.
 
 # %% [markdown]
+# ### MCMC rejuvenation / Gaussian drift proposal
+#
+# A faster rejuvenation strategy than a grid search is to simply giggle the point.
+
+# %%
+@gen function drift_fwd_proposal(trace, drift_factor)
+    t = get_args(trace)[1]
+    p_noise = get_args(trace)[4].motion_settings.p_noise
+    hd_noise = get_args(trace)[4].motion_settings.hd_noise
+
+    undrift_p = trace[prefix_address(t+1, :pose => :p)]
+    undrift_hd = trace[prefix_address(t+1, :pose => :hd)]
+
+    drift_p ~ mvnormal(undrift_p, (drift_factor * p_noise)^2 * [1 0 ; 0 1])
+    drift_hd ~ normal(undrift_hd, drift_factor * hd_noise)
+
+    std_devs_radius = 2.
+    viz = (objs = ([undrift_p[1]], [undrift_p[2]]),
+           params = (color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
+                     markersize=(20. * std_devs_radius * p_noise), markerstrokewidth=0, alpha=0.25))
+
+    return choicemap((prefix_address(t+1, :pose => :p), drift_p), (prefix_address(t+1, :pose => :hd), drift_hd)),
+           choicemap((:undrift_p, undrift_p), (:undrift_hd, undrift_hd)),
+           viz
+end
+
+@gen function drift_bwd_proposal(trace, drift_factor)
+    t = get_args(trace)[1]
+    p_noise = get_args(trace)[4].motion_settings.p_noise
+    hd_noise = get_args(trace)[4].motion_settings.hd_noise
+
+    if t == 0
+       start_pose = get_args(trace)[2].start
+       noiseless_p = start_pose.p
+       noiseless_hd = start_pose.hd
+    else
+       prev_pose = trace[prefix_address(t, :pose)]
+       prev_control = get_args(trace)[2].controls[t]
+       noiseless_p = prev_pose.p + prev_control.ds * prev_pose.dp
+       noiseless_hd = prev_pose.hd + prev_control.dhd
+    end
+
+    drift_p = trace[prefix_address(t+1, :pose => :p)]
+    drift_hd = trace[prefix_address(t+1, :pose => :hd)]
+
+    # Optimal choice of `undrift_pose` is obtained from conditioning the motion model that noises `noiseless_pose` upon
+    # the information that the forward drift then further moved it to `drift_pose`.
+    # In this case there is a closed form, which happens to be a Gaussian drift with some other parameters.
+    e = 1/drift_factor^2
+    undrift_p ~ mvnormal((noiseless_p + e * drift_p)/(1+e), p_noise^2/(1+e) * [1 0 ; 0 1])
+    undrift_hd ~ normal((noiseless_hd + e * drift_hd)/(1+e), hd_noise/sqrt(1+e))
+
+    return choicemap((prefix_address(t+1, :pose => :p), undrift_p), (prefix_address(t+1, :pose => :hd), undrift_hd)),
+           choicemap((:drift_p, drift_p), (:drift_hd, drift_hd))
+end
+
+drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
+
+# %% [markdown]
+# It is worth considering the critique that this forward proposal does not improve the samples in any way towards the particular target distribution; all it does is jiggle them.  Any beneficial effect would result from the jiggling having been applied to already-resampled particles, amounting to a local search around a good candidate, upon which the next update and resample will be based.
+#
+# The result is, unsurprisingly, not much different from the bootstrap:
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+drift_factor = (1/3)
+drift_args_schedule = [drift_factor^j for j=1:3]
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Drift")
+savefig("imgs/PF_SMCP3_drift")
+the_plot
+
+# %% [markdown]
+# We can compromise between the grid search and giggling.  The idea is to perform a mere two-element search that compares the given point with the random one, or rather to immediately resample one from the pair.  This would have a chance of improving sample quality, without spending much time searching scrupulously for the improvement.
+#
+# The resulting algorithm is conventionally called "Markov chain Monte carlo (MCMC) rejuvenation".  Our strategy to just resample between the pair amounts to the "Boltzmann acceptance rule".  An even more common decision strategy that slightly biases in favor of the jiggled sample is called the "Metropolis–Hastings acceptance rule".
+
+# %%
+function mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
+    proposed_particle, proposed_log_weight, viz = mcmc_proposal(particle, log_weight, mcmc_args)
+    return mcmc_rule([particle, proposed_particle], [log_weight, proposed_log_weight])..., viz
+end
+mcmc_kernel(mcmc_proposal, mcmc_rule) =
+    (particle, log_weight, mcmc_args) -> mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
+
+boltzmann_rule = sample
+
+# Assumes `particles` is ordered so that first item is the original and second item is the proposed.
+# Notes:
+# * If the proposed item has higher weight, it is accepted unconditionally.  There is an overall bias.
+# * In all cases, the weight is unchanged.
+function mh_rule(particles, log_weights)
+    @assert length(particles) == length(log_weights) == 2
+    acceptance_ratio = min(1., exp(log_weights[2] - log_weights[1]))
+    return (bernoulli(acceptance_ratio) ? particles[2] : particles[1]), log_weights[1]
+end;
+
+# %%
+drift_boltzmann_kernel = mcmc_kernel(drift_smcp3_kernel, boltzmann_rule)
+drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+drift_factor = (1/3)^(1/3)
+drift_args_schedule = [drift_factor^j for j=1:9]
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + Boltzmann/Drift")
+savefig("imgs/PF_boltzmann_drift")
+the_plot
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+drift_factor = (1/3)^(1/3)
+drift_args_schedule = [drift_factor^j for j=1:9]
+
+traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
+prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Drift")
+savefig("imgs/PF_mh_drift")
+the_plot
+
+# %% [markdown]
+# We have recovered comparable inference performance to the grid search, at a fraction of the compute cost.
+
+# %% [markdown]
+# ## Controlled inference
+
+# %% [markdown]
+# ### Problems of robustness
+
+# %% [markdown]
 # ### Adaptive inference controller
 #
 # For a low deviation path, a particle filter with mere resampling performed decent inference: the rejuvenation is overkill!  The issue was when the path deviation is higher.
@@ -2060,175 +2240,4 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Controlled PF + SMCP3/Grid")
 savefig("imgs/PF_controller")
-the_plot
-
-# %% [markdown]
-# ### MCMC rejuvenation / Gaussian drift proposal
-#
-# A faster rejuvenation strategy than a grid search is to simply giggle the point.
-#
-# This proposal is fast enough that we need not use the inference controller.
-
-# %%
-@gen function drift_fwd_proposal(trace, drift_factor)
-    t = get_args(trace)[1]
-    p_noise = get_args(trace)[4].motion_settings.p_noise
-    hd_noise = get_args(trace)[4].motion_settings.hd_noise
-
-    undrift_p = trace[prefix_address(t+1, :pose => :p)]
-    undrift_hd = trace[prefix_address(t+1, :pose => :hd)]
-
-    drift_p ~ mvnormal(undrift_p, (drift_factor * p_noise)^2 * [1 0 ; 0 1])
-    drift_hd ~ normal(undrift_hd, drift_factor * hd_noise)
-
-    std_devs_radius = 2.
-    viz = (objs = ([undrift_p[1]], [undrift_p[2]]),
-           params = (color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
-                     markersize=(20. * std_devs_radius * p_noise), markerstrokewidth=0, alpha=0.25))
-
-    return choicemap((prefix_address(t+1, :pose => :p), drift_p), (prefix_address(t+1, :pose => :hd), drift_hd)),
-           choicemap((:undrift_p, undrift_p), (:undrift_hd, undrift_hd)),
-           viz
-end
-
-@gen function drift_bwd_proposal(trace, drift_factor)
-    t = get_args(trace)[1]
-    p_noise = get_args(trace)[4].motion_settings.p_noise
-    hd_noise = get_args(trace)[4].motion_settings.hd_noise
-
-    if t == 0
-       start_pose = get_args(trace)[2].start
-       noiseless_p = start_pose.p
-       noiseless_hd = start_pose.hd
-    else
-       prev_pose = trace[prefix_address(t, :pose)]
-       prev_control = get_args(trace)[2].controls[t]
-       noiseless_p = prev_pose.p + prev_control.ds * prev_pose.dp
-       noiseless_hd = prev_pose.hd + prev_control.dhd
-    end
-
-    drift_p = trace[prefix_address(t+1, :pose => :p)]
-    drift_hd = trace[prefix_address(t+1, :pose => :hd)]
-
-    # Optimal choice of `undrift_pose` is obtained from conditioning the motion model that noises `noiseless_pose` upon
-    # the information that the forward drift then further moved it to `drift_pose`.
-    # In this case there is a closed form, which happens to be a Gaussian drift with some other parameters.
-    e = 1/drift_factor^2
-    undrift_p ~ mvnormal((noiseless_p + e * drift_p)/(1+e), p_noise^2/(1+e) * [1 0 ; 0 1])
-    undrift_hd ~ normal((noiseless_hd + e * drift_hd)/(1+e), hd_noise/sqrt(1+e))
-
-    return choicemap((prefix_address(t+1, :pose => :p), undrift_p), (prefix_address(t+1, :pose => :hd), undrift_hd)),
-           choicemap((:drift_p, drift_p), (:drift_hd, drift_hd))
-end
-
-drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
-
-# %% [markdown]
-# A fair criticism is that this forward proposal in no way improves the samples; it only jiggles them.  So, on its own, the resulting algorithm is little different from the bootstrap on the original motion model with a higher motion noise parameter.
-
-# %%
-N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
-
-drift_factor = 1/3
-drift_args_schedule = [drift_factor^j for j=1:3]
-
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
-
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Drift")
-savefig("imgs/PF_SMCP3_drift")
-the_plot
-
-# %% [markdown]
-# We can compromise between the grid search and giggling.  The idea is to perform a mere two-element search that compares the given point with the random one, or rather to resample from the pair.  This would have a chance of improving sample quality, without spending much time searching for the improvement.
-#
-# The resulting algorithm is conventionally called "MCMC rejuvenation", and our strategy to resample between the pair amounts to the "Boltzmann acceptance rule".  An even more common acceptance rule that slightly biases in favor of the jiggled sample is called the "Metropolis–Hastings acceptance rule".
-
-# %%
-function mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
-    proposed_particle, proposed_log_weight, viz = mcmc_proposal(particle, log_weight, mcmc_args)
-    return mcmc_rule([particle, proposed_particle], [log_weight, proposed_log_weight])..., viz
-end
-mcmc_kernel(mcmc_proposal, mcmc_rule) =
-    (particle, log_weight, mcmc_args) -> mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
-
-boltzmann_rule = sample
-
-# Assumes `particles` is ordered so that first item is the original and second item is the proposed.
-# Notes:
-# * If the proposed item has higher weight, it is accepted unconditionally.  There is an overall bias.
-# * In all cases, the weight is unchanged.
-function mh_rule(particles, log_weights)
-    @assert length(particles) == length(log_weights) == 2
-    acceptance_ratio = min(1., exp(log_weights[2] - log_weights[1]))
-    return (bernoulli(acceptance_ratio) ? particles[2] : particles[1]), log_weights[1]
-end;
-
-# %%
-drift_boltzmann_kernel = mcmc_kernel(drift_smcp3_kernel, boltzmann_rule)
-drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
-
-# %%
-N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
-
-drift_factor = 1/3
-drift_args_schedule = [drift_factor^j for j=1:3]
-
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
-
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + Boltzmann/Drift")
-savefig("imgs/PF_boltzmann_drift")
-the_plot
-
-# %%
-N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
-
-drift_factor = 1/3
-drift_args_schedule = [drift_factor^j for j=1:3]
-
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
-
-t1 = now()
-traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
-
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Drift")
-savefig("imgs/PF_mh_drift")
 the_plot
