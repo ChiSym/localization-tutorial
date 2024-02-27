@@ -1617,7 +1617,7 @@ end;
 # %% [markdown]
 # ### Proper weighting in rejuvenation: SMCP<sup>3</sup>
 #
-# As particles get modified in rejuvenation, what should happen to the weights?  The idea is to maintain the property that they properly weight the samples, and that SMCP<sup>3</sup> gives a means of modifying the weights to ensure this.
+# As particles get modified in rejuvenation, what should happen to the weights?  The idea is to maintain the property that they properly weight the samples, and that "sequential Monte Carlo with probabilistic program proposals" (SMCP<sup>3</sup>) gives a means of modifying the weights to ensure this.
 #
 # We will need to generalize our means of approximating some target distribution $P$ beyond the importance sampling setup from above.  Now there is an extended distribution $\~Q$ that samples *pairs* $(w,z)$ where the $w\text{s}$ belong to $\mathbf{R}_{\geq 0}$ and the $z\text{s}$ are of the type sampled by $P$.  We let $Q$ be the distribution on $z\text{s}$ provided by $\~Q$ upon forgetting the $w\text{s}$ (i.e., marginalizing out that component); complementarily, we define $f(z_0)$ to be the expected value of $w\text{s}$ produced by $\~Q$ conditionally on the value $z = z_0$.  We say that $\~Q$ is *properly weighted* for $P$ if these $(Q,f)$ implement importance sampling for $P$.
 #
@@ -1627,13 +1627,13 @@ end;
 #
 # As described early on, the generative function that stochastically transforms $z$ to $z'$ corresponds to the following mathematical data: a probability kernel $k := k_g \colon X \dashrightarrow U$, where $U := U_g$ can be any auxiliary space that contains the trace information, together with a return value function written $g \colon X \times U \to X'$.  For SMCP<sup>3</sup> we program designers must extend the GF $g$ with the following interlocking pieces.  We must specify another auxiliary space $U'$ and that captures all the information in $X \times U$ thrown away by the return value function $g$, so that we may augment it to a *bijection* $\~g \colon X \times U \to X' \times U'$.  (In order to get a bijection, it is sometimes necessary to enlarge $U$ while designing $U'$.)  And, we must specify a "backwards" probability kernel $\ell \colon X' \dashrightarrow U'$.  In effect, $(k,\~g)$ determines a GF from $X$ to $X' \times U'$, while $(\ell,\~g^{-1})$ determines a GF back from $X'$ to $X \times U$.
 #
-# Now we have our properly weighted sampler $\~Q$ for $P$, producing $(w,z) \sim \~Q$.  We then run $\~g$ on it by sampling $u \sim k$ and setting $(z',u') = \~g(z,u)$.  Along the way, we let $J$ be the absolute value of the Jacobian determinant of $\~g$ at $(z,u)$.  The take for our incremental weight
+# Now we have our properly weighted sampler $\~Q$ for $P$, producing $(w,z) \sim \~Q$.  We then run $\~g$ on it by sampling $u \sim k$ and setting $(z',u') = \~g(z,u)$.  Along the way, we let $J$ be the absolute value of the Jacobian determinant of $\~g$ at $(z,u)$.  Then take for our incremental weight
 # $$
 # \~w := \frac{P'(z')}{P(z)} \cdot \frac{\ell_{z'}(u')}{k_z(u)} \cdot J,
 # $$
-# and again set $w' = w \cdot \~w$.  (There is no problem if we instead compute some positive constant multiple of this $\~w$, for instance, because we only know $P$ and $P'$ up to such constant multiples.)  The conclusion of SMCP<sup>3</sup> is that this total process $\~Q'$ that produces the pair $(w',z')$ is properly weighted for $P'$.
+# and again set $w' = w \cdot \~w$.  (There is no problem if we instead compute some positive constant multiple of this $\~w$, for instance, because we only know $P$ and $P'$ up to such constant multiples.)  The conclusion of SMCP<sup>3</sup> is that this total process $\~Q'$ that produces the pair $(w',z')$ is properly weighted for $P'$, under suitable hypotheses.
 #
-# The leeway of choice of backwards kernel $\ell$ may be less surprising when we are reminded of all the leeway $\~Q$ had in stochastically estimating $f(z)$ to begin with.  But the choice of $\ell$ is not at all arbitrary from a practical point of view.  Namely, the variance of $\~w$ is determined by how well $\ell$ approximates the following ideal: given a value $z'$, the samples $u' \sim \ell_{z'}$ guess the auxiliary data such that $(z',u') = \~g(z,u)$ where $(z,u)$ are *likely* for $z \sim Q$ and $u \sim k_z$ conditionally on $(z',u')$.  In turn, the variance of the importance weight $w' = w \cdot \~w$ affects the quality of later-*resampled* particles.
+# The leeway of choice of backwards kernel $\ell$ may be less surprising when we are reminded of all the leeway $\~Q$ had in stochastically estimating $f(z)$ to begin with.  But the choice of $\ell$ is not at all arbitrary from a practical point of view.  Namely, the variance of $\~w$ is determined by how well $\ell$ approximates the following ideal: given a value $z'$, the samples $u' \sim \ell_{z'}$ guess the auxiliary data such that $(z',u') = \~g(z,u)$ where $(z,u)$ are *likely* for $z \sim Q$ and $u \sim k_z$ conditionally on $(z',u')$.  In turn, the variance of the approximate importance weight $w' = w \cdot \~w$ affects the quality of later-*resampled* particles.
 #
 # In this notebook we will only apply SMCP<sup>3</sup> to generative function transformations upon a single space $X = X'$ with a single target distribution $P = P'$.  We will try to engineer the transformation so that it *improves sample quality*, that is, so that the resulting new proposal distribution $Q'$ might better approximate $P$ than $Q$ did (and, correspondingly, the variance of the importance weights should decrease as one passes from $\~Q$ to $\~Q'$).  Moreover, in our case, the bijection $\~g$ will amount to a permutation of some tuple components, so the Jacobian factor will be $J = 1$.  Thus SMCP<sup>3</sup> boils down to take the following shape:
 
@@ -1834,7 +1834,7 @@ the_plot
 
 # %%
 N_particles = 3
-ESS_threshold = 1. + N_particles / 10. # The resampling is vacuous in this case, making this value irrelevant.
+ESS_threshold = 1. + N_particles / 10.
 
 grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
