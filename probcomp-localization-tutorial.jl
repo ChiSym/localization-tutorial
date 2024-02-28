@@ -855,8 +855,8 @@ observations_high_deviation = get_sensors(trace_high_deviation)
 constraint_from_sensors(t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
     choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
 
-constraints_low_deviation = [constraint_from_sensors(t, r) for (t, r) in enumerate(observations_low_deviation)]
-constraints_high_deviation = [constraint_from_sensors(t, r) for (t, r) in enumerate(observations_high_deviation)]
+constraints_low_deviation = [constraint_from_sensors(o...) for o in enumerate(observations_low_deviation)]
+constraints_high_deviation = [constraint_from_sensors(o...) for o in enumerate(observations_high_deviation)]
 merged_constraints_low_deviation = merge(constraints_low_deviation...)
 merged_constraints_high_deviation = merge(constraints_high_deviation...);
 
