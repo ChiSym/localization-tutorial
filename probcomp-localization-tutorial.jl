@@ -2071,6 +2071,106 @@ the_plot
 
 # %% [markdown]
 # ### Problems of robustness
+#
+# We may have a reasonable means of tracking the robot's position, when we maintain near-idealized conditions.  But how well does our inference code work when it is run on observation data sets that break our hypotheses?
+#
+# For example, what happens when we start the robot facing the wrong way?
+
+# %%
+trace_backward_start, _ = generate(full_model, (T, robot_inputs, world_inputs, (full_settings..., motion_settings=motion_settings_low_deviation)), choicemap((prefix_address(1, :pose => :hd), Float64(pi))))
+path_backward_start = get_path(trace_backward_start)
+observations_backward_start = get_sensors(trace_backward_start)
+constraints_backward_start = [constraint_from_sensors(o...) for o in enumerate(observations_backward_start)]
+
+frames_backward_start = frames_from_full_trace(world, "Backward start", trace_backward_start)
+ani = Animation()
+for frame_plot in frames_backward_start
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/backward_start.gif", fps=2)
+
+# %% [markdown]
+# Our model doesn't propose any realistic hypotheses for the inference strategy to work with:
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+drift_factor = (1/3)^(1/3)
+drift_args_schedule = [drift_factor^j for j=1:9]
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_backward_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+the_plot = frame_from_traces(world, "Backwards start", path_backward_start, "path to be fit", traces, "samples")
+savefig("imgs/backwards_start")
+the_plot
+
+# %% [markdown]
+# Or how about if we "kidnapped" the robot: partway through the journey, the robot is paused, moved to another room, then resumed?
+#
+# Constructing such data using the current `full_model` is a little tricky, because the poses appearing in the trace are only *attempted* step destinations, which are then subjected to wall-collision detection: just using `generate` with a constraint for a pose in the next room will only crash the robot into the wall.
+#
+# Since we only need a data set, rather than a bona fide trace, we proceed instead by splicing two trajectories (or rather their observations), the second of which has been validly steered into the wrong room.
+
+# %%
+trace_kidnapped_first = simulate(full_model, (T, robot_inputs, world_inputs, (full_settings..., motion_settings=motion_settings_low_deviation)))
+path_kidnapped_first = get_path(trace_kidnapped_first)
+observations_kidnapped_first = get_sensors(trace_kidnapped_first)
+
+controls_kidnapping = [Control(1.8,0.), Control(0.,-pi/2.), Control(4.,0.), Control(0.,pi/2.)]
+T_kidnap = length(controls_kidnapping)
+controls_kidnapped = [controls_kidnapping..., robot_inputs.controls[(T_kidnap+1):end]...]
+
+trace_kidnapped_second = simulate(full_model, (T, (robot_inputs..., controls=controls_kidnapped), world_inputs, (full_settings..., motion_settings=motion_settings_low_deviation)))
+path_kidnapped_second = get_path(trace_kidnapped_second)
+observations_kidnapped_second = get_sensors(trace_kidnapped_second)
+
+path_kidnapped = [path_kidnapped_first[1:T_kidnap]..., path_kidnapped_second[(T_kidnap+1):end]...]
+observations_kidnapped = [observations_kidnapped_first[1:T_kidnap]..., observations_kidnapped_second[(T_kidnap+1):end]...]
+constraints_kidnapped = [constraint_from_sensors(o...) for o in enumerate(observations_kidnapped)]
+
+frames_kidnapped = Vector{Plots.Plot}(undef, 2*(T+1))
+for t in 1:(T+1)
+    frame_plot = plot_world(world, "Kidnapped after t=4")
+    plot!(path_kidnapped[1:t-1]; color=:black, label="past poses")
+    frames_kidnapped[2*t-1] = frame_plot
+    frames_kidnapped[2*t] = frame_from_sensors(
+        world, "Kidnapped after t=4",
+        path_kidnapped[1:t], :black, nothing,
+        path_kidnapped[t], observations_kidnapped[t], "sampled sensors",
+        full_settings.sensor_settings)
+end
+ani = Animation()
+for frame_plot in frames_kidnapped
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/kidnapped.gif", fps=2)
+
+# %% [markdown]
+# Again, inference only produces explanations that were plausible in terms of the given `full_model`:
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+drift_factor = (1/3)^(1/3)
+drift_args_schedule = [drift_factor^j for j=1:9]
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_kidnapped, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+the_plot = frame_from_traces(world, "Kidnapped after t=4", path_kidnapped, "path to be fit", traces, "samples")
+savefig("imgs/backwards_start")
+the_plot
+
+# %% [markdown]
+# We take up the task of accommodating a wider range of phenomena.  As the above examples makes clear, robustness requires a model that is flexible enough to accommodate what we encounter.  Then our inference strategy ought to harness this flexibility in selecting traces that explain the given data.
+
+# %% [markdown]
+# ### ??? more robust model ???
 
 # %% [markdown]
 # ### Adaptive inference controller
