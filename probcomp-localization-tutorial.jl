@@ -2067,10 +2067,10 @@ the_plot
 # We have recovered comparable inference performance to the grid search, at a fraction of the compute cost.
 
 # %% [markdown]
-# ## Controlled inference
+# ## Improving robustness
 
 # %% [markdown]
-# ### Problems of robustness
+# ### Unanticipated challenges
 #
 # We may have a reasonable means of tracking the robot's position, when we maintain near-idealized conditions.  But how well does our inference code work when it is run on observation data sets that break our hypotheses?
 #
