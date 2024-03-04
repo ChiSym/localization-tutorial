@@ -2163,7 +2163,22 @@ the_plot
 # We take up the task of accommodating a wider range of phenomena.  As the above examples make clear, robustness requires a model that is flexible enough to accommodate what we encounter in the first place.  Then our inference strategy ought to harness this flexibility in selecting traces that explain the given data.
 
 # %% [markdown]
-# ### ??? more robust model ???
+# ### Hierarchical modeling
+#
+# We would like to model the possibility that we might hold different states of belief about the correct modeling strategy.  For example, we might find different noise parameters appropriate at different times, or even range among very differently conceived models embodying a discrete choice of strategy.  Thus we will have a familiy of models parameterized by this family of states of belief, as well as a distribution over this family.  Such is the nature of a *hierarchical model* as is commonly found in the Bayesian world.
+#
+# The family of states of belief, together with the distribution representing our prior over them, make up the *hyperprior*.  A state of belief drawn from the hyperprior is called a *parameter*.  The instantiation of the model downstream of this choice of parameter remains simply the *prior* (albeit specialized to this parameter).
+#
+# We will rework each of the motion and sensor models hierarchically, in such a way that their parameters represent increasing degrees of uncertainty, thus leading the prior to produce more diverse samples.  This will interoperate with an inference strategy that decides when to spend more effort ranging over more uncertain samples.
+
+# %% [markdown]
+# For simplicity let us propose four increasing levels of uncertainty around the motion of the robot.  They are, in order, represented by the following distributions:
+# 1. Identical to the path model as specified above.
+# 2. The path model as above, but with the motion noise parameters tripled.
+# 3. The path model as above, but with the motion noise parameters decupled.
+# 4. Complete ignorance, embodied as a uniform distribution over the bounding box.
+#
+#
 
 # %% [markdown]
 # ### Adaptive inference controller
