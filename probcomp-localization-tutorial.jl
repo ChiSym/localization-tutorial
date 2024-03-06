@@ -2160,7 +2160,42 @@ savefig("imgs/backwards_start")
 the_plot
 
 # %% [markdown]
-# We take up the task of accommodating a wider range of phenomena.  As the above examples make clear, robustness requires a model that is flexible enough to accommodate what we encounter in the first place.  Then our inference strategy ought to harness this flexibility in selecting traces that explain the given data.
+# For another challenge, what if our map were modestly inaccurate?
+#
+# At the beginning of the notebook, we illustrated the data of "clutters", or extra boxes left inside the environment.  These would impact the motion and the sensory *observation data* of a run of the robot, but are not accounted for in the above *model* when attempting to infer its path.  How well does the inference process work in the presence of such discrepancies?
+
+# %%
+world_inputs_cluttered = (world_inputs..., walls=world.walls_clutters)
+
+trace_cluttered = simulate(full_model, (T, robot_inputs, world_inputs_cluttered, (full_settings..., motion_settings=motion_settings_low_deviation)))
+path_cluttered = get_path(trace_cluttered)
+observations_cluttered = get_sensors(trace_cluttered)
+constraints_cluttered = [constraint_from_sensors(o...) for o in enumerate(observations_cluttered)]
+
+ani = Animation()
+frames_cluttered = frames_from_full_trace(world, "Cluttered space", trace_cluttered; show_clutters=true)
+for frame_plot in frames_cluttered[2:2:end]
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/cluttered.gif", fps=2)
+
+# %% [markdown]
+# TODO: arrange clutters to confuse the inference!  Then comment here on how it breaks down.
+
+# %%
+N_particles = 10
+ESS_threshold =  1. + N_particles / 10.
+
+drift_factor = (1/3)^(1/3)
+drift_args_schedule = [drift_factor^j for j=1:9]
+
+t1 = now()
+traces = [sample(particle_filter_rejuv(full_model, T, full_model_args, constraints_cluttered, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)...)[1] for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+the_plot = frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", traces, "samples"; show_clutters=true)
+savefig("imgs/backwards_start")
+the_plot
 
 # %% [markdown]
 # ### Hierarchical modeling
