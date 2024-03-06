@@ -2198,22 +2198,11 @@ savefig("imgs/backwards_start")
 the_plot
 
 # %% [markdown]
-# ### Hierarchical modeling
+# We take up the task of accommodating a wider range of phenomena in our modeling and inference.  As the above examples make clear, a variety of innovations will be needed.
 #
-# We would like to model the possibility that we might hold different states of belief about the correct modeling strategy.  For example, we might find different noise parameters appropriate at different times, or even range among very differently conceived models embodying a discrete choice of strategy.  Thus we will have a familiy of models parameterized by this family of states of belief, as well as a distribution over this family.  Such is the nature of a *hierarchical model* as is commonly found in the Bayesian world.
+# Some problems, like the backwards-starting robot, can be addressed simply by working with greater uncertainty and compute budget.  For this we will introduce an adaptive *inference controller* that intervenes more drastically as it fails to find a good fit, applying more intensive rejuvenation proposals, and if necessary backing out some steps and trying again.
 #
-# The family of states of belief, together with the distribution representing our prior over them, make up the *hyperprior*.  A state of belief drawn from the hyperprior is called a *parameter*.  The instantiation of the model downstream of this choice of parameter remains simply the *prior* (albeit specialized to this parameter).
-#
-# We will rework each of the motion and sensor models hierarchically, in such a way that their parameters represent increasing degrees of uncertainty, thus leading the prior to produce more diverse samples.  This will interoperate with an inference strategy that decides when to spend more effort ranging over more uncertain samples.
-
-# %% [markdown]
-# For simplicity let us propose four increasing levels of uncertainty around the motion of the robot.  They are, in order, represented by the following distributions:
-# 1. Identical to the path model as specified above.
-# 2. The path model as above, but with the motion noise parameters tripled.
-# 3. The path model as above, but with the motion noise parameters decupled.
-# 4. Complete ignorance, embodied as a uniform distribution over the bounding box.
-#
-#
+# Other problems, such as kidnapping and map discrepancy, require a model that is flexible enough to accommodate what we encounter in the first place.  For this we will employ Bayesian *hierarchical models* that express the belief that rare discrepancies occur.
 
 # %% [markdown]
 # ### Adaptive inference controller
@@ -2384,3 +2373,21 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Controlled PF + SMCP3/Grid")
 savefig("imgs/PF_controller")
 the_plot
+
+# %% [markdown]
+# ### Hierarchical modeling
+#
+# We would like to model the possibility that we might hold different states of belief about the correct modeling strategy.  For example, we might find different noise parameters appropriate at different times, or even range among very differently conceived models embodying a discrete choice of strategy.  Thus we will have a familiy of models parameterized by this family of states of belief, as well as a distribution over this family.  Such is the nature of a *hierarchical model* as is commonly found in the Bayesian world.
+#
+# The family of states of belief, together with the distribution representing our prior over them, make up the *hyperprior*.  A state of belief drawn from the hyperprior is called a *parameter*.  The instantiation of the model downstream of this choice of parameter remains simply the *prior* (albeit specialized to this parameter).
+#
+# We will rework each of the motion and sensor models hierarchically, in such a way that their parameters represent increasing degrees of uncertainty, thus leading the prior to produce more diverse samples.  This will interoperate with an inference strategy that decides when to spend more effort ranging over more uncertain samples.
+
+# %% [markdown]
+# For simplicity let us propose four increasing levels of uncertainty around the motion of the robot.  They are, in order, represented by the following distributions:
+# 1. Identical to the path model as specified above.
+# 2. The path model as above, but with the motion noise parameters tripled.
+# 3. The path model as above, but with the motion noise parameters decupled.
+# 4. Complete ignorance, embodied as a uniform distribution over the bounding box.
+#
+#
