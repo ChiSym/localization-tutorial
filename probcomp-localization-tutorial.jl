@@ -2067,6 +2067,11 @@ the_plot
 # We have recovered comparable inference performance to the grid search, at a fraction of the compute cost.
 
 # %% [markdown]
+# ### Reusable components
+#
+# The ingredients of the particle filter programs we have written may certainly be abstracted, then reused with brevity.  Although we will not do so here, out of an intention to keep all the methods explicit, we note that such abstractions are provided by the `GenParticleFilters` library.  For an example of its use, the reader is now encouraged to peer into `black_box.jl` and compare the inference code there to the present state of our approach to the robot problem.
+
+# %% [markdown]
 # ## Improving robustness
 
 # %% [markdown]
