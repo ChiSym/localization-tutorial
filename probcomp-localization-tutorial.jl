@@ -2212,11 +2212,9 @@ the_plot
 # %% [markdown]
 # ### Adaptive inference controller
 #
-# For a low deviation path, a particle filter with mere resampling performed decent inference: the rejuvenation is overkill!  The issue was when the path deviation is higher.
+# For a low deviation path, a particle filter with mere resampling performed decent inference: the rejuvenation is overkill!  The issue was when the path deviation is higher, possibly wildly higher.  We, the inference programmers, do not have to be stuck with some fixed amount of rejuvenation effort; we get to choose how much computing resource to spend on any given example.  For example, we can quantitatively test for our particle population's suitability as hypotheses, and do (only) as much work as needed to bring this measure to target.
 #
-# We, the inference programmers, do not have to be stuck here; we get to choose how much computing resource to spend on any given example.  For example, we can quantitatively test for our particle population's suitabiliy as hypotheses, such as a marginal likelihood estimate, and only do as much work as needed to bring this measure to target.
-#
-# Generally speaking, an algorithm that manages the construction of particles, possibly examining them and adaptively making decisions among operations to perform, is called an *inference controller*.
+# The following code is just one embodiment of this idea.
 
 # %%
 function controlled_particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
