@@ -2223,128 +2223,176 @@ the_plot
 # %% [markdown]
 # ### Adaptive inference controller
 #
-# For a low deviation path, a particle filter with mere resampling performed decent inference: the rejuvenation is overkill!  The issue was when the path deviation is higher, possibly wildly higher.  We, the inference programmers, do not have to be stuck with some fixed amount of rejuvenation effort; we get to choose how much computing resource to spend on any given example.  For example, we can quantitatively test for our particle population's suitability as hypotheses, and do (only) as much work as needed to bring this measure to target.
+# We, the inference programmers, do not have to be stuck with some fixed amount of rejuvenation effort.  We get to choose how much computing resource to spend to bring some measure of our particle population's suitability in line with a target.
 #
-# The following code is just one embodiment of this idea.
+# The code below is just one embodiment of this idea.  It might help to explain its structure in words:
+#
+# The first new ingredient is a numerical test for the suitability of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions.  In our case, the requirement will be that the proposed new step particles be not much more unlikely under the psterior than the preceding ones, or more precisely that the change in average importance weight lie above some lower bound.  As for the interventions, first comes a sequence of zero or more rejuvenation strategies, say, Gaussian drift, followed by more costly grid search.  If this is not enough, next we consider that prior time steps might have led us into a dead end, so we roll back and try again.
+#
+# Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  To prevent this, we limit the amount of backtracking, after which a (possibly unsatisfactory) advance is enforced.  But there are many specific ways the inference programmer might choose to respond to this circumstance.  As you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human reasoning, just as modeling with generative functions offers an expression of quantifiable beliefs, in the presence of uncertainty.
+#
+# In performing the rollback, we make use of `Gen.update`'s cousin, `Gen.regenerate`.  Whereas the former allows us to modify the functional arguments to a trace and/or insert specific outcomes to its random choices, the latter allows modifying the arguments plus *resampling* specific random choices from their parent distributions.
 
 # %%
-function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
-    MAX_rejuv=3)
+function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
-    prev_total_weight = 0.
+    log_avg_weight_reference = 0.
+    t = 0
+
+    # Backtracking state.    
+    t_save = 0
+    candidates = []
+
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
 
-    for t in 1:T
+    while t < T
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
 
-        rejuv_count = 0
-        temp_args_schedule = rejuv_args_schedule
-        while logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count <= MAX_rejuv
+        for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound; break end
             for i in 1:N_particles
                 for rejuv_args in rejuv_args_schedule
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
                 end
             end
-
-            if logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count != MAX_rejuv && t > 1
-                # Produce entirely new extensions to the last time step by first backing out and then readvancing.
-                for i in 1:N_particles
-                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-2, args...), change_only_T, choicemap())
-                    log_weights[i] += log_weight_increment
-                end
-                for i in 1:N_particles
-                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-1, args...), change_only_T, constraints[t])
-                    log_weights[i] += log_weight_increment
-                end
-
-                # By the way, the following commented lines would accomplish the same (on traces, not infos) as the above two loops.
-                # for i in 1:N_particles
-                #     traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
-                #     log_weights[i] += log_weight_increment
-                # end
-
-                traces, weights = resample_ESS(traces, log_weights, ESS_threshold)
-            end
-
-            rejuv_count += 1
-            temp_args_schedule = args_schedule_modifier(temp_args_schedule, rejuv_count)
         end
 
-        prev_total_weight = logsumexp(log_weights)
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
+        # Backtracking logic.
+        if isempty(candidates)
+            # Normal operation / not currently backtracking.
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
+                log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                action = :advance
+            else
+                t_save = t
+                candidates = [(copy(traces), copy(log_weights))]
+                action = :backtrack
+            end
+        elseif t < t_save
+            # Working through a backtrack.  Proceed to timestep `t_save` without sub-backtracking.
+            action = :advance
+        else
+            # At the end of a backtrack.  If it works, terminate backtracking and accept it.
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
+                candidates = []
+                log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                action = :advance
+            else
+                # Otherwise, try backtracking again, or else choose from the known candidates and move on.
+                push!(candidates, (copy(traces), copy(log_weights)))
+                if length(candidates) <= length(backtrack_schedule)
+                    action = :backtrack
+                else
+                    log_total_weights = [logsumexp(cand[2]) for cand in candidates]
+                    traces, log_weights = candidates[categorical(exp.(log_total_weights .- logsumexp(log_total_weights)))]
+                    candidates = []
+                    log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                    action = :advance
+                end
+            end
+        end
+
+        if action == :advance
+            t = t + 1
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
+        elseif action == :backtrack
+            t = max(0, t - backtrack_schedule[length(candidates)])
+            for i in 1:N_particles
+                regen_addrs = select(prefix_address(t+1, :pose), prefix_address(t+1, :sensor))
+                traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, regen_addrs)
+                log_weights[i] += log_weight_increment
+            end
         end
     end
 
     return sample(traces, log_weights)
 end
 
-function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule, weight_change_bound, args_schedule_modifier;
-                                                MAX_rejuv=3)
+function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
 
-    prev_total_weight = 0.
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
-    end
-    push!(infos, (type = :initialize, time = now(), t = 0, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    log_avg_weight_reference = 0.
+    t = 0
 
-    for t in 1:T
+    t_save = 0
+    candidates = []
+
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
+    end
+    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+
+    while t < T
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
         push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
-        rejuv_count = 0
-        temp_args_schedule = rejuv_args_schedule
-        while logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count <= MAX_rejuv
+        for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound; break end
             for i in 1:N_particles
                 for rejuv_args in rejuv_args_schedule
-                    traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                    traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
                 end
             end
-            push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+            push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+        end
 
-            if logsumexp(log_weights) - prev_total_weight < weight_change_bound && rejuv_count != MAX_rejuv && t > 1
-                # Produce entirely new extensions to the last time step by first backing out and then readvancing.
-                for i in 1:N_particles
-                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-2, args...), change_only_T, choicemap())
-                    log_weights[i] += log_weight_increment
-                end
-                push!(infos, (type = :regenernate_bwd, time=now(), label = "roll back", traces = copy(traces), log_weights = copy(log_weights)))
-                for i in 1:N_particles
-                    traces[i], log_weight_increment, _, _ = update(traces[i], (t-1, args...), change_only_T, constraints[t])
-                    log_weights[i] += log_weight_increment
-                end
-                push!(infos, (type = :regenernate_fwd, time=now(), t = t, label = "fwd again", traces = copy(traces), log_weights = copy(log_weights)))
-
-                # By the way, the following commented lines would accomplish the same (on traces, not infos) as the above two loops.
-                # for i in 1:N_particles
-                #     traces[i], log_weight_increment, _, _ = regenerate(traces[i], select(prefix_address(t-1, :pose)))
-                #     log_weights[i] += log_weight_increment
-                # end
-                # push!(infos, (type = :regenerate, label = "regenernate", traces = copy(traces), log_weights = copy(log_weights)))
-
-                traces, weights = resample_ESS(traces, log_weights, ESS_threshold)
-                push!(infos, (type = :resample2, time=now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        if isempty(candidates)
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
+                log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                action = :advance
+            else
+                t_save = t
+                candidates = [(copy(traces), copy(log_weights))]
+                action = :backtrack
             end
-
-            rejuv_count += 1
-            temp_args_schedule = args_schedule_modifier(temp_args_schedule, rejuv_count)
+        elseif t < t_save
+            action = :advance
+        else
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
+                candidates = []
+                log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                action = :advance
+            else
+                push!(candidates, (copy(traces), copy(log_weights)))
+                if length(candidates) <= length(backtrack_schedule)
+                    action = :backtrack
+                else
+                    log_total_weights = [logsumexp(cand[2]) for cand in candidates]
+                    traces, log_weights = candidates[categorical(exp.(log_total_weights .- logsumexp(log_total_weights)))]
+                    candidates = []
+                    log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                    action = :advance
+                end
+            end
         end
 
-        prev_total_weight = logsumexp(log_weights)
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
+        if action == :advance
+            t = t + 1
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
+            push!(infos, (type = :update, time=now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+        elseif action == :backtrack
+            dt = min(backtrack_schedule[length(candidates)], t)
+            t = t - dt
+            for i in 1:N_particles
+                regen_addrs = select(prefix_address(t+1, :pose), prefix_address(t+1, :sensor))
+                traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, regen_addrs)
+                log_weights[i] += log_weight_increment
+            end
+            push!(infos, (type = :backtrack, time=now(), t = t, label = "backtrack $dt steps", traces = copy(traces), log_weights = copy(log_weights)))
         end
-        push!(infos, (type = :update, time=now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
     traces, log_weights = [sample(traces, log_weights)], [0.]
