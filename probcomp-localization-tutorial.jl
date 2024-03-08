@@ -2091,7 +2091,10 @@ the_plot
 # For example, what happens when we start the robot facing the wrong way?
 
 # %%
-trace_backward_start, _ = generate(full_model, (T, robot_inputs, world_inputs, (full_settings..., motion_settings=motion_settings_low_deviation)), choicemap((prefix_address(1, :pose => :hd), Float64(pi))))
+full_settings_low_dev = (full_settings..., motion_settings=motion_settings_low_deviation)
+
+ensure_backward_start = choicemap((prefix_address(1, :pose => :hd), Float64(pi)))
+trace_backward_start, _ = generate(full_model, (T, robot_inputs, world_inputs, full_settings_low_dev), ensure_backward_start)
 path_backward_start = get_path(trace_backward_start)
 observations_backward_start = get_sensors(trace_backward_start)
 constraints_backward_start = [constraint_from_sensors(o...) for o in enumerate(observations_backward_start)]
@@ -2129,14 +2132,14 @@ the_plot
 # Since we only need a data set, rather than a bona fide trace, we proceed instead by splicing two trajectories (or rather their observations), the second of which has been validly steered into the wrong room.
 
 # %%
-trace_kidnapped_first = simulate(full_model, (T, robot_inputs, world_inputs, (full_settings..., motion_settings=motion_settings_low_deviation)))
+trace_kidnapped_first = simulate(full_model, (T, robot_inputs, world_inputs, full_settings_low_dev))
 path_kidnapped_first = get_path(trace_kidnapped_first)
 observations_kidnapped_first = get_sensors(trace_kidnapped_first)
 
 controls_kidnapping = [Control(1.8,0.), Control(0.,-pi/2.), Control(4.,0.), Control(0.,pi/2.)]
 T_kidnap = length(controls_kidnapping)
 controls_kidnapped = [controls_kidnapping..., robot_inputs.controls[(T_kidnap+1):end]...]
-trace_kidnapped_second = simulate(full_model, (T, (robot_inputs..., controls=controls_kidnapped), world_inputs, (full_settings..., motion_settings=motion_settings_low_deviation)))
+trace_kidnapped_second = simulate(full_model, (T, (robot_inputs..., controls=controls_kidnapped), world_inputs, full_settings_low_dev))
 path_kidnapped_second = get_path(trace_kidnapped_second)
 observations_kidnapped_second = get_sensors(trace_kidnapped_second)
 
@@ -2180,8 +2183,7 @@ the_plot
 
 # %%
 world_inputs_cluttered = (world_inputs..., walls=world.walls_clutters)
-
-trace_cluttered = simulate(full_model, (T, robot_inputs, world_inputs_cluttered, (full_settings..., motion_settings=motion_settings_low_deviation)))
+trace_cluttered = simulate(full_model, (T, robot_inputs, world_inputs_cluttered, full_settings_low_dev))
 path_cluttered = get_path(trace_cluttered)
 observations_cluttered = get_sensors(trace_cluttered)
 constraints_cluttered = [constraint_from_sensors(o...) for o in enumerate(observations_cluttered)]
