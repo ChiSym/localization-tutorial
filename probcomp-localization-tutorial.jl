@@ -2259,7 +2259,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound; break end
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance; break end
             for i in 1:N_particles
                 for rejuv_args in rejuv_args_schedule
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2272,7 +2272,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             # Normal operation / not currently backtracking.
             # If rejuvenation succeeded, accept the particles and move on,
             # else initiate backtracking.
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
             else
@@ -2289,7 +2289,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             # If it works, terminate backtracking and accept it.
             # Otherwise, try backtracking again if more is on the schedule,
             # or else choose from the list of candidates produced by all the backtracking and move on.
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
                 candidates = []
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
@@ -2351,7 +2351,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound; break end
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance; break end
             for i in 1:N_particles
                 for rejuv_args in rejuv_args_schedule
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2361,7 +2361,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         end
 
         if isempty(candidates)
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
             else
@@ -2372,7 +2372,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         elseif t < t_save
             action = :advance
         else
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
                 candidates = []
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
