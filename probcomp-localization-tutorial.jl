@@ -2303,10 +2303,11 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                 log_weights[i] += log_weight_increment
             end
         elseif action == :backtrack
-            t = max(0, t - backtrack_schedule[length(candidates)])
+            dt = min(backtrack_schedule[length(candidates)], t)
+            t = t - dt
+            regen_addr = select(prefix_address(t+1, :pose))
             for i in 1:N_particles
-                regen_addrs = select(prefix_address(t+1, :pose), prefix_address(t+1, :sensor))
-                traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, regen_addrs)
+                traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, regen_addr)
                 log_weights[i] += log_weight_increment
             end
         end
@@ -2386,9 +2387,9 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         elseif action == :backtrack
             dt = min(backtrack_schedule[length(candidates)], t)
             t = t - dt
+            regen_addr = select(prefix_address(t+1, :pose))
             for i in 1:N_particles
-                regen_addrs = select(prefix_address(t+1, :pose), prefix_address(t+1, :sensor))
-                traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, regen_addrs)
+                traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, regen_addr)
                 log_weights[i] += log_weight_increment
             end
             push!(infos, (type = :backtrack, time=now(), t = t, label = "backtrack $dt steps", traces = copy(traces), log_weights = copy(log_weights)))
