@@ -1675,7 +1675,7 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
     (particle, log_weight, proposal_args) -> smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args);
 
 # %% [markdown]
-# ### Grid search rejuvenation
+# ### Grid search proposal
 #
 # Having set up the apparatus of rejuvenation of particles and adjustment of their weights, we now specify a particular strategy of doing so.
 #
