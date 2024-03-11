@@ -2227,24 +2227,30 @@ the_plot
 #
 # The code below is just one embodiment of this idea.  It might help to explain its structure in words:
 #
-# The first new ingredient is a numerical test for the suitability of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions.  In our case, the requirement will be that the proposed new step particles be not much more unlikely under the psterior than the preceding ones, or more precisely that the change in average importance weight lie above some lower bound.  As for the interventions, first comes a sequence of zero or more rejuvenation strategies, say, Gaussian drift, followed by more costly grid search.  If this is not enough, next we consider that prior time steps might have led us into a dead end, so we roll back and try again.
+# The first new ingredient is a numerical test for the suitability of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions.  In our case, the requirement will be that the proposed new step particles be not much more unlikely under the psterior than the preceding ones, or more precisely that the change in average importance weight lie above some lower bound.  As for the interventions, first comes a sequence of zero or more rejuvenation strategies, say, Gaussian drift, followed by more costly grid search.  If this is not enough, next we consider that prior time steps might have led us into a dead end, so we roll back some number of steps and try again.
 #
-# Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  To prevent this, we limit the amount of backtracking, after which a (possibly unsatisfactory) advance is enforced.  But there are many specific ways the inference programmer might choose to respond to this circumstance.  As you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human reasoning, just as modeling with generative functions offers an expression of quantifiable beliefs, in the presence of uncertainty.
+# Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  To prevent this, we limit the amount of backtracking, after which a (possibly unsatisfactory) advance is enforced.  But there are many specific ways the inference programmer might choose to respond to this circumstance.  As you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human *reasoning*, just as modeling with generative functions offers an expression of quantifiable *beliefs*, in the presence of uncertainty.
 #
-# In performing the rollback, we make use of `Gen.update`'s cousin, `Gen.regenerate`.  Whereas the former allows us to modify the functional arguments to a trace and/or insert specific outcomes to its random choices, the latter allows modifying the arguments plus *resampling* specific random choices from their parent distributions.
+# In performing the rollback, we make use of `Gen.update`'s cousin, `Gen.regenerate`.  Whereas the former allows us to modify the functional arguments to a trace and/or insert specific outcomes to its random choices, the latter allows modifying the arguments plus *redrawing* specific random choices from their original distributions.
 
 # %%
 function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
+    # Used to determine whether to keep spending effort on improving the samples.
     log_avg_weight_reference = 0.
-    t = 0
 
-    # Backtracking state.    
-    t_save = 0
+    # Backtracking state.
+    # The list `candidates` is empty when no backtracking is going on.
+    # Otherwise, `t_save` stores the time step from which we have backtracked,
+    # and `candidates` contains the results of completed runs up to time `t_save`.
+    # In the case where we have reached indecision stuckness (`backtrack_schedule` has been exhausted),
+    # we accept a choice from `candidates` and return to normal non-backtrack operation.
     candidates = []
+    t_save = 0
 
+    t = 0
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
@@ -2264,6 +2270,8 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         # Backtracking logic.
         if isempty(candidates)
             # Normal operation / not currently backtracking.
+            # If rejuvenation succeeded, accept the particles and move on,
+            # else initiate backtracking.
             if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
@@ -2273,16 +2281,19 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                 action = :backtrack
             end
         elseif t < t_save
-            # Working through a backtrack.  Proceed to timestep `t_save` without sub-backtracking.
+            # Working through an incomplete backtrack.
+            # Proceed to timestep `t_save` to complete the backtrack, without sub-backtracking.
             action = :advance
         else
-            # At the end of a backtrack.  If it works, terminate backtracking and accept it.
+            # At the end of a backtrack.
+            # If it works, terminate backtracking and accept it.
+            # Otherwise, try backtracking again if more is on the schedule,
+            # or else choose from the list of candidates produced by all the backtracking and move on.
             if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_bound
                 candidates = []
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
             else
-                # Otherwise, try backtracking again, or else choose from the known candidates and move on.
                 push!(candidates, (copy(traces), copy(log_weights)))
                 if length(candidates) <= length(backtrack_schedule)
                     action = :backtrack
@@ -2303,6 +2314,8 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                 log_weights[i] += log_weight_increment
             end
         elseif action == :backtrack
+            # Roll back by `backtrack_schedule[length(candidates)]` time steps,
+            # and redraw at the resulting time step.
             dt = min(backtrack_schedule[length(candidates)], t)
             t = t - dt
             regen_addr = select(prefix_address(t+1, :pose))
@@ -2323,11 +2336,11 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     infos = []
 
     log_avg_weight_reference = 0.
-    t = 0
 
-    t_save = 0
     candidates = []
+    t_save = 0
 
+    t = 0
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
