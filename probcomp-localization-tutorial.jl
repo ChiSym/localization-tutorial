@@ -2275,7 +2275,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             # Normal operation / not currently backtracking.
             # If rejuvenation succeeded, accept the particles and move on,
             # else initiate backtracking.
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance || isempty(backtrack_schedule)
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
             else
@@ -2364,7 +2364,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         end
 
         if isempty(candidates)
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
+            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance || isempty(backtrack_schedule)
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
             else
