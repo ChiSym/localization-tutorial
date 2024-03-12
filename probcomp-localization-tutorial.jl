@@ -1972,8 +1972,7 @@ drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_factor = (1/3)
-drift_args_schedule = [drift_factor^j for j=1:3]
+drift_args_schedule = [0.3^j for j=1:3]
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
@@ -2027,8 +2026,7 @@ drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_factor = (1/3)^(1/3)
-drift_args_schedule = [drift_factor^j for j=1:9]
+drift_args_schedule = [0.5^j for j=1:4]
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
@@ -2053,8 +2051,7 @@ the_plot
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_factor = (1/3)^(1/3)
-drift_args_schedule = [drift_factor^j for j=1:9]
+drift_args_schedule = [0.5^j for j=1:4]
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
