@@ -1436,7 +1436,11 @@ function frame_from_info(world, title, path, path_label, info, info_label; show_
     the_plot = frame_from_weighted_traces(world, title * "\nt=$(info.t)|" * info.label, path, path_label,
                     info.traces, info.log_weights, info_label; show_clutters=show_clutters, min_alpha=min_alpha)
     if haskey(info, :vizs)
-        plot!(info.vizs[1].objs...; info.vizs[1].params...)
+        viz_label = haskey(info.vizs[1].params, :label) ? info.vizs[1].params.label : nothing
+        for viz in info.vizs
+            plot!(viz.objs...; viz.params..., label=viz_label)
+            viz_label=nothing
+        end
     end
     return the_plot
 end;
@@ -1492,7 +1496,6 @@ end
 function particle_filter_bootstrap_infos(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
 
     for i in 1:N_particles
