@@ -1606,12 +1606,12 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
         push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
-        for i in 1:N_particles
-            for rejuv_args in rejuv_args_schedule
+        for rejuv_args in rejuv_args_schedule
+            for i in 1:N_particles
                 traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
             end
+            push!(infos, (type = :rejuvenate, time = now(), label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
         end
-        push!(infos, (type = :rejuvenate, time = now(), label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
 
         for i in 1:N_particles
             traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -2355,12 +2355,12 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
             if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance; break end
-            for i in 1:N_particles
-                for rejuv_args in rejuv_args_schedule
-                    traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+            for rejuv_args in rejuv_args_schedule
+                for i in 1:N_particles
+                    traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
                 end
+                push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
             end
-            push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
         end
 
         if isempty(candidates)
