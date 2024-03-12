@@ -1921,10 +1921,10 @@ the_plot
     drift_p ~ mvnormal(undrift_p, (drift_factor * p_noise)^2 * [1 0 ; 0 1])
     drift_hd ~ normal(undrift_hd, drift_factor * hd_noise)
 
-    std_devs_radius = 2.
+    std_devs_radius = 2.5 * drift_factor * p_noise
     viz = (objs = ([undrift_p[1]], [undrift_p[2]]),
-           params = (color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
-                     markersize=(20. * std_devs_radius * p_noise), markerstrokewidth=0, alpha=0.25))
+           params = (color=:red, label="95% region", seriestype=:scatter,
+                     markersize=std_devs_radius, markerstrokewidth=0, alpha=0.25))
 
     return choicemap((prefix_address(t+1, :pose => :p), drift_p), (prefix_address(t+1, :pose => :hd), drift_hd)),
            choicemap((:undrift_p, undrift_p), (:undrift_hd, undrift_hd)),
