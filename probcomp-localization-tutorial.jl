@@ -2290,13 +2290,13 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         else
             # At the end of a backtrack.
             # If it works, terminate backtracking and accept it.
-            # Otherwise, try backtracking again if more is on the schedule,
-            # or else choose from the list of candidates produced by all the backtracking and move on.
             if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
                 candidates = []
                 log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
                 action = :advance
             else
+                # Otherwise, try backtracking again if more is on the schedule,
+                # or else choose from the list of candidates produced by all the backtracking and move on.
                 push!(candidates, (copy(traces), copy(log_weights)))
                 if length(candidates) <= length(backtrack_schedule)
                     action = :backtrack
