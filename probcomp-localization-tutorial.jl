@@ -2016,7 +2016,7 @@ savefig("imgs/PF_SMCP3_drift")
 the_plot
 
 # %% [markdown]
-# We can compromise between the grid search and giggling.  The idea is to perform a mere two-element search that compares the given point with the random one, or rather to immediately resample one from the pair.  This would have a chance of improving sample quality, without spending much time searching scrupulously for the improvement.
+# We can compromise between the grid search and jiggling.  The idea is to perform a mere two-element search that compares the given point with the random one, or rather to immediately resample one from the pair.  This would have a chance of improving sample quality, without spending much time searching scrupulously for the improvement.
 #
 # The resulting algorithm is conventionally called "Markov chain Monte carlo (MCMC) rejuvenation".  Our strategy to just resample between the pair amounts to the "Boltzmann acceptance rule".  An even more common decision strategy that slightly biases in favor of the jiggled sample is called the "Metropolis–Hastings acceptance rule".
 
