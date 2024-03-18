@@ -2044,6 +2044,24 @@ end;
 drift_boltzmann_kernel = mcmc_kernel(drift_smcp3_kernel, boltzmann_rule)
 drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
 
+# %% [markdown]
+# Here are a detailed run, followed by the aggregate behavior, using the Boltzmann rule:
+
+# %%
+N_particles = 10
+ESS_threshold = 1. + N_particles / 10.
+
+drift_args_schedule = [0.5^j for j=1:4]
+
+infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)
+
+ani = Animation()
+for info in infos
+    graph = frame_from_info(world, "Run of PF + Boltzmann/Drift", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, graph)
+end
+gif(ani, "imgs/PF_boltzmann_drift.gif", fps=1)
+
 # %%
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
@@ -2068,6 +2086,24 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + Boltzmann/Drift")
 savefig("imgs/PF_boltzmann_drift")
 the_plot
+
+# %% [markdown]
+# Similarly, here are a detailed run, followed by the aggregate behavior, using the MH rule:
+
+# %%
+N_particles = 10
+ESS_threshold = 1. + N_particles / 10.
+
+drift_args_schedule = [0.5^j for j=1:4]
+
+infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)
+
+ani = Animation()
+for info in infos
+    graph = frame_from_info(world, "Run of PF + MH/Drift", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, graph)
+end
+gif(ani, "imgs/PF_mh_drift.gif", fps=1)
 
 # %%
 N_particles = 10
