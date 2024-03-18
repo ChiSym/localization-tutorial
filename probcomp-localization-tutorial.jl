@@ -1690,7 +1690,7 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
 #
 # We illustrate the leeway in the design of the reverse kernel by providing two examples for this one forward kernel.  In both cases, given $z'_t$ we are to guess a reverse index $j'$ so that $\~g^{-1}(z'_t,j') = (z_t,j)$ where $z_t$ was likely the pose prior to rejuvenation.
 #
-# The optimal way, from the point of view of minimizing the variance of the incremental weight, would be to sample $z_t$ from (the restriction to the grid of) the path model conditioned on the information that the forward kernel used the data $o_t$ to send $z_t$ to $z'_t$.  This strategy is implemented by `grid_bwd_proposal_exact` below.  While this design is admirable, it is computationally resource-intensive: one must iterate over the backwards grid, and at each of these grid members interate over its forwards grid to compute a weight.
+# The optimal way, from the point of view of theoretically minimizing the variance of the incremental weight, would be to sample $z_t$ from (the restriction to the grid of) the path model conditioned on the information that the forward kernel used the data $o_t$ to send $z_t$ to $z'_t$.  This strategy is implemented by `grid_bwd_proposal_exact` below.  While this design is admirable, it is computationally resource-intensive: one must iterate over the backwards grid, and at each of these grid members interate over its forwards grid to compute a weight.
 #
 # There is a much faster and simpler way, at the cost of so little incremental weight variance that it has empirically negligible impact on inference performance: ignore the data $o_t$, and just draw $z_t$ from (the restriction to the inverse grid of) the path model.  This strategy is implemented by `grid_bwd_proposal` below.
 
@@ -1907,7 +1907,7 @@ the_plot
 # %% [markdown]
 # ### MCMC rejuvenation / Gaussian drift proposal
 #
-# A faster rejuvenation strategy than a grid search is to simply giggle the point.
+# A faster rejuvenation strategy than a grid search is to simply jiggle the point.
 
 # %%
 @gen function drift_fwd_proposal(trace, drift_factor)
@@ -2078,7 +2078,7 @@ the_plot
 # %% [markdown]
 # ### Reusable components
 #
-# The ingredients of the particle filter programs we have written may certainly be abstracted, then reused with brevity.  Although we will not do so here, out of an intention to keep all the methods explicit, we note that such abstractions are provided by the `GenParticleFilters` library.  For an example of its use, the reader is now encouraged to peer into `black_box.jl` and compare the inference code there to the present state of our approach to the robot problem.
+# The ingredients of the particle filter programs we have written may certainly be abstracted, then reused with brevity.  Although we will not do so here, out of an intention to keep all the techniques explicit, we note that such abstractions are provided by the `GenParticleFilters` library.  For an example of its use, the reader is encouraged to peer into `black_box.jl` and compare the inference code there to the present state of our approach to the robot problem.
 
 # %% [markdown]
 # ## Improving robustness
