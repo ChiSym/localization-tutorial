@@ -1994,7 +1994,7 @@ drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_args_schedule = [0.3^j for j=1:3]
+drift_args_schedule = [0.3^k for k=1:3]
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
@@ -2051,7 +2051,7 @@ drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
 N_particles = 10
 ESS_threshold = 1. + N_particles / 10.
 
-drift_args_schedule = [0.5^j for j=1:4]
+drift_args_schedule = [0.8^k for k=1:10]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)
 
@@ -2066,7 +2066,7 @@ gif(ani, "imgs/PF_boltzmann_drift.gif", fps=1)
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_args_schedule = [0.5^j for j=1:4]
+drift_args_schedule = [0.8^k for k=1:10]
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
@@ -2094,7 +2094,7 @@ the_plot
 N_particles = 10
 ESS_threshold = 1. + N_particles / 10.
 
-drift_args_schedule = [0.5^j for j=1:4]
+drift_args_schedule = [0.8^k for k=1:10]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)
 
@@ -2109,7 +2109,7 @@ gif(ani, "imgs/PF_mh_drift.gif", fps=1)
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_args_schedule = [0.5^j for j=1:4]
+drift_args_schedule = [0.8^k for k=1:10]
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
@@ -2171,8 +2171,7 @@ gif(ani, "imgs/backward_start.gif", fps=2)
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_factor = (1/3)^(1/3)
-drift_args_schedule = [drift_factor^j for j=1:9]
+drift_args_schedule = [0.8^j for j=1:10]
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_backward_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
@@ -2223,8 +2222,7 @@ gif(ani, "imgs/kidnapped.gif", fps=2)
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_factor = (1/3)^(1/3)
-drift_args_schedule = [drift_factor^j for j=1:9]
+drift_args_schedule = [0.8^k for k=1:10]
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_kidnapped, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
@@ -2260,8 +2258,7 @@ gif(ani, "imgs/cluttered.gif", fps=2)
 N_particles = 10
 ESS_threshold =  1. + N_particles / 10.
 
-drift_factor = (1/3)^(1/3)
-drift_args_schedule = [drift_factor^j for j=1:9]
+drift_args_schedule = [0.8^k for k=1:10]
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_cluttered, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
