@@ -289,18 +289,22 @@ end;
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
 
 # %%
+unit_circle_xs = [cos(t) for t in LinRange(0., 2pi, 500)]
+unit_circle_ys = [sin(t) for t in LinRange(0., 2pi, 500)]
+make_circle(p, r) = (p[1] .+ r * unit_circle_xs, p[2] .+ r * unit_circle_ys);
+
+# %%
 motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
 
 N_samples = 50
 pose_samples = [start_pose_prior(robot_inputs.start, motion_settings) for _ in 1:N_samples]
 
-std_devs_radius = 2.
+std_devs_radius = 2.5 * motion_settings.p_noise
 
 the_plot = plot_world(world, "Start pose prior (samples)")
-plot!([robot_inputs.start.p[1]], [robot_inputs.start.p[2]];
-      color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
-      markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
-plot!(pose_samples; color=:red, label=nothing)
+plot!(make_circle(robot_inputs.start.p, std_devs_radius);
+      color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
+plot!(pose_samples; color=:red, label="start pose samples")
 savefig("imgs/start_prior")
 the_plot
 
@@ -311,9 +315,8 @@ step_samples = [step_model(robot_inputs.start, robot_inputs.controls[1], world_i
 
 the_plot = plot_world(world, "Motion step model model (samples)")
 plot!(robot_inputs.start; color=:black, label="step from here")
-plot!([noiseless_step[1]], [noiseless_step[2]];
-      color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
-      markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
+plot!(make_circle(noiseless_step, std_devs_radius);
+      color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
 plot!(step_samples; color=:red, label="step samples")
 savefig("imgs/motion_step")
 the_plot
@@ -476,19 +479,19 @@ get_selected(get_choices(trace), select((prefix_address(t, :pose) for t in 1:6).
 # As our truncation of the example trace above might suggest, visualization is an essential practice in ProbComp.  We could very well pass the output of the above `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit: writing interpretive code for GFs in terms of their traces rather than their return values.  This enables the programmer include the parameters of the model in the display for clarity.
 
 # %%
-function frames_from_motion_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
+function frames_from_motion_trace(world, title, trace; show_clutters=false)
     T = get_args(trace)[1]
     robot_inputs = get_args(trace)[2]
     poses = get_path(trace)
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
     motion_settings = get_args(trace)[4]
+    std_devs_radius = 2.5 * motion_settings.p_noise
     plots = Vector{Plots.Plot}(undef, T+1)
     for t in 1:(T+1)
         frame_plot = plot_world(world, title; show_clutters=show_clutters)
         plot!(poses[1:t-1]; color=:black, label="past poses")
-        plot!([noiseless_steps[t][1]], [noiseless_steps[t][2]];
-              color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
-              markersize=(20. * std_devs_radius * motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
+        plot!(make_circle(noiseless_steps[t], std_devs_radius);
+              color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
         plot!(Pose(trace[prefix_address(t, :pose => :p)], poses[t].hd); color=:red, label="sampled next step")
         plots[t] = frame_plot
     end
@@ -777,20 +780,20 @@ get_selected(get_choices(trace), selection)
 # By this point, visualization is essential.
 
 # %%
-function frames_from_full_trace(world, title, trace; show_clutters=false, std_devs_radius=2.)
+function frames_from_full_trace(world, title, trace; show_clutters=false)
     T = get_args(trace)[1]
     robot_inputs = get_args(trace)[2]
     poses = get_path(trace)
     noiseless_steps = [robot_inputs.start.p, [pose.p + c.ds * pose.dp for (pose, c) in zip(poses, robot_inputs.controls)]...]
     settings = get_args(trace)[4]
+    std_devs_radius = 2.5 * settings.motion_settings.p_noise
     sensor_readings = get_sensors(trace)
     plots = Vector{Plots.Plot}(undef, 2*(T+1))
     for t in 1:(T+1)
         frame_plot = plot_world(world, title; show_clutters=show_clutters)
         plot!(poses[1:t-1]; color=:black, label="past poses")
-        plot!([noiseless_steps[t][1]], [noiseless_steps[t][2]];
-              color=:red, label="$(round(std_devs_radius, digits=2))σ region", seriestype=:scatter,
-              markersize=(20. * std_devs_radius * settings.motion_settings.p_noise), markerstrokewidth=0, alpha=0.25)
+        plot!(make_circle(noiseless_steps[t], std_devs_radius);
+              color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
         plot!(Pose(trace[prefix_address(t, :pose => :p)], poses[t].hd); color=:red, label="sampled next step")
         plots[2*t-1] = frame_plot
         plots[2*t] = frame_from_sensors(
@@ -1942,9 +1945,8 @@ the_plot
     drift_hd ~ normal(undrift_hd, drift_factor * hd_noise)
 
     std_devs_radius = 2.5 * drift_factor * p_noise
-    viz = (objs = ([undrift_p[1]], [undrift_p[2]]),
-           params = (color=:red, label="95% region", seriestype=:scatter,
-                     markersize=std_devs_radius, markerstrokewidth=0, alpha=0.25))
+    viz = (objs = make_circle(undrift_p, std_devs_radius),
+           params = (color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25))
 
     return choicemap((prefix_address(t+1, :pose => :p), drift_p), (prefix_address(t+1, :pose => :hd), drift_hd)),
            choicemap((:undrift_p, undrift_p), (:undrift_hd, undrift_hd)),
