@@ -1988,7 +1988,7 @@ drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
 # %% [markdown]
 # It is worth considering the critique that this forward proposal does not improve the samples in any way towards the particular target distribution; all it does is jiggle them.  Any beneficial effect would result from the jiggling having been applied to already-resampled particles, amounting to a local search around a good candidate, upon which the next update and resample will be based.
 #
-# The result is, unsurprisingly, not much different from the bootstrap:
+# The result is, unsurprisingly, not much different from the plain bootstrap:
 
 # %%
 N_particles = 10
