@@ -1501,17 +1501,17 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :initialize, time = now(), t = 0, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
         traces, log_weights = resample(traces, log_weights)
-        push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         for i in 1:N_particles
             traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
             log_weights[i] += log_weight_increment
         end
-        push!(infos, (type = :update, time = now(), label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
     traces, log_weights = [sample(traces, log_weights)], [0.]
@@ -1600,24 +1600,24 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
     end
-    push!(infos, (type = :initialize, time = now(), label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :initialize, time = now(), t = 0, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
-        push!(infos, (type = :resample, time = now(), label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         for rejuv_args in rejuv_args_schedule
             for i in 1:N_particles
                 traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
             end
-            push!(infos, (type = :rejuvenate, time = now(), label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+            push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
         end
 
         for i in 1:N_particles
             traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
             log_weights[i] += log_weight_increment
         end
-        push!(infos, (type = :update, time = now(), label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
     traces, log_weights = [sample(traces, log_weights)], [0.]
@@ -2438,18 +2438,18 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier) for _ in 1:N_samples]
+traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule, weight_change_bound, grid_args_schedule_modifier) for _ in 1:N_samples]
+traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Controlled PF + SMCP3/Grid")
+the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Controlled PF")
 savefig("imgs/PF_controller")
 the_plot
 
