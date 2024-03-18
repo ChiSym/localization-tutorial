@@ -1799,10 +1799,10 @@ infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_
 
 ani = Animation()
 for info in infos
-    graph = frame_from_info(world, "Run of Controlled PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    graph = frame_from_info(world, "Run of PF + SMCP3/Grid", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
     frame(ani, graph)
 end
-gif(ani, "imgs/controlled_smcp3.gif", fps=1)
+gif(ani, "imgs/PF_smcp3_grid.gif", fps=1)
 
 # %% [markdown]
 # And here is the aggregate behavior:
