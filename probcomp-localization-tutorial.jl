@@ -1809,7 +1809,7 @@ N_particles = 10
 ESS_threshold = 1. + N_particles / 10.
 
 grid_n_points_start = [3, 3, 3]
-grid_sizes_start = [.7, .7, π/10]
+grid_sizes_start = [.7, .7, π/4]
 grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
