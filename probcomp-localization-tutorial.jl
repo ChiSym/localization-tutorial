@@ -1782,6 +1782,26 @@ grid_smcp3_kernel_exact = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_exac
 #
 # ![](imgs_stable/smcp3_with_code.gif)
 #
+# It is immediately important to visualize its operation.  Try experimenting with the parameters in the following block:
+
+# %%
+N_particles = 10
+ESS_threshold = 1. + N_particles / 10.
+
+grid_n_points_start = [3, 3, 3]
+grid_sizes_start = [.7, .7, π/4]
+grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:4]
+
+infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)
+
+ani = Animation()
+for info in infos
+    graph = frame_from_info(world, "Run of Controlled PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, graph)
+end
+gif(ani, "imgs/controlled_smcp3.gif", fps=1)
+
+# %% [markdown]
 # And here is the aggregate behavior:
 
 # %%
