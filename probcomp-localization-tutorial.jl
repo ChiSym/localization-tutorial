@@ -1476,7 +1476,15 @@ gif(ani, "imgs/pf_animation_high.gif", fps=1)
 # One simple observation is that most of the partially proposed paths are clearly bad candidates from an early time.  We may intervene by pruning them out, say, replacing them with copies of the better ones before further exploration.  In other words, one can perform importance resampling on the particles in between the `update` steps.  The resulting kind of incremental SIR is often called a *bootstrap* in the literature.
 
 # %%
-function particle_filter_bootstrap(model, T, args, constraints, N_particles)
+effective_sample_size(log_weights) =
+    exp(-logsumexp(2. * (log_weights .- logsumexp(log_weights))))
+
+resample_ESS(particles, log_weights, ESS_threshold; M=nothing) =
+    (effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))) ?
+        resample(particles, log_weights; M=M) :
+        (particles, log_weights)
+
+function particle_filter_bootstrap(model, T, args, constraints, N_particles, ESS_threshold)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
@@ -1485,7 +1493,7 @@ function particle_filter_bootstrap(model, T, args, constraints, N_particles)
     end
 
     for t in 1:T
-        traces, log_weights = resample(traces, log_weights)
+        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
 
         for i in 1:N_particles
             traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -1496,7 +1504,7 @@ function particle_filter_bootstrap(model, T, args, constraints, N_particles)
     return sample(traces, log_weights)
 end
 
-function particle_filter_bootstrap_infos(model, T, args, constraints, N_particles)
+function particle_filter_bootstrap_infos(model, T, args, constraints, N_particles, ESS_threshold)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
@@ -1507,7 +1515,7 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
     push!(infos, (type = :initialize, time = now(), t = 0, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
-        traces, log_weights = resample(traces, log_weights)
+        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
         push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         for i in 1:N_particles
@@ -1532,6 +1540,7 @@ end;
 
 # %%
 N_particles = 10
+ESS_threshold = 0.1
 
 N_samples = 10
 
@@ -1539,13 +1548,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [particle_filter_bootstrap(full_model, T, full_model_args, constraints_low_deviation, N_particles) for _ in 1:N_samples]
+traces = [particle_filter_bootstrap(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [particle_filter_bootstrap(full_model, T, full_model_args, constraints_high_deviation, N_particles) for _ in 1:N_samples]
+traces = [particle_filter_bootstrap(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
@@ -1560,14 +1569,6 @@ the_plot
 # After resampling, our particles are more concentrated on the more likely ones, but they have the defficiency of being redundant.  We may again intervene by independently modifying the particles, for example by adding noise to increase diversity, and possibly using our knowledge of the target distrubtion to better approximate it.  Such modification is called *rejuvenation*.  The general structure is as follows.
 
 # %%
-effective_sample_size(log_weights) =
-    exp(-logsumexp(2. * (log_weights .- logsumexp(log_weights))))
-
-resample_ESS(particles, log_weights, ESS_threshold; M=nothing) =
-    (effective_sample_size(log_weights .- logsumexp(log_weights)) < ESS_threshold) ?
-        resample(particles, log_weights; M=M) :
-        (particles, log_weights)
-
 function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1789,7 +1790,6 @@ grid_smcp3_kernel_exact = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_exac
 
 # %%
 N_particles = 10
-ESS_threshold = 1. + N_particles / 10.
 
 grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
@@ -1809,7 +1809,6 @@ gif(ani, "imgs/PF_smcp3_grid.gif", fps=1)
 
 # %%
 N_particles = 10
-ESS_threshold = 1. + N_particles / 10.
 
 grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
@@ -1839,7 +1838,6 @@ the_plot
 
 # %%
 # N_particles = 10
-# ESS_threshold =  1. + N_particles / 10.
 
 # grid_n_points_start = [3, 3, 3]
 # grid_sizes_start = [.7, .7, π/10]
@@ -1869,7 +1867,6 @@ the_plot
 
 # %%
 N_particles = 3
-ESS_threshold = 1. + N_particles / 10.
 
 grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
@@ -1899,7 +1896,6 @@ the_plot
 
 # %%
 N_particles = 1
-ESS_threshold = 1. + N_particles / 10.
 
 grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
@@ -1992,7 +1988,6 @@ drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
 
 # %%
 N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
 
 drift_args_schedule = [0.3^k for k=1:3]
 
@@ -2049,7 +2044,6 @@ drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
 
 # %%
 N_particles = 10
-ESS_threshold = 1. + N_particles / 10.
 
 drift_args_schedule = [0.8^k for k=1:10]
 
@@ -2064,7 +2058,6 @@ gif(ani, "imgs/PF_boltzmann_drift.gif", fps=1)
 
 # %%
 N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
 
 drift_args_schedule = [0.8^k for k=1:10]
 
@@ -2092,7 +2085,6 @@ the_plot
 
 # %%
 N_particles = 10
-ESS_threshold = 1. + N_particles / 10.
 
 drift_args_schedule = [0.8^k for k=1:10]
 
@@ -2107,7 +2099,6 @@ gif(ani, "imgs/PF_mh_drift.gif", fps=1)
 
 # %%
 N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
 
 drift_args_schedule = [0.8^k for k=1:10]
 
@@ -2169,7 +2160,6 @@ gif(ani, "imgs/backward_start.gif", fps=2)
 
 # %%
 N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
 
 drift_args_schedule = [0.8^j for j=1:10]
 
@@ -2220,7 +2210,6 @@ gif(ani, "imgs/kidnapped.gif", fps=2)
 
 # %%
 N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
 
 drift_args_schedule = [0.8^k for k=1:10]
 
@@ -2256,7 +2245,6 @@ gif(ani, "imgs/cluttered.gif", fps=2)
 
 # %%
 N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
 
 drift_args_schedule = [0.8^k for k=1:10]
 
@@ -2477,7 +2465,6 @@ end;
 
 # %%
 N_particles = 10
-ESS_threshold =  1. + N_particles / 10.
 weight_change_bound = (-1. * 10^5)/20
 
 grid_n_points_start = [3, 3, 3]
