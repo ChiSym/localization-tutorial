@@ -1401,8 +1401,8 @@ function particle_filter_infos(model, T, args, constraints, N_particles)
         push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
-    traces, log_weights = [sample(traces, log_weights)], [0.]
     push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+    traces, log_weights = resample(traces, log_weights; M=1)
 
     return infos
 end;
@@ -1525,8 +1525,8 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
         push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
-    traces, log_weights = [sample(traces, log_weights)], [0.]
     push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+    traces, log_weights = resample(traces, log_weights; M=1)
 
     return infos
 end;
@@ -1624,8 +1624,8 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
         push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
-    traces, log_weights = [sample(traces, log_weights)], [0.]
     push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+    traces, log_weights = resample(traces, log_weights; M=1)
 
     return infos
 end;
