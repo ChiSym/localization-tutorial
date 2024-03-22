@@ -1581,20 +1581,27 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_thr
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
+
+    traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+
+    for rejuv_args in rejuv_args_schedule
+        for i in 1:N_particles
+            traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+        end
     end
 
     for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
 
         for rejuv_args in rejuv_args_schedule
             for i in 1:N_particles
                 traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
             end
-        end
-
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
         end
     end
 
@@ -1613,7 +1620,23 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     end
     push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
+    traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+    push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+
+    for rejuv_args in rejuv_args_schedule
+        for i in 1:N_particles
+            traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+        end
+        push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+    end
+
     for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
         push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
@@ -1623,12 +1646,6 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
             end
             push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
         end
-
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
-        end
-        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
     traces, log_weights = resample(traces, log_weights; M=1)
