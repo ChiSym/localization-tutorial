@@ -1293,8 +1293,8 @@ function resample(particles, log_weights; M=nothing)
     if isnothing(M); M = length(particles) end
     log_total_weight = logsumexp(log_weights)
     norm_weights = exp.(log_weights .- log_total_weight)
-    return [particles[categorical(norm_weights)]        for _ in 1:M],
-           [log_total_weight - log(length(log_weights)) for _ in 1:M]
+    return [particles[categorical(norm_weights)] for _ in 1:M],
+           [log_total_weight - log(M)            for _ in 1:M]
 end
 
 sample(particles, log_weights) = resample(particles, log_weights; M=1)[1][1]
