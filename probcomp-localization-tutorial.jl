@@ -1369,8 +1369,9 @@ function particle_filter(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
+    t = 0
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
 
     for t in 1:T
@@ -1388,10 +1389,11 @@ function particle_filter_infos(model, T, args, constraints, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
 
+    t = 0
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
-    push!(infos, (type = :initialize, time = now(), t = 0, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
         for i in 1:N_particles
@@ -1401,8 +1403,8 @@ function particle_filter_infos(model, T, args, constraints, N_particles)
         push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
-    push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
     traces, log_weights = resample(traces, log_weights; M=1)
+    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
 
     return infos
 end;
@@ -1488,8 +1490,9 @@ function particle_filter_bootstrap(model, T, args, constraints, N_particles, ESS
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
+    t = 0
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
 
     for t in 1:T
@@ -1509,10 +1512,11 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
 
+    t = 0
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
-    push!(infos, (type = :initialize, time = now(), t = 0, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
@@ -1525,8 +1529,8 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
         push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
-    push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
     traces, log_weights = resample(traces, log_weights; M=1)
+    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
 
     return infos
 end;
@@ -1573,8 +1577,10 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_thr
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
+    t = 0
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
+    end
     end
 
     for t in 1:T
@@ -1601,10 +1607,11 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
 
+    t = 0
     for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (0, args...), constraints[1])
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
-    push!(infos, (type = :initialize, time = now(), t = 0, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
@@ -1624,8 +1631,8 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
         push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
-    push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
     traces, log_weights = resample(traces, log_weights; M=1)
+    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
 
     return infos
 end;
