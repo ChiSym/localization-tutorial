@@ -2301,12 +2301,9 @@ the_plot
 # In performing the rollback, we make use of `Gen.update`'s cousin, `Gen.regenerate`.  Whereas the former allows us to modify the functional arguments to a trace and/or insert specific outcomes to its random choices, the latter allows modifying the arguments plus *redrawing* specific random choices from their original distributions.
 
 # %%
-function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule)
+function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, surprisal_allowance, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-
-    # Used to determine whether to keep spending effort on improving the samples.
-    log_avg_weight_reference = 0.
 
     # Backtracking state.
     # The list `candidates` is empty when no backtracking is going on.
@@ -2324,8 +2321,10 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
 
     traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
 
+    # Used to determine whether to keep spending effort on improving the samples.
+    log_avgerage_weight_target = -surprisal_allowance
     for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-        if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance; break end
+        if logsumexp(log_weights) - log(N_particles) > log_avgerage_weight_target; break end
         for rejuv_args in rejuv_args_schedule
             for i in 1:N_particles
                 traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2357,7 +2356,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance; break end
+            if logsumexp(log_weights) - log(N_particles) > log_avgerage_weight_target; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2370,8 +2369,8 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             # Normal operation / not currently backtracking.
             # If rejuvenation succeeded, accept the particles and move on,
             # else initiate backtracking.
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance || isempty(backtrack_schedule)
-                log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+            if logsumexp(log_weights) - log(N_particles) > log_avgerage_weight_target || isempty(backtrack_schedule)
+                log_avgerage_weight_target = logsumexp(log_weights) - log(N_particles) - surprisal_allowance
                 action = :advance
             else
                 t_save = t
@@ -2384,9 +2383,9 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         else
             # At the end of a backtrack.
             # If it works, terminate backtracking and accept it.
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
+            if logsumexp(log_weights) - log(N_particles) > log_avgerage_weight_target
                 candidates = []
-                log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                log_avgerage_weight_target = logsumexp(log_weights) - log(N_particles) - surprisal_allowance
                 action = :advance
             else
                 # Otherwise, try backtracking again if more is on the schedule,
@@ -2398,7 +2397,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                     log_total_weights = [logsumexp(cand[2]) for cand in candidates]
                     traces, log_weights = candidates[categorical(exp.(log_total_weights .- logsumexp(log_total_weights)))]
                     candidates = []
-                    log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                    log_avgerage_weight_target = logsumexp(log_weights) - log(N_particles) - surprisal_allowance
                     action = :advance
                 end
             end
@@ -2408,13 +2407,11 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     return sample(traces, log_weights)
 end
 
-function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule)
+function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, surprisal_allowance, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
-
-    log_avg_weight_reference = 0.
 
     candidates = []
     t_save = 0
@@ -2428,8 +2425,9 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
     push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
+    log_avgerage_weight_target = -surprisal_allowance
     for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-        if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance; break end
+        if logsumexp(log_weights) - log(N_particles) > log_avgerage_weight_target; break end
         for rejuv_args in rejuv_args_schedule
             for i in 1:N_particles
                 traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2463,7 +2461,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance; break end
+            if logsumexp(log_weights) - log(N_particles) > log_avgerage_weight_target; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2473,8 +2471,8 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         end
 
         if isempty(candidates)
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance || isempty(backtrack_schedule)
-                log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+            if logsumexp(log_weights) - log(N_particles) > log_avgerage_weight_target || isempty(backtrack_schedule)
+                log_avgerage_weight_target = logsumexp(log_weights) - log(N_particles) - surprisal_allowance
                 action = :advance
             else
                 t_save = t
@@ -2483,9 +2481,9 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         elseif t < t_save
             action = :advance
         else
-            if logsumexp(log_weights) - log(N_particles) > log_avg_weight_reference + fitness_allowance
+            if logsumexp(log_weights) - log(N_particles) > log_avgerage_weight_target
                 candidates = []
-                log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                log_avgerage_weight_target = logsumexp(log_weights) - log(N_particles) - surprisal_allowance
                 action = :advance
             else
                 if length(candidates) < length(backtrack_schedule)
@@ -2495,7 +2493,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                     log_total_weights = [logsumexp(cand[2]) for cand in candidates]
                     traces, log_weights = candidates[categorical(exp.(log_total_weights .- logsumexp(log_total_weights)))]
                     candidates = []
-                    log_avg_weight_reference = logsumexp(log_weights) - log(N_particles)
+                    log_avgerage_weight_target = logsumexp(log_weights) - log(N_particles) - surprisal_allowance
                     action = :advance
                 end
             end
