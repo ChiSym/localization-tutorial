@@ -2305,15 +2305,6 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
-    # Backtracking state.
-    # The list `candidates` is empty when no backtracking is going on.
-    # Otherwise, `t_save` stores the time step from which we have backtracked,
-    # and `candidates` contains the results of completed runs up to time `t_save`.
-    # In the case where we have reached indecision stuckness (`backtrack_schedule` has been exhausted),
-    # we accept a choice from `candidates` and return to normal non-backtrack operation.
-    candidates = []
-    t_save = 0
-
     t = 0
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
@@ -2332,7 +2323,19 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         end
     end
 
+    # Time-stepping state.
+    # The flag `action` indicates whether the next timewise modification is to
+    # advance forward one step (whether or not we are within a backtrack) or instead
+    # to reverse some number of steps to initiate a backtrack.
+    # The list `candidates` is empty when no backtracking is going on.
+    # Otherwise, `t_save` stores the time step from which we have backtracked,
+    # and `candidates` contains the results of completed runs up to time `t_save`.
+
+    # In the case where we have reached indecision stuckness (`backtrack_schedule` has been exhausted),
+    # we accept a choice from `candidates` and return to normal non-backtrack operation.
     action = :advance
+    candidates = []
+    t_save = 0
     while !(t >= T && action == :advance)
         if action == :advance
             t = t + 1
@@ -2413,9 +2416,6 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
 
-    candidates = []
-    t_save = 0
-
     t = 0
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
@@ -2437,6 +2437,8 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     end
 
     action = :advance
+    candidates = []
+    t_save = 0
     while !(t >= T && action == :advance)
         if action == :advance
             t = t + 1
