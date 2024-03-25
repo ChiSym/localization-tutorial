@@ -334,26 +334,52 @@ world_inputs = {'walls': world['walls'], 'bounce': 0.1}
 # Integrate the path based on robot inputs and world configuration.
 path_integrated = integrate_controls(robot_inputs, world_inputs)
 
+def flatten(segments_list):
+        flat_list = []
+        for item in segments_list:
+            if isinstance(item, list):
+                flat_list.extend(flatten(item))
+            else:
+                flat_list.append(item)
+        return flat_list
+
 # Function to plot a segment or a list of segments.
-def plot_segments(segments, color='black', label=None):
+def plot_segments(segments, color='black', label=None, linewidth=0.5):
     """
-    Plots segments on a matplotlib plot. Can handle a single segment or a list of segments.
+    Plots segments on a matplotlib plot with a specified line width. Can handle a single segment or a list of segments.
     Each segment is expected to be an instance of the Segment class or a similar structure with p1 and p2 attributes.
+    
+    Args:
+    - segments: A single Segment instance or a list of Segment instances to be plotted.
+    - color: The color of the segments.
+    - label: The label for the segments.
+    - linewidth: The width of the lines used to plot the segments.
     """
-    if not isinstance(segments, list):
-        segments = [segments]
+    segments = [segments] if isinstance(segments, Segment) else flatten(segments)
+
     for i, seg in enumerate(segments):
         current_label = label if i == 0 else None
-        print(i)
-        plt.plot([seg.p1[0], seg.p2[0]], [seg.p1[1], seg.p2[1]], color=color, label=current_label)
+        plt.plot([seg.p1[0], seg.p2[0]], [seg.p1[1], seg.p2[1]], color=color, label=current_label, linewidth=linewidth)
+
+        
+# Define arrow style options for plotting a pose.
+arrow_options = {
+    'head_width': 0.5, 
+    'head_length': 0.5, 
+    'fill': False, 
+    'overhang': 1, 
+    'linewidth': 0.5
+}
+
 # Function to plot a pose with an optional radius and additional arguments.
 def plot_pose(p, r=0.5, color='blue', label=None):
     """
     Plots a pose as an arrow on a matplotlib plot.
     The pose is represented by a point and a direction, optionally with a specified radius to extend the arrow.
+    Adjusted the head width and length to make the arrow more visible.
     """
     end_point = p.step_along(r).p
-    plt.arrow(p.p[0], p.p[1], end_point[0] - p.p[0], end_point[1] - p.p[1], head_width=0.05, head_length=0.1, color=color, label=label)
+    plt.arrow(p.p[0], p.p[1], end_point[0] - p.p[0], end_point[1] - p.p[1], color=color, label=label, **arrow_options)
 
 # Function to plot the world with optional labels for walls and clutters.
 def plot_world(world, title, label_world=False, show_clutters=False):
@@ -371,14 +397,14 @@ def plot_world(world, title, label_world=False, show_clutters=False):
     plot_segments(world['walls'], color='black', label="walls" if label_world else None)
     if show_clutters:
         plot_segments(world['clutters'], color='magenta', label="clutters")
-    plt.legend(loc='lower left')
+    
 
 # %%
 
 # Following this initial display of the given data, we suppress the clutters until much later in the notebook.
 
 # Plot the world without clutters
-the_plot = plot_world(world, "Given data", label_world=True, show_clutters=False)
+the_plot = plot_world(world, "Given data", label_world=True, show_clutters=True)
 
 # Plot the starting pose of the robot
 plot_pose(robot_inputs['start'], color='green', label="given start pose")
@@ -387,6 +413,8 @@ plot_pose(robot_inputs['start'], color='green', label="given start pose")
 x_coords = [pose.p[0] for pose in path_integrated]
 y_coords = [pose.p[1] for pose in path_integrated]
 plt.scatter(x_coords, y_coords, color='lightgreen', label="path from integrating controls", s=3)
+
+plt.legend(loc='lower left', fontsize='small')
 
 # Save the figure to a file
 plt.savefig("imgs/given_data")
