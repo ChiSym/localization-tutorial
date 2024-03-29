@@ -2299,7 +2299,9 @@ the_plot
 # Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  To prevent this, we limit the amount of backtracking, after which a (possibly unsatisfactory) advance is enforced.  But there are many specific ways the inference programmer might choose to respond to this circumstance.  As you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human *reasoning*, just as modeling with generative functions offers an expression of quantifiable *beliefs*, in the presence of uncertainty.
 
 # %%
-function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, log_average_weight_allowance, rejuv_schedule, backtrack_schedule)
+function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
+    fitness_function, fitness_allowance = fitness_test
+
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
@@ -2311,18 +2313,18 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     # we accept a resampling from `candidates` and return to normal non-backtrack operation.
     backtrack_state, candidates = 0, []
     # These variables declared here for reasons of scope:
-    t_saved, log_average_weight_target_saved = 0, 0.
+    t_saved, fitness_target_saved = 0, 0.
 
     t = 0
     action = :none
-    log_average_weight_target = -log_average_weight_allowance
+    fitness_target = fitness_allowance
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
     end
 
     while !(t >= T && action == :advance)
         if action == :advance
-            log_average_weight_target = logsumexp(log_weights) - log(N_particles) - log_average_weight_allowance
+            fitness_target = fitness_function(log_weights) + fitness_allowance
             t = t + 1
             for i in 1:N_particles
                 traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -2334,7 +2336,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             if t == 0
-                log_average_weight_target = -log_average_weight_allowance
+                fitness_target = fitness_allowance
                 for i in 1:N_particles
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
@@ -2344,7 +2346,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                     traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
                     log_weights[i] += log_weight_increment
                 end
-                log_average_weight_target = logsumexp(log_weights) - log(N_particles) - log_average_weight_allowance
+                fitness_target = fitness_function(log_weights) + fitness_allowance
                 for i in 1:N_particles
                     traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                     log_weights[i] += log_weight_increment
@@ -2361,7 +2363,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-            if logsumexp(log_weights) - log(N_particles) > log_average_weight_target; break end
+            if fitness_function(log_weights) > fitness_target; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2374,10 +2376,10 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             # Normal operation / not currently backtracking.
             # If rejuvenation succeeded, accept the particles and move on,
             # else initiate backtracking.
-            if logsumexp(log_weights) - log(N_particles) > log_average_weight_target || isempty(backtrack_schedule)
+            if fitness_function(log_weights) > fitness_target || isempty(backtrack_schedule)
                 action = :advance
             else
-                t_saved, log_average_weight_target_saved = t, log_average_weight_target
+                t_saved, fitness_target_saved = t, fitness_target
                 action = :backtrack
             end
         elseif t < t_saved
@@ -2387,7 +2389,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         else
             # At the end of a backtrack.
             # If it works, terminate backtracking and move on.
-            if logsumexp(log_weights) - log(N_particles) > log_average_weight_target_saved
+            if fitness_function(log_weights) > fitness_target_saved
                 backtrack_state, candidates = 0, []
                 action = :advance
             else
@@ -2408,18 +2410,20 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     return sample(traces, log_weights)
 end
 
-function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, log_average_weight_allowance, rejuv_schedule, backtrack_schedule)
+function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
+    fitness_function, fitness_allowance = fitness_test
+
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
 
     backtrack_state, candidates = 0, []
-    t_saved, log_average_weight_target_saved = 0, 0.
+    t_saved, fitness_target_saved = 0, 0.
 
     t = 0
     action = :none
-    log_average_weight_target = -log_average_weight_allowance
+    fitness_target = fitness_allowance
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
     end
@@ -2427,7 +2431,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
 
     while !(t >= T && action == :advance)
         if action == :advance
-            log_avgerage_weight_target = logsumexp(log_weights) - log(N_particles) - log_average_weight_allowance
+            log_avgerage_weight_target = fitness_function(log_weights) + fitness_allowance
             t = t + 1
             for i in 1:N_particles
                 traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -2440,7 +2444,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             if t == 0
-                log_average_weight_target = -log_average_weight_allowance
+                fitness_target = fitness_allowance
                 for i in 1:N_particles
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
@@ -2449,7 +2453,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                     traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
                     log_weights[i] += log_weight_increment
                 end
-                log_average_weight_target = logsumexp(log_weights) - log(N_particles) - log_average_weight_allowance
+                fitness_target = fitness_function(log_weights) + fitness_allowance
                 for i in 1:N_particles
                     traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                     log_weights[i] += log_weight_increment
@@ -2462,7 +2466,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-            if logsumexp(log_weights) - log(N_particles) > log_average_weight_target; break end
+            if fitness_function(log_weights) > fitness_target; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2472,16 +2476,16 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         end
 
         if backtrack_state == 0
-            if logsumexp(log_weights) - log(N_particles) > log_average_weight_target || isempty(backtrack_schedule)
+            if fitness_function(log_weights) > fitness_target || isempty(backtrack_schedule)
                 action = :advance
             else
-                t_saved, log_average_weight_target_saved = t, log_average_weight_target
+                t_saved, fitness_target_saved = t, fitness_target
                 action = :backtrack
             end
         elseif t < t_saved
             action = :advance
         else
-            if logsumexp(log_weights) - log(N_particles) > log_average_weight_target_saved
+            if fitness_function(log_weights) > fitness_target_saved
                 backtrack_state, candidates = 0, []
                 action = :advance
             else
@@ -2514,8 +2518,8 @@ end;
 # %%
 # Here we fix the parameters of the inference strategy that determine the kind effort it will expend.
 
-# The suitability threshold for the particle family as hypotheses.
-log_average_weight_allowance = 1e3
+# The suitability test for the particle family as hypotheses.
+log_average_weight_fitness = (log_weights -> logsumexp(log_weights) - log(length(log_weights)), -1e3)
 
 # The sequence of rejuvenation strategies:
 
@@ -2549,7 +2553,7 @@ backtrack_schedule = [2];
 
 # %%
 t1 = now()
-infos = particle_filter_controlled_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_allowance, rejuv_schedule, backtrack_schedule)
+infos = particle_filter_controlled_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_fitness, rejuv_schedule, backtrack_schedule)
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 
@@ -2567,13 +2571,13 @@ traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_allowance, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
+traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_fitness, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, log_average_weight_allowance, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
+traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, log_average_weight_fitness, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
