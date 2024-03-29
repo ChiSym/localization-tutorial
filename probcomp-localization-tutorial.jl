@@ -2304,10 +2304,10 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     log_weights = Vector{Float64}(undef, N_particles)
 
     # The flag `backtrack_state` holds the value `0` when no backtracking is taking place.
-    # Otherwise, `t_saved` marks the time from which we have backtracked, and up to which
-    # all traces are being constructed without interruption.
-    # Then `candidates` holds traces constructed on prior attempts.
-    # In the case where we have reached indecision stuckness (`backtrack_schedule` has been exhausted),
+    # Otherwise, `t_saved` marks the time from which we have backtracked a distance of
+    # `backtrack_schedule[backtrack_state]`, and `candidates` holds traces constructed on
+    # prior forward runs.
+    # If we reach indecision stuckness (`backtrack_schedule` has been exhausted),
     # we accept a resampling from `candidates` and return to normal non-backtrack operation.
     backtrack_state, candidates = 0, []
     t_saved, log_average_weight_target_saved = 0, 0
@@ -2444,7 +2444,6 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                 for i in 1:N_particles
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
-                push!(infos, (type = :initialize, time = now(), t = t, label = "backtrack $dt steps", traces = copy(traces), log_weights = copy(log_weights)))
             else
                 for i in 1:N_particles
                     traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
@@ -2455,8 +2454,8 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                     traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                     log_weights[i] += log_weight_increment
                 end
-                push!(infos, (type = :backtrack, time=now(), t = t, label = "backtrack $dt steps", traces = copy(traces), log_weights = copy(log_weights)))
             end
+            push!(infos, (type = :backtrack, time=now(), t = t, label = "backtrack $dt steps", traces = copy(traces), log_weights = copy(log_weights)))
         end
 
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
@@ -2466,7 +2465,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             if logsumexp(log_weights) - log(N_particles) > log_average_weight_target; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
-                    traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                    traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
                 end
                 push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
             end
@@ -2493,7 +2492,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                     traces, log_weights = first.(candidates), last.(candidates)
                     push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: the candidates", traces = copy(traces), log_weights = copy(log_weights)))
                     traces, log_weights = resample(traces, log_weights; M=N_particles)
-                    push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: resample", traces = copy(traces), log_weights = copy(log_weights)))
+                    push!(infos, (type = :indecision2, time = now(), t = t, label = "indecision: resample", traces = copy(traces), log_weights = copy(log_weights)))
                     backtrack_state, candidates = 0, []
                     action = :advance
                 end
