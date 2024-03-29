@@ -2512,29 +2512,68 @@ end;
 # ![](imgs_stable/controlled_smcp3_with_code.gif)
 
 # %%
-N_particles = 10
-weight_change_bound = (-1. * 10^5)/20
+# Here we fix the parameters of the inference strategy that determine the kind effort it will expend.
 
-grid_n_points_start = [3, 3, 3]
+# The suitability threshold for the particle family as hypotheses.
+log_average_weight_allowance = 1e3
+
+# The sequence of rejuvenation strategies:
+
+# First try a quick Gaussian drift.
+drift_args_schedule = [0.5^k for k=1:4]
+
+# Then try a slower, but still cheap, Gaussian drift.
+drift_args_schedule_wide = [0.8^k for k=1:10]
+
+# Third try a more determined grid search.
+grid_n_points = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
-grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
+grid_args_schedule = [(grid_n_points, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
 
-grid_args_schedule_modifier(args_schedule, rejuv_count) =
-    (rejuv_count % 1 == 0) ?
-        [(nsteps, sizes .* 0.75) for (nsteps, sizes) in args_schedule] :
-        [(nsteps + 2, sizes)     for (nsteps, sizes) in args_schedule];
+# Then retry the search but starting wide.
+grid_args_schedule_wide = [([8, 8, 8], [2., 2., π]), grid_args_schedule...]
+
+rejuv_schedule =
+    [(drift_mh_kernel, drift_args_schedule),
+     (drift_mh_kernel, drift_args_schedule_wide),
+     (grid_smcp3_kernel, grid_args_schedule),
+     (grid_smcp3_kernel, grid_args_schedule_wide)]
+
+# The sequence of backtracking amounts.
+backtrack_schedule = [2, 4, 8];
+
+rejuv_schedule =
+    [(drift_mh_kernel, drift_args_schedule),
+    (drift_mh_kernel, drift_args_schedule_wide)]
+backtrack_schedule = [2];
+
+# %%
+t1 = now()
+infos = particle_filter_controlled_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_allowance, rejuv_schedule, backtrack_schedule)
+t2 = now()
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+
+ani = Animation()
+for info in infos
+    graph = frame_from_info(world, "Run of Controlled PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, graph)
+end
+gif(ani, "imgs/controlled_smcp3.gif", fps=1)
+
+# %%
+N_particles = 10
 
 traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
 
 t1 = now()
-traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
+traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_allowance, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_allowance, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
+traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, log_average_weight_allowance, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
