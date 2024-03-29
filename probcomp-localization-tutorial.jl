@@ -2310,7 +2310,8 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     # If we reach indecision stuckness (`backtrack_schedule` has been exhausted),
     # we accept a resampling from `candidates` and return to normal non-backtrack operation.
     backtrack_state, candidates = 0, []
-    t_saved, log_average_weight_target_saved = 0, 0
+    # These variables declared here for reasons of scope:
+    t_saved, log_average_weight_target_saved = 0, 0.
 
     t = 0
     action = :none
@@ -2338,7 +2339,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
             else
-                # Roll back to before time `t` then redraw at `t`, saving the weight before the draw.
+                # Roll back to before time `t`, set the weight target for `t`, then redraw at `t`.
                 for i in 1:N_particles
                     traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
                     log_weights[i] += log_weight_increment
@@ -2348,8 +2349,8 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                     traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                     log_weights[i] += log_weight_increment
                 end
-                # Were it not for the need to set `log_average_weight_target` between the above two `update` operations,
-                # they could be combined into the single Gen command (looping over `i`):
+                # Were it not for the need to set the weight target, the two `update` operations above
+                # could be combined into the single Gen command (in a single loop over `i`):
                 # ```
                 # traces[i], log_weight_increment, _, _ =
                 #     regenerate(traces[i], (t, args...), change_only_T, select(prefix_address(t+1, :pose)))
@@ -2391,11 +2392,10 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                 action = :advance
             else
                 # Otherwise, try backtracking again if more is on the schedule,
-                # or else declare stuckness.
+                # else declare stuckness, resample from the candidates, and move on.
                 if backtrack_state < length(backtrack_schedule)
                     action = :backtrack
                 else
-                    # Choose from the list of candidates produced by all the backtracking and move on.
                     append!(candidates, zip(traces, log_weights))
                     traces, log_weights = resample(first.(candidates), last.(candidates); M=N_particles)
                     backtrack_state, candidates = 0, []
@@ -2415,7 +2415,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     infos = []
 
     backtrack_state, candidates = 0, []
-    t_saved, log_average_weight_target_saved = 0, 0
+    t_saved, log_average_weight_target_saved = 0, 0.
 
     t = 0
     action = :none
