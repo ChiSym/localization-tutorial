@@ -2305,7 +2305,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
 
     # The flag `backtrack_state` holds the value `0` when no backtracking is taking place.
     # Otherwise, `t_saved` marks the time from which we have backtracked, and up to which
-    # all retried traces are being constructed without interruption.
+    # all traces are being constructed without interruption.
     # Then `candidates` holds traces constructed on prior attempts.
     # In the case where we have reached indecision stuckness (`backtrack_schedule` has been exhausted),
     # we accept a resampling from `candidates` and return to normal non-backtrack operation.
@@ -2381,14 +2381,11 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                 action = :advance_from_t
             else
                 # Otherwise, try backtracking again if more is on the schedule,
-                # or else choose from the list of candidates produced by all the backtracking and move on.
+                # or else declare stuckness.
                 if backtrack_stateappend < length(backtrack_schedule)
                     action = :prepare_next_backtrack
                 else
-                    append!(candidates, zip(traces, log_weights))
-                    traces, log_weights = resample(first.(candidates), last.(candidates); M=N_particles)
-                    backtrack_state, candidates = 0, []
-                    action = :advance_from_t
+                    action = :indecision_stuckness
                 end
             end
         end
@@ -2396,9 +2393,14 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         if action == :prepare_next_backtrack
             append!(candidates, zip(traces, log_weights))
             backtrack_state += 1
-            dt = min(backtrack_schedule[backtrack_state], t)
-            t = t - dt
+            t = max(t - backtrack_schedule[backtrack_state], 0)
             action = :construct_at_t
+        elseif action == :indecision_stuckness
+            # Choose from the list of candidates produced by all the backtracking and move on.
+            append!(candidates, zip(traces, log_weights))
+            traces, log_weights = resample(first.(candidates), last.(candidates); M=N_particles)
+            backtrack_state, candidates = 0, []
+            action = :advance_from_t
         end
     end
 
@@ -2414,8 +2416,16 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     backtrack_state = 0
     candidates = []
 
+    # This separate code block is only here for its variant label.
     t = 0
-    action = :construct_at_t
+    action = :skip
+    log_average_weight_target = -surprisal_allowance
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+    end
+    push!(infos, (type = :initialize, time = now(), t = t, label = "initialize from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+
+
     while !(t >= T && action == :advance_from_t)
         if action == :construct_at_t
             if t == 0
@@ -2423,7 +2433,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                 for i in 1:N_particles
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
-                push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+                push!(infos, (type = :initialize, time = now(), t = t, label = "backtrack to start pose", traces = copy(traces), log_weights = copy(log_weights)))
             else
                 for i in 1:N_particles
                     traces[i], log_weights[i] = update(model, (t-1, args...), change_only_T, choicemap())
@@ -2475,11 +2485,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                 if backtrack_stateappend < length(backtrack_schedule)
                     action = :prepare_next_backtrack
                 else
-                    append!(candidates, zip(traces, log_weights))
-                    traces, log_weights = resample(first.(candidates), last.(candidates); M=N_particles)
-                    push!(infos, (type = :indecision, time=now(), t = t, label = "declare backtracking indecision", traces = copy(traces), log_weights = copy(log_weights)))
-                    backtrack_state, candidates = 0, []
-                    action = :advance_from_t
+                    action = :indecision_stuckness
                 end
             end
         end
@@ -2487,9 +2493,16 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         if action == :prepare_next_backtrack
             append!(candidates, zip(traces, log_weights))
             backtrack_state += 1
-            dt = min(backtrack_schedule[backtrack_state], t)
-            t = t - dt
+            t = max(t - backtrack_schedule[backtrack_state], 0)
             action = :construct_at_t
+        elseif action == :indecision_stuckness
+            append!(candidates, zip(traces, log_weights))
+            traces, log_weights = first.(candidates), last.(candidates)
+            push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: the candidates", traces = copy(traces), log_weights = copy(log_weights)))
+            traces, log_weights = resample(traces, log_weights; M=N_particles)
+            push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: resample", traces = copy(traces), log_weights = copy(log_weights)))
+            backtrack_state, candidates = 0, []
+            action = :advance_from_t
         end
     end
 
