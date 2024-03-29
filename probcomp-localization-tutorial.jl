@@ -2300,7 +2300,7 @@ the_plot
 
 # %%
 function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
-    fitness_function, fitness_allowance = fitness_test
+    fitness_function, fitness_allowance_schedule = fitness_test
 
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -2317,15 +2317,15 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
 
     t = 0
     action = :none
-    fitness_target = fitness_allowance
+    fitness_target = fitness_allowance_schedule[t+1]
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
     end
 
     while !(t >= T && action == :advance)
         if action == :advance
-            fitness_target = fitness_function(log_weights) + fitness_allowance
             t = t + 1
+            fitness_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
             for i in 1:N_particles
                 traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                 log_weights[i] += log_weight_increment
@@ -2336,7 +2336,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             if t == 0
-                fitness_target = fitness_allowance
+                fitness_target = fitness_allowance_schedule[t+1]
                 for i in 1:N_particles
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
@@ -2346,7 +2346,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                     traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
                     log_weights[i] += log_weight_increment
                 end
-                fitness_target = fitness_function(log_weights) + fitness_allowance
+                fitness_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
                 for i in 1:N_particles
                     traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                     log_weights[i] += log_weight_increment
@@ -2411,7 +2411,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
 end
 
 function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
-    fitness_function, fitness_allowance = fitness_test
+    fitness_function, fitness_allowance_schedule = fitness_test
 
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -2423,7 +2423,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
 
     t = 0
     action = :none
-    fitness_target = fitness_allowance
+    fitness_target = fitness_allowance_schedule[t+1]
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
     end
@@ -2431,8 +2431,8 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
 
     while !(t >= T && action == :advance)
         if action == :advance
-            log_avgerage_weight_target = fitness_function(log_weights) + fitness_allowance
             t = t + 1
+            log_avgerage_weight_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
             for i in 1:N_particles
                 traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                 log_weights[i] += log_weight_increment
@@ -2444,7 +2444,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             if t == 0
-                fitness_target = fitness_allowance
+                fitness_target = fitness_allowance_schedule[t+1]
                 for i in 1:N_particles
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
@@ -2453,7 +2453,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                     traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
                     log_weights[i] += log_weight_increment
                 end
-                fitness_target = fitness_function(log_weights) + fitness_allowance
+                fitness_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
                 for i in 1:N_particles
                     traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                     log_weights[i] += log_weight_increment
@@ -2519,7 +2519,10 @@ end;
 # Here we fix the parameters of the inference strategy that determine the kind effort it will expend.
 
 # The suitability test for the particle family as hypotheses.
-log_average_weight_fitness = (log_weights -> logsumexp(log_weights) - log(length(log_weights)), -1e3)
+log_average_weight_fitness =
+    (log_weights -> logsumexp(log_weights) - log(length(log_weights)), [-1e3 for _ in 1:(T+1)])
+average_log_weight_fitness =
+    (log_weights -> sum(log_weights) / length(log_weights), [-1e3 for _ in 1:(T+1)])
 
 # The sequence of rejuvenation strategies:
 
