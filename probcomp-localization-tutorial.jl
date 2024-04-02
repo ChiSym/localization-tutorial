@@ -2271,15 +2271,28 @@ the_plot
 # Other problems, such as kidnapping and map discrepancy, require a model that is flexible enough to accommodate what we encounter in the first place.  For this we will employ Bayesian *hierarchical models* that express the belief that rare discrepancies occur.
 
 # %% [markdown]
-# ### Adaptive inference controller
+# ### Adaptive inference: measuring fitness
 #
-# We, the inference programmers, do not have to be stuck with some fixed amount of rejuvenation effort.  We get to choose how much computing resource to spend to bring some measure of our particle population's suitability in line with a target.
+# We the inference programmers do not have to be stuck with some fixed amount of rejuvenation effort: we get to choose how much computing resource to devote to our particle population's sample quality.  To do so programmatically, we will need some numerical test for the fitness of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions, for example, rounds of increasingly expensive rejuvenation.
 #
-# The code below is just one embodiment of this idea.  It might help to explain its structure in words:
+# Recall that we are assessing the suitability of a family of weighted particles $(w_t^{(i)}, z_{0:t}^{(i)})_{i=1}^N$ constructed up to time $t$.  These particles were constructed either using `Gen.generate` at the first time step $t=0$, or otherwise extended from a family $(w_{t-1}^{(i)},z_{0:t-1}^{(i)})_{i=1}^N$ using `Gen.update`.  These `Gen` operations also returned some (log) *weight* $\~w_t^{(i)}$, namely the importance weight $\~w_0^{(i)} := w_0^{(i)}$ in the first case, and the incremental weight $\~w_t^{(i)} := w_t^{(i)}/w_{t-1}^{(i)}$ in the second case.  Each of these weights $\~w_t^{(i)}$ is equal to the sensor model probability density $P_\text{sensor}(o_t^{(i)};z_t^{(i)},\ldots)$ of the observations $o_t^{(i)}$.  Thus, on the one hand, one can recover these numbers in a unform manner using `Gen.project` as explained earlier, and on the other hand, they measure the fitness of the step $z_t^{(i)}$ as an extension of the particle to time $t$.
 #
-# The first new ingredient is a numerical test for the suitability of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions.  In our case, the requirement will be that the proposed new step particles be not much more unlikely under the posterior than the preceding ones, or more precisely that the change in average importance weight lie above some lower bound.  As for the interventions, first comes a sequence of zero or more rejuvenation strategies, say, Gaussian drift, followed by more costly grid search.  If this is not enough, next we consider that prior time steps might have led us into a dead end, so we roll back some number of steps and try again.
+# Out of many possible design choices for testing the fitness of particles, we will limit ourselves to considering when a given function $h(w)$ of tuples $w = (w^{(i)})_{i=1}^N$ meets a given "allowance" bound when evaluated at $\~w_t := (\~w_t^{(i)})_{i=1}^N$.  Here are two choices of such functions $h$.  They have been normalized so that the allowances do not need to be adjusted as the number $N$ of particles is changed:
+# * The average log weight, $h(w) = \frac1N \sum_{i=1}^N \log w^{(i)}$.  
+# * The log average weight, also known as the *log marginal likelihood estimate*, $h(w) = \log \big[ \frac1N \sum_{i=1}^n w^{(i)} \big]$.  
 #
-# Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  To prevent this, we limit the amount of backtracking, after which a (possibly unsatisfactory) advance is enforced.  But there are many specific ways the inference programmer might choose to respond to this circumstance.  As you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human *reasoning*, just as modeling with generative functions offers an expression of quantifiable *beliefs*, in the presence of uncertainty.
+# The first of these responds equally to changes in each weight, and therefore measures the fitness of all the particles, whereas the second is predominately determined by the largest weights, and therefore measures the fitness of the best-fitting particles.  Let's have a look at how an inference step is assessed by these rules.
+
+# %% [markdown]
+# ### Adaptive inference: controller
+#
+# The code below is just one embodiment of the idea of programmatically controlled inference.  As arlready discussed, we employ a fitness test to determine whether to continue with rounds of rejuvenation.  But if those do not suffice, we try something new: we consider that prior time steps might have led us into a dead end, so we roll back some number of steps and try again.
+#
+# Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  This is especially a risk when given data that admit no good fits, or data whose good fits are exceedingly hard to find: when do we decide to keep working, versus accept what we have, versus quit?
+#
+# There are many specific ways the inference programmer might choose to respond to this circumstance; as you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human *reasoning*, just as modeling with generative functions offers an expression of quantifiable *beliefs*, in the presence of uncertainty and incomplete understanding.
+#
+# Our design here is to limit the backtracking to only a fixed schedule of numbers of steps, within which we do not perform any sub-backtracking, and after which a (possibly unsatisfactory) advance is enforced.
 #
 # Note the appearance of `Gen.update`'s sibling `Gen.regenerate`: instead of hand-fixing certain stochastic choices in a trace, it simply redraws them from the immanent distribution; it may also modify functional parameters in same way.
 
