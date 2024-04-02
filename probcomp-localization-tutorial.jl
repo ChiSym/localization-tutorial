@@ -2311,10 +2311,10 @@ the_plot
 incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor)))
 
 function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
-    fitness_function, fitness_allowance_schedule = fitness_test
-
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
+
+    fitness_function, fitness_allowance_schedule = fitness_test
 
     # The flag `backtrack_state` holds the value `0` when no backtracking is taking place.
     # Otherwise, `t_saved` marks the time from which we have backtracked a distance of
@@ -2387,12 +2387,12 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
 end
 
 function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
-    fitness_function, fitness_allowance_schedule = fitness_test
-
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
+
+    fitness_function, fitness_allowance_schedule = fitness_test
 
     backtrack_state, candidates, t_saved = 0, [], 0
 
