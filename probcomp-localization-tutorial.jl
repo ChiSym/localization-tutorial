@@ -2342,7 +2342,6 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             for i in 1:N_particles
-                save = traces[i][prefix_address(t+1,:pose)]
                 traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, select(prefix_address(t+1, :pose)))
                 log_weights[i] += log_weight_increment
             end
