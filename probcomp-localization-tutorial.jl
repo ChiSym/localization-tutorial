@@ -2299,6 +2299,8 @@ the_plot
 # Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  To prevent this, we limit the amount of backtracking, after which a (possibly unsatisfactory) advance is enforced.  But there are many specific ways the inference programmer might choose to respond to this circumstance.  As you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human *reasoning*, just as modeling with generative functions offers an expression of quantifiable *beliefs*, in the presence of uncertainty.
 
 # %%
+incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor)))
+
 function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
     fitness_function, fitness_allowance_schedule = fitness_test
 
@@ -2313,7 +2315,6 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
 
     t = 0
     action = :none
-    fitness_target = fitness_allowance_schedule[t+1]
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
     end
@@ -2321,7 +2322,6 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     while !(t >= T && action == :advance)
         if action == :advance
             t = t + 1
-            fitness_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
             for i in 1:N_particles
                 traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                 log_weights[i] += log_weight_increment
@@ -2333,7 +2333,6 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             if t == 0
-                fitness_target = fitness_allowance_schedule[t+1]
                 for i in 1:N_particles
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
@@ -2343,7 +2342,6 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                     traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
                     log_weights[i] += log_weight_increment
                 end
-                fitness_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
                 for i in 1:N_particles
                     traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                     log_weights[i] += log_weight_increment
@@ -2360,7 +2358,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-            if fitness_function(log_weights) > fitness_target; break end
+            if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2372,7 +2370,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         if backtrack_state > 0 && t < t_saved
             # We are within a backtracking; then advance uninterrupted to completion.
             action = :advance
-        elseif fitness_funtion(log_weights) > fitness_target
+        elseif fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]
             # The fitness criterion has been met; then accept the current particle set,
             # clear the backtracking state, and advance.
             backtrack_state, candidates = 0, []
@@ -2407,7 +2405,6 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
 
     t = 0
     action = :none
-    fitness_target = fitness_allowance_schedule[t+1]
     for i in 1:N_particles
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
     end
@@ -2429,7 +2426,6 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             if t == 0
-                fitness_target = fitness_allowance_schedule[t+1]
                 for i in 1:N_particles
                     traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
                 end
@@ -2438,7 +2434,6 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
                     traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
                     log_weights[i] += log_weight_increment
                 end
-                fitness_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
                 for i in 1:N_particles
                     traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                     log_weights[i] += log_weight_increment
@@ -2451,7 +2446,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-            if fitness_function(log_weights) > fitness_target; break end
+            if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2462,7 +2457,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
 
         if backtrack_state > 0 && t < t_saved
             action = :advance
-        elseif fitness_funtion(log_weights) > fitness_target
+        elseif fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]
             backtrack_state, candidates = 0, []
             action = :advance
         elseif backtrack_state == length(backtrack_schedule)
