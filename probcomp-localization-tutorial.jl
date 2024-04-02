@@ -2308,12 +2308,8 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     # The flag `backtrack_state` holds the value `0` when no backtracking is taking place.
     # Otherwise, `t_saved` marks the time from which we have backtracked a distance of
     # `backtrack_schedule[backtrack_state]`, and `candidates` holds traces constructed on
-    # prior forward runs.
-    # If we reach indecision stuckness (`backtrack_schedule` has been exhausted),
-    # we accept a resampling from `candidates` and return to normal non-backtrack operation.
-    backtrack_state, candidates = 0, []
-    # This variable declared here for reasons of scope:
-    t_saved = 0
+    # prior complete forward runs up to `t_saved`.
+    backtrack_state, candidates, t_saved = 0, [], 0
 
     t = 0
     action = :none
