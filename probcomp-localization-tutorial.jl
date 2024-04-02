@@ -2286,13 +2286,13 @@ the_plot
 # %% [markdown]
 # ### Adaptive inference: controller
 #
-# The code below is just one embodiment of the idea of programmatically controlled inference.  As arlready discussed, we employ a fitness test to determine whether to continue with rounds of rejuvenation.  But if those do not suffice, we try something new: we consider that prior time steps might have led us into a dead end, so we roll back some number of steps and try again.
+# The code below is just one embodiment of the idea of programmatically controlled inference.  As already discussed, we employ a fitness test to determine whether to continue with rounds of rejuvenation.  But if those do not suffice, we try something new: we consider that prior time steps might have led us into a dead end, so we roll back some number of steps and try again.
 #
 # Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  This is especially a risk when given data that admit no good fits, or data whose good fits are exceedingly hard to find: when do we decide to keep working, versus accept what we have, versus quit?
 #
 # There are many specific ways the inference programmer might choose to respond to this circumstance; as you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human *reasoning*, just as modeling with generative functions offers an expression of quantifiable *beliefs*, in the presence of uncertainty and incomplete understanding.
 #
-# Our design here is to limit the backtracking to only a fixed schedule of numbers of steps, within which we do not perform any sub-backtracking, and after which a (possibly unsatisfactory) advance is enforced.
+# Our choice of design here is to limit the backtracking to only a fixed schedule of backwards steps, within which we do not perform any sub-backtracking but instead die off early, and after which a (possibly unsatisfactory) advance is settled upon.
 #
 # Note the appearance of `Gen.update`'s sibling `Gen.regenerate`: instead of hand-fixing certain stochastic choices in a trace, it simply redraws them from the immanent distribution; it may also modify functional parameters in same way.
 
@@ -2326,7 +2326,6 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             end
         elseif action == :backtrack
             backtrack_state += 1
-            append!(candidates, zip(traces, log_weights))
             t_saved = t
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
@@ -2350,25 +2349,30 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         end
 
         # Advance-or-backtrack logic.
-        if backtrack_state > 0 && t < t_saved
-            # We are within a backtracking; then advance uninterrupted to completion.
-            action = :advance
-        elseif fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]
-            # The fitness criterion has been met; then accept the current particle set,
-            # clear the backtracking state, and advance.
-            backtrack_state, candidates = 0, []
-            action = :advance
-        elseif backtrack_state == length(backtrack_schedule)
-            # We have exhausted our backtracking opportunities (indecision stuckness); then
-            # resample from all the candidates explored during backtracking, clear state, and advance.
-            append!(candidates, zip(traces, log_weights))
-            traces, log_weights = resample(first.(candidates), last.(candidates); M=N_particles)
-            backtrack_state, candidates = 0, []
+        if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]
+            # The fitness criterion has been met, so advance to the next time step.
+            # If we are at the end of a backtrack then clear the backtracking state.
+            if backtrack_state > 0 && t == t_saved
+                backtrack_state, candidates = 0, []
+            end
             action = :advance
         else
-            # We are not mid-backtrack, we do not meet the fitness criterion, and
-            # more backtracking opportunity remains.
-            action = :backtrack
+            # Save the particles if they are constructed to the maximal time step.
+            # Otherwise advance to the end of the backtrack without saving them.
+            if backtrack_state == 0 || t == t_saved
+                append!(candidates, zip(traces, log_weights))
+            else
+                t = t_saved
+            end
+            # If more backtracking is on the schedule then do it,
+            # otherwise (indecision stuckness) resample from the available candidates and move on.
+            if backtrack_state < length(backtrack_schedule)
+                action = :backtrack
+            else
+                traces, log_weights = resample(first.(candidates), last.(candidates); M=N_particles)
+                backtrack_state, candidates = 0, []
+                action = :advance
+            end
         end
     end
 
@@ -2403,7 +2407,6 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             push!(infos, (type = :update, time=now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
         elseif action == :backtrack
             backtrack_state += 1
-            append!(candidates, zip(traces, log_weights))
             t_saved = t
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
@@ -2429,21 +2432,27 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             end
         end
 
-        if backtrack_state > 0 && t < t_saved
-            action = :advance
-        elseif fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]
-            backtrack_state, candidates = 0, []
-            action = :advance
-        elseif backtrack_state == length(backtrack_schedule)
-            append!(candidates, zip(traces, log_weights))
-            traces, log_weights = first.(candidates), last.(candidates)
-            push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: the candidates", traces = copy(traces), log_weights = copy(log_weights)))
-            traces, log_weights = resample(traces, log_weights; M=N_particles)
-            push!(infos, (type = :indecision2, time = now(), t = t, label = "indecision: resample", traces = copy(traces), log_weights = copy(log_weights)))
-            backtrack_state, candidates = 0, []
+        if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]
+            if backtrack_state > 0 && t == t_saved
+                backtrack_state, candidates = 0, []
+            end
             action = :advance
         else
-            action = :backtrack
+            if backtrack_state == 0 || t == t_saved
+                append!(candidates, zip(traces, log_weights))
+            else
+                t = t_saved
+            end
+            if backtrack_state < length(backtrack_schedule)
+                action = :backtrack
+            else
+                traces, log_weights = first.(candidates), last.(candidates)
+                push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: the candidates", traces = copy(traces), log_weights = copy(log_weights)))
+                traces, log_weights = resample(traces, log_weights; M=N_particles)
+                push!(infos, (type = :indecision2, time = now(), t = t, label = "indecision: resample", traces = copy(traces), log_weights = copy(log_weights)))
+                backtrack_state, candidates = 0, []
+                action = :advance
+            end
         end
     end
 
