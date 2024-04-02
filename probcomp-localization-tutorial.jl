@@ -2312,8 +2312,8 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     # If we reach indecision stuckness (`backtrack_schedule` has been exhausted),
     # we accept a resampling from `candidates` and return to normal non-backtrack operation.
     backtrack_state, candidates = 0, []
-    # These variables declared here for reasons of scope:
-    t_saved, fitness_target_saved = 0, 0.
+    # This variable declared here for reasons of scope:
+    t_saved = 0
 
     t = 0
     action = :none
@@ -2379,7 +2379,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             if fitness_function(log_weights) > fitness_target || isempty(backtrack_schedule)
                 action = :advance
             else
-                t_saved, fitness_target_saved = t, fitness_target
+                t_saved = t
                 action = :backtrack
             end
         elseif t < t_saved
@@ -2389,7 +2389,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         else
             # At the end of a backtrack.
             # If it works, terminate backtracking and move on.
-            if fitness_function(log_weights) > fitness_target_saved
+            if fitness_function(log_weights) > fitness_target
                 backtrack_state, candidates = 0, []
                 action = :advance
             else
@@ -2419,7 +2419,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     infos = []
 
     backtrack_state, candidates = 0, []
-    t_saved, fitness_target_saved = 0, 0.
+    t_saved = 0
 
     t = 0
     action = :none
@@ -2479,13 +2479,13 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             if fitness_function(log_weights) > fitness_target || isempty(backtrack_schedule)
                 action = :advance
             else
-                t_saved, fitness_target_saved = t, fitness_target
+                t_saved = t
                 action = :backtrack
             end
         elseif t < t_saved
             action = :advance
         else
-            if fitness_function(log_weights) > fitness_target_saved
+            if fitness_function(log_weights) > fitness_target
                 backtrack_state, candidates = 0, []
                 action = :advance
             else
