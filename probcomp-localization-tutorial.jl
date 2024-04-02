@@ -2459,30 +2459,22 @@ average_log_weight_fitness =
 # First try a quick Gaussian drift.
 drift_args_schedule = [0.5^k for k=1:4]
 
-# Then try a slower, but still cheap, Gaussian drift.
-drift_args_schedule_wide = [0.8^k for k=1:10]
+# Then try a more thorough, but still cheap, Gaussian drift.
+drift_args_schedule_wide = [0.8^k for k=1:12]
 
 # Third try a more determined grid search.
 grid_n_points = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
-grid_args_schedule = [(grid_n_points, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
-
-# Then retry the search but starting wide.
-grid_args_schedule_wide = [([8, 8, 8], [2., 2., π]), grid_args_schedule...]
+grid_args_schedule = [(grid_n_points, grid_sizes_start .* (2/3)^(j-1)) for j=1:4]
+grid_args_schedule_wide = [([5, 5, 5], [1.2, 1.2, π/6]), grid_args_schedule...]
 
 rejuv_schedule =
     [(drift_mh_kernel, drift_args_schedule),
      (drift_mh_kernel, drift_args_schedule_wide),
-     (grid_smcp3_kernel, grid_args_schedule),
      (grid_smcp3_kernel, grid_args_schedule_wide)]
 
 # The sequence of backtracking amounts.
 backtrack_schedule = [2, 4, 8];
-
-rejuv_schedule =
-    [(drift_mh_kernel, drift_args_schedule),
-    (drift_mh_kernel, drift_args_schedule_wide)]
-backtrack_schedule = [2];
 
 # %%
 t1 = now()
