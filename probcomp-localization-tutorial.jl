@@ -2297,6 +2297,8 @@ the_plot
 # The first new ingredient is a numerical test for the suitability of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions.  In our case, the requirement will be that the proposed new step particles be not much more unlikely under the posterior than the preceding ones, or more precisely that the change in average importance weight lie above some lower bound.  As for the interventions, first comes a sequence of zero or more rejuvenation strategies, say, Gaussian drift, followed by more costly grid search.  If this is not enough, next we consider that prior time steps might have led us into a dead end, so we roll back some number of steps and try again.
 #
 # Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  To prevent this, we limit the amount of backtracking, after which a (possibly unsatisfactory) advance is enforced.  But there are many specific ways the inference programmer might choose to respond to this circumstance.  As you consider what policy you might prefer to adopt here in response to indecision, you are invited to notice how inference programming offers an expression of your human *reasoning*, just as modeling with generative functions offers an expression of quantifiable *beliefs*, in the presence of uncertainty.
+#
+# Note the appearance of `Gen.update`'s sibling `Gen.regenerate`: instead of hand-fixing certain stochastic choices in a trace, it simply redraws them from the immanent distribution; it may also modify functional parameters in same way.
 
 # %%
 incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor)))
@@ -2332,26 +2334,10 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             t_saved = t
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
-            if t == 0
-                for i in 1:N_particles
-                    traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
-                end
-            else
-                # Roll back to before time `t`, set the weight target for `t`, then redraw at `t`.
-                for i in 1:N_particles
-                    traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
-                    log_weights[i] += log_weight_increment
-                end
-                for i in 1:N_particles
-                    traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-                    log_weights[i] += log_weight_increment
-                end
-                # Were it not for the need to set the weight target, the two `update` operations above
-                # could be combined into the single Gen command (in a single loop over `i`):
-                # ```
-                # traces[i], log_weight_increment, _, _ =
-                #     regenerate(traces[i], (t, args...), change_only_T, select(prefix_address(t+1, :pose)))
-                # ```
+            for i in 1:N_particles
+                save = traces[i][prefix_address(t+1,:pose)]
+                traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, select(prefix_address(t+1, :pose)))
+                log_weights[i] += log_weight_increment
             end
         end
 
@@ -2425,19 +2411,9 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             t_saved = t
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
-            if t == 0
-                for i in 1:N_particles
-                    traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
-                end
-            else
-                for i in 1:N_particles
-                    traces[i], log_weight_increment = update(traces[i], (t-1, args...), change_only_T, choicemap())
-                    log_weights[i] += log_weight_increment
-                end
-                for i in 1:N_particles
-                    traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-                    log_weights[i] += log_weight_increment
-                end
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _ = regenerate(traces[i], (t, args...), change_only_T, select(prefix_address(t+1, :pose)))
+                log_weights[i] += log_weight_increment
             end
             push!(infos, (type = :backtrack, time=now(), t = t, label = "backtrack $dt steps", traces = copy(traces), log_weights = copy(log_weights)))
         end
