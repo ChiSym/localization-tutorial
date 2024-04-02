@@ -2333,6 +2333,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
         elseif action == :backtrack
             append!(candidates, zip(traces, log_weights))
             backtrack_state += 1
+            t_saved = t
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             if t == 0
@@ -2379,7 +2380,6 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             if fitness_function(log_weights) > fitness_target || isempty(backtrack_schedule)
                 action = :advance
             else
-                t_saved = t
                 action = :backtrack
             end
         elseif t < t_saved
@@ -2394,7 +2394,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                 action = :advance
             else
                 # Otherwise, try backtracking again if more is on the schedule,
-                # else declare stuckness, resample from the candidates, and move on.
+                # else (indecision stuckness) resample from the candidates, terminate backtracking, and move on.
                 if backtrack_state < length(backtrack_schedule)
                     action = :backtrack
                 else
@@ -2441,6 +2441,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         elseif action == :backtrack
             append!(candidates, zip(traces, log_weights))
             backtrack_state += 1
+            t_saved = t
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
             if t == 0
@@ -2479,7 +2480,6 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             if fitness_function(log_weights) > fitness_target || isempty(backtrack_schedule)
                 action = :advance
             else
-                t_saved = t
                 action = :backtrack
             end
         elseif t < t_saved
