@@ -1481,11 +1481,6 @@ gif(ani, "imgs/pf_animation_high.gif", fps=1)
 effective_sample_size(log_weights) =
     exp(-logsumexp(2. * (log_weights .- logsumexp(log_weights))))
 
-resample_ESS(particles, log_weights, ESS_threshold; M=nothing) =
-    (effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))) ?
-        resample(particles, log_weights; M=M) :
-        (particles, log_weights)
-
 function particle_filter_bootstrap(model, T, args, constraints, N_particles, ESS_threshold)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -1496,7 +1491,9 @@ function particle_filter_bootstrap(model, T, args, constraints, N_particles, ESS
     end
 
     for t in 1:T
-        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
+        end
 
         for i in 1:N_particles
             traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -1519,8 +1516,10 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
     push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
     for t in 1:T
-        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
-        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
+            push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        end
 
         for i in 1:N_particles
             traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -1582,7 +1581,9 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_thr
         traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
     end
 
-    traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+    if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+        traces, log_weights = resample(traces, log_weights)
+    end
 
     for rejuv_args in rejuv_args_schedule
         for i in 1:N_particles
@@ -1596,7 +1597,9 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_thr
             log_weights[i] += log_weight_increment
         end
 
-        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
+        end
 
         for rejuv_args in rejuv_args_schedule
             for i in 1:N_particles
@@ -1620,8 +1623,10 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     end
     push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
 
-    traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
-    push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+    if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+        traces, log_weights = resample(traces, log_weights)
+        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+    end
 
     for rejuv_args in rejuv_args_schedule
         for i in 1:N_particles
@@ -1637,8 +1642,10 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
         end
         push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
 
-        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
-        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
+            push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        end
 
         for rejuv_args in rejuv_args_schedule
             for i in 1:N_particles
@@ -2341,7 +2348,9 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             end
         end
 
-        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
+        end
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
             if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
@@ -2418,8 +2427,10 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             push!(infos, (type = :backtrack, time=now(), t = t, label = "backtrack $dt steps", traces = copy(traces), log_weights = copy(log_weights)))
         end
 
-        traces, log_weights = resample_ESS(traces, log_weights, ESS_threshold)
-        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
+            push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        end
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
             if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
