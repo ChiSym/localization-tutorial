@@ -2372,38 +2372,26 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
             end
         end
 
-        # Backtracking logic.
-        if backtrack_state == 0
-            # Normal operation / not currently backtracking.
-            # If rejuvenation succeeded, accept the particles and move on,
-            # else initiate backtracking.
-            if fitness_function(log_weights) > fitness_target || isempty(backtrack_schedule)
-                action = :advance
-            else
-                action = :backtrack
-            end
-        elseif t < t_saved
-            # Working through an incomplete backtrack.
-            # Proceed to timestep `t_saved` to complete the backtrack, without sub-backtracking.
+        # Advance-or-backtrack logic.
+        if backtrack_state > 0 && t < t_saved
+            # We are within a backtracking; then advance uninterrupted to completion.
+            action = :advance
+        elseif fitness_funtion(log_weights) > fitness_target
+            # The fitness criterion has been met; then accept the current particle set,
+            # clear the backtracking state, and advance.
+            backtrack_state, candidates = 0, []
+            action = :advance
+        elseif backtrack_state == length(backtrack_schedule)
+            # We have exhausted our backtracking opportunities (indecision stuckness); then
+            # resample from all the candidates explored during backtracking, clear state, and advance.
+            append!(candidates, zip(traces, log_weights))
+            traces, log_weights = resample(first.(candidates), last.(candidates); M=N_particles)
+            backtrack_state, candidates = 0, []
             action = :advance
         else
-            # At the end of a backtrack.
-            # If it works, terminate backtracking and move on.
-            if fitness_function(log_weights) > fitness_target
-                backtrack_state, candidates = 0, []
-                action = :advance
-            else
-                # Otherwise, try backtracking again if more is on the schedule,
-                # else (indecision stuckness) resample from the candidates, terminate backtracking, and move on.
-                if backtrack_state < length(backtrack_schedule)
-                    action = :backtrack
-                else
-                    append!(candidates, zip(traces, log_weights))
-                    traces, log_weights = resample(first.(candidates), last.(candidates); M=N_particles)
-                    backtrack_state, candidates = 0, []
-                    action = :advance
-                end
-            end
+            # We are not mid-backtrack, we do not meet the fitness criterion, and
+            # more backtracking opportunity remains.
+            action = :backtrack
         end
     end
 
@@ -2476,31 +2464,21 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             end
         end
 
-        if backtrack_state == 0
-            if fitness_function(log_weights) > fitness_target || isempty(backtrack_schedule)
-                action = :advance
-            else
-                action = :backtrack
-            end
-        elseif t < t_saved
+        if backtrack_state > 0 && t < t_saved
+            action = :advance
+        elseif fitness_funtion(log_weights) > fitness_target
+            backtrack_state, candidates = 0, []
+            action = :advance
+        elseif backtrack_state == length(backtrack_schedule)
+            append!(candidates, zip(traces, log_weights))
+            traces, log_weights = first.(candidates), last.(candidates)
+            push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: the candidates", traces = copy(traces), log_weights = copy(log_weights)))
+            traces, log_weights = resample(traces, log_weights; M=N_particles)
+            push!(infos, (type = :indecision2, time = now(), t = t, label = "indecision: resample", traces = copy(traces), log_weights = copy(log_weights)))
+            backtrack_state, candidates = 0, []
             action = :advance
         else
-            if fitness_function(log_weights) > fitness_target
-                backtrack_state, candidates = 0, []
-                action = :advance
-            else
-                if backtrack_state < length(backtrack_schedule)
-                    action = :backtrack
-                else
-                    append!(candidates, zip(traces, log_weights))
-                    traces, log_weights = first.(candidates), last.(candidates)
-                    push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: the candidates", traces = copy(traces), log_weights = copy(log_weights)))
-                    traces, log_weights = resample(traces, log_weights; M=N_particles)
-                    push!(infos, (type = :indecision2, time = now(), t = t, label = "indecision: resample", traces = copy(traces), log_weights = copy(log_weights)))
-                    backtrack_state, candidates = 0, []
-                    action = :advance
-                end
-            end
+            action = :backtrack
         end
     end
 
