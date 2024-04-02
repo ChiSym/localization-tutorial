@@ -1547,9 +1547,6 @@ ESS_threshold = 0.1
 
 N_samples = 10
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 t1 = now()
 traces = [particle_filter_bootstrap(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold) for _ in 1:N_samples]
 t2 = now()
@@ -1562,7 +1559,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF+Bootstrap")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF+Bootstrap")
 savefig("imgs/PF_bootstrap")
 the_plot
 
@@ -1845,9 +1842,6 @@ grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
 grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -1860,7 +1854,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
 savefig("imgs/PF_SMCP3_grid")
 the_plot
 
@@ -1874,9 +1868,6 @@ the_plot
 # grid_sizes_start = [.7, .7, π/10]
 # grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
 
-# traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-# prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 # t1 = now()
 # traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_exact, grid_args_schedule) for _ in 1:N_samples]
 # t2 = now()
@@ -1889,7 +1880,7 @@ the_plot
 # println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 # posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-# the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid")
+# the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
 # savefig("imgs/PF_SMCP3_grid_2")
 # the_plot
 
@@ -1903,9 +1894,6 @@ grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
 grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -1918,7 +1906,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid (3pc)")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (3pc)")
 savefig("imgs/PF_SMCP3_grid_3")
 the_plot
 
@@ -1932,9 +1920,6 @@ grid_n_points_start = [3, 3, 3]
 grid_sizes_start = [.7, .7, π/10]
 grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -1947,7 +1932,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Grid (1pc)")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (1pc)")
 savefig("imgs/PF_SMCP3_grid_1")
 the_plot
 
@@ -2022,9 +2007,6 @@ N_particles = 10
 
 drift_args_schedule = [0.3^k for k=1:3]
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2037,7 +2019,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + SMCP3/Drift")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Drift")
 savefig("imgs/PF_SMCP3_drift")
 the_plot
 
@@ -2092,9 +2074,6 @@ N_particles = 10
 
 drift_args_schedule = [0.8^k for k=1:10]
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2107,7 +2086,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + Boltzmann/Drift")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + Boltzmann/Drift")
 savefig("imgs/PF_boltzmann_drift")
 the_plot
 
@@ -2133,9 +2112,6 @@ N_particles = 10
 
 drift_args_schedule = [0.8^k for k=1:10]
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2148,7 +2124,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="PF + MH/Drift")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + MH/Drift")
 savefig("imgs/PF_mh_drift")
 the_plot
 
@@ -2524,9 +2500,6 @@ gif(ani, "imgs/controlled_smcp3.gif", fps=1)
 # %%
 N_particles = 10
 
-traces = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
-prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, traces, "prior samples")
-
 t1 = now()
 traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_fitness, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2539,7 +2512,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Controlled PF")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Controlled PF")
 savefig("imgs/PF_controller")
 the_plot
 
