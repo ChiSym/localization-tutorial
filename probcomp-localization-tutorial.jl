@@ -2336,8 +2336,8 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                 log_weights[i] += log_weight_increment
             end
         elseif action == :backtrack
-            append!(candidates, zip(traces, log_weights))
             backtrack_state += 1
+            append!(candidates, zip(traces, log_weights))
             t_saved = t
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
@@ -2395,8 +2395,7 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
 
-    backtrack_state, candidates = 0, []
-    t_saved = 0
+    backtrack_state, candidates, t_saved = 0, [], 0
 
     t = 0
     action = :none
@@ -2415,8 +2414,8 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
             end
             push!(infos, (type = :update, time=now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
         elseif action == :backtrack
-            append!(candidates, zip(traces, log_weights))
             backtrack_state += 1
+            append!(candidates, zip(traces, log_weights))
             t_saved = t
             dt = min(backtrack_schedule[backtrack_state], t)
             t = t - dt
