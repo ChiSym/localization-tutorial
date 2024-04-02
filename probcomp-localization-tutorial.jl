@@ -2365,7 +2365,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
                 t = t_saved
             end
             # If more backtracking is on the schedule then do it,
-            # otherwise (indecision stuckness) resample from the available candidates and move on.
+            # otherwise resample from the available candidates and move on.
             if backtrack_state < length(backtrack_schedule)
                 action = :backtrack
             else
