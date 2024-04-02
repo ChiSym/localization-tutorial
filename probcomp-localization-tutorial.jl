@@ -2323,13 +2323,13 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     backtrack_state, candidates, t_saved = 0, [], 0
 
     t = 0
-    action = :none
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
-    end
-
+    action = :initialize
     while !(t >= T && action == :advance)
-        if action == :advance
+        if action == :initialize
+            for i in 1:N_particles
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+            end
+        elseif action == :advance
             t = t + 1
             for i in 1:N_particles
                 traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
@@ -2397,14 +2397,14 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
     backtrack_state, candidates, t_saved = 0, [], 0
 
     t = 0
-    action = :none
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
-    end
-    push!(infos, (type = :initialize, time = now(), t = t, label = "initialize from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
-
+    action = :initialize
     while !(t >= T && action == :advance)
-        if action == :advance
+        if action == :initialize
+            for i in 1:N_particles
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+            end
+            push!(infos, (type = :initialize, time = now(), t = t, label = "initialize fresh particles", traces = copy(traces), log_weights = copy(log_weights)))
+        elseif action == :advance
             t = t + 1
             log_avgerage_weight_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
             for i in 1:N_particles
