@@ -82,8 +82,6 @@ Base.show(io :: IO, p :: Pose) = Base.show(io, "Pose($(p.p), $(p.hd))")
 step_along_pose(p, s) = p.p + s * p.dp
 rotate_pose(p, a) = Pose(p.p, p.hd + a)
 
-Segment(p1 :: Pose, p2 :: Pose) = Segment(p1.p, p2.p)
-
 # A value `c :: Control` corresponds to the robot *first* advancing in its present direction by `c.ds`, *then* rotating by `c.dhd`.
 struct Control
     ds  :: Float64
@@ -1047,7 +1045,7 @@ function frame_from_traces(world, title, path, path_label, traces, trace_label; 
     for trace in traces
         poses = get_path(trace)
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=nothing, color=:green, alpha=0.3)
-        plot!([Segment(p1, p2) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
+        plot!([Segment(p1.p, p2.p) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
               label=trace_label, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=0.3)
         trace_label = nothing
     end
@@ -1427,7 +1425,7 @@ function frame_from_weighted_traces(world, title, path, path_label, traces, log_
         poses = get_path(trace)
         plot!([p.p[1] for p in poses], [p.p[2] for p in poses]; label=trace_label, color=:green, alpha=alpha)
         plot!(poses[end]; color=:green, alpha=alpha, label=nothing)
-        plot!([Segment(p1, p2) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
+        plot!([Segment(p1.p, p2.p) for (p1, p2) in zip(poses[1:end-1], poses[2:end])];
               label=nothing, color=:green, seriestype=:scatter, markersize=3, markerstrokewidth=0, alpha=alpha)
         trace_label = nothing
     end
