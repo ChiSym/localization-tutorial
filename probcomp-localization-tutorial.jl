@@ -996,7 +996,7 @@ trace_path_integrated_observations_low_deviation, _ =
 trace_path_integrated_observations_high_deviation, _ =
     generate(full_model, (T, full_model_args...), constraints_path_integrated_observations_high_deviation);
 
-selection = select((prefix_address(i, :sensor => j => :distance) for i in 1:(T+1), j in 1:sensor_settings.num_angles)...)
+selection = select((prefix_address(i, :sensor) for i in 1:(T+1))...)
 
 println("Log density of low deviation observations assuming integrated path: $(project(trace_path_integrated_observations_low_deviation, selection))")
 println("Log density of high deviation observations assuming integrated path: $(project(trace_path_integrated_observations_high_deviation, selection))");
