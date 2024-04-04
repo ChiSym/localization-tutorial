@@ -60,7 +60,7 @@ mkpath("imgs");
 # %%
 # General code here
 
-norm(v :: Vector{Float64}) = sqrt(sum(v.^2))
+norm(v) = sqrt(sum(v.^2))
 
 struct Segment
     p1 :: Vector{Float64}
@@ -79,8 +79,8 @@ end
 Pose(p :: Vector{Float64}, dp :: Vector{Float64}) = Pose(p, atan(dp[2], dp[1]))
 Base.show(io :: IO, p :: Pose) = Base.show(io, "Pose($(p.p), $(p.hd))")
 
-step_along_pose(p :: Pose, s :: Float64) :: Vector{Float64} = p.p + s * p.dp
-rotate_pose(p :: Pose, a :: Float64) :: Pose = Pose(p.p, p.hd + a)
+step_along_pose(p, s) = p.p + s * p.dp
+rotate_pose(p, a) = Pose(p.p, p.hd + a)
 
 Segment(p1 :: Pose, p2 :: Pose) = Segment(p1.p, p2.p)
 
@@ -90,14 +90,13 @@ struct Control
     dhd :: Float64
 end
 
-function create_segments(verts :: Vector{Vector{Float64}}; loop_around=false) :: Vector{Segment}
+function create_segments(verts; loop_around=false)
     segs = [Segment(p1, p2) for (p1, p2) in zip(verts[1:end-1], verts[2:end])]
     if loop_around; push!(segs, Segment(verts[end], verts[1])) end
     return segs
 end
 
-function make_world(walls_vec :: Vector{Vector{Float64}}, clutters_vec :: Vector{Vector{Vector{Float64}}},
-                    start :: Pose, controls :: Vector{Control}; loop_around=false)
+function make_world(walls_vec, clutters_vec, start, controls; loop_around=false)
     walls = create_segments(walls_vec; loop_around=loop_around)
     clutters = [create_segments(clutter; loop_around=loop_around) for clutter in clutters_vec]
     walls_clutters = [walls ; clutters...]
@@ -136,7 +135,7 @@ world, robot_inputs, T = load_world("example_20_program.json");
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
 
 # %%
-function integrate_controls_unphysical(robot_inputs :: NamedTuple) :: Vector{Pose}
+function integrate_controls_unphysical(robot_inputs)
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
     path[1] = robot_inputs.start
     for t in 1:length(robot_inputs.controls)
@@ -154,7 +153,7 @@ end;
 
 # %%
 # Return unique s, t such that p + s*u == q + t*v.
-function solve_lines(p :: Vector{Float64}, u :: Vector{Float64}, q :: Vector{Float64}, v :: Vector{Float64}; PARALLEL_TOL=1.0e-10)
+function solve_lines(p, u, q, v; PARALLEL_TOL=1.0e-10)
     det = u[1] * v[2] - u[2] * v[1]
     if abs(det) < PARALLEL_TOL
         return nothing, nothing
@@ -165,7 +164,7 @@ function solve_lines(p :: Vector{Float64}, u :: Vector{Float64}, q :: Vector{Flo
     end
 end
 
-function distance(p :: Pose, seg :: Segment) :: Float64
+function distance(p, seg)
     s, t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
     # Solving failed (including, by fiat, if pose is parallel to segment) iff isnothing(s).
     # Pose is oriented away from segment iff s < 0.
@@ -173,7 +172,7 @@ function distance(p :: Pose, seg :: Segment) :: Float64
     return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
 end
 
-function physical_step(p1 :: Vector{Float64}, p2 :: Vector{Float64}, hd :: Float64, world_inputs :: NamedTuple) :: Pose
+function physical_step(p1, p2, hd, world_inputs)
     step_pose = Pose(p1, p2 - p1)
     (s, i) = findmin(w -> distance(step_pose, w), world_inputs.walls)
     if s > norm(p2 - p1)
@@ -191,7 +190,7 @@ function physical_step(p1 :: Vector{Float64}, p2 :: Vector{Float64}, hd :: Float
     end
 end
 
-function integrate_controls(robot_inputs :: NamedTuple, world_inputs :: NamedTuple)
+function integrate_controls(robot_inputs, world_inputs)
     path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
     path[1] = robot_inputs.start
     for t in 1:length(robot_inputs.controls)
@@ -273,13 +272,13 @@ the_plot
 # We start with the two building blocks: the starting pose and individual steps of motion.
 
 # %%
-@gen (static) function start_pose_prior(start :: Pose, motion_settings :: NamedTuple) :: Pose
+@gen (static) function start_pose_prior(start, motion_settings)
     p ~ mvnormal(start.p, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd, motion_settings.hd_noise)
     return Pose(p, hd)
 end
 
-@gen (static) function step_model(start :: Pose, c :: Control, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
+@gen (static) function step_model(start, c, world_inputs, motion_settings)
     p ~ mvnormal(start.p + c.ds * start.dp, motion_settings.p_noise^2 * [1 0 ; 0 1])
     hd ~ normal(start.hd + c.dhd, motion_settings.hd_noise)
     return physical_step(start.p, p, hd, world_inputs)
@@ -442,7 +441,7 @@ project(trace, select(:p, :hd)) == get_score(trace)
 # (It is worth acknowledging two strange things in the code below: the extra text "`_loop`" in the function name, and the seemingly redundant new parameter `T`.  Both will be addressed shortly, along with the aforementioned wrapper.)
 
 # %%
-@gen function path_model_loop(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+@gen function path_model_loop(T, robot_inputs, world_inputs, motion_settings)
     pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
 
     for t in 1:T
@@ -450,7 +449,7 @@ project(trace, select(:p, :hd)) == get_score(trace)
     end
 end
 
-prefix_address(t :: Int, rest) :: Pair = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
+prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
 
 # %% [markdown]
@@ -588,12 +587,12 @@ println("Success");
 # But we humans understand that incrementing the argument `T` simply requires running the loop body once more.  This operation runs in $O(1)$ time, so the outer loop should require only $O(T)$ time.  Gen can intelligently work this way if we encode the structure of Markov chain in this model using a *combinator* for the static DSL, as follows.
 
 # %%
-@gen (static) function motion_path_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Pose
+@gen (static) function motion_path_kernel(t, state, robot_inputs, world_inputs, motion_settings)
     return {:pose} ~ step_model(state, robot_inputs.controls[t], world_inputs, motion_settings)
 end
 motion_path_chain = Unfold(motion_path_kernel)
 
-@gen (static) function path_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+@gen (static) function path_model(T, robot_inputs, world_inputs, motion_settings)
     initial = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
     {:steps} ~ motion_path_chain(T, initial, robot_inputs, world_inputs, motion_settings)
 end;
@@ -609,7 +608,7 @@ end;
 # Owing to the efficiency comparison, we eschew `path_model_loop` in favor of `path_model` in what follows.  Thus we finally write our noisy path integration wrapper.
 
 # %%
-function integrate_controls_noisy(robot_inputs :: NamedTuple, world_inputs :: NamedTuple, motion_settings :: NamedTuple) :: Vector{Pose}
+function integrate_controls_noisy(robot_inputs, world_inputs, motion_settings)
     return get_path(simulate(path_model, (length(robot_inputs.controls), robot_inputs, world_inputs, motion_settings)))
 end;
 
@@ -621,16 +620,16 @@ end;
 # We first describe the ideal case, where the sensors return the true distances to the walls.
 
 # %%
-function sensor_distance(pose :: Pose, walls :: Vector{Segment}, box_size :: Float64) :: Float64
+function sensor_distance(pose, walls, box_size)
     d = minimum(distance(pose, seg) for seg in walls)
     # Capping to a finite value avoids issues below.
     return isinf(d) ? 2. * box_size : d
 end;
 
-sensor_angle(sensor_settings :: NamedTuple, j :: Int64) =
+sensor_angle(sensor_settings, j) =
     sensor_settings.fov * (j - (sensor_settings.num_angles - 1) / 2.) / (sensor_settings.num_angles - 1)
 
-function ideal_sensor(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
+function ideal_sensor(pose, walls, sensor_settings)
     readings = Vector{Float64}(undef, sensor_settings.num_angles)
     for j in 1:sensor_settings.num_angles
         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
@@ -677,14 +676,14 @@ gif(ani, "imgs/ideal_distances.gif", fps=1)
 # We assume that the sensor readings are themselves uncertain, say, the distances only knowable up to some noise.  We model this as follows.  (We satisfy ourselves with writing a loop in the dynamic DSL because we will have no need for incremental recomputation within this model.)
 
 # %%
-@gen function sensor_model(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
+@gen function sensor_model(pose, walls, sensor_settings)
     for j in 1:sensor_settings.num_angles
         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
         {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
     end
 end
 
-function noisy_sensor(pose :: Pose, walls :: Vector{Segment}, sensor_settings :: NamedTuple) :: Vector{Float64}
+function noisy_sensor(pose, walls, sensor_settings)
     trace = simulate(sensor_model, (pose, walls, sensor_settings))
     return [trace[j => :distance] for j in 1:sensor_settings.num_angles]
 end;
@@ -733,21 +732,20 @@ gif(ani, "imgs/sensor_1.gif", fps=1)
 # We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
 
 # %%
-@gen (static) function full_model_initial(robot_inputs :: NamedTuple, walls :: Vector{Segment}, full_settings :: NamedTuple)  :: Pose
+@gen (static) function full_model_initial(robot_inputs, walls, full_settings)
     pose ~ start_pose_prior(robot_inputs.start, full_settings.motion_settings)
     {:sensor} ~ sensor_model(pose, walls, full_settings.sensor_settings)
     return pose
 end
 
-@gen (static) function full_model_kernel(t :: Int, state :: Pose, robot_inputs :: NamedTuple, world_inputs :: NamedTuple,
-                                      full_settings :: NamedTuple) :: Pose
+@gen (static) function full_model_kernel(t, state, robot_inputs, world_inputs, full_settings)
     pose ~ step_model(state, robot_inputs.controls[t], world_inputs, full_settings.motion_settings)
     {:sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
     return pose
 end
 full_model_chain = Unfold(full_model_kernel)
 
-@gen (static) function full_model(T :: Int, robot_inputs :: NamedTuple, world_inputs :: NamedTuple, full_settings :: NamedTuple) :: Nothing
+@gen (static) function full_model(T, robot_inputs, world_inputs, full_settings)
     initial ~ full_model_initial(robot_inputs, world_inputs.walls, full_settings)
     steps ~ full_model_chain(T, initial, robot_inputs, world_inputs, full_settings)
 end
@@ -855,7 +853,7 @@ observations_low_deviation = get_sensors(trace_low_deviation)
 observations_high_deviation = get_sensors(trace_high_deviation)
 
 # Encode sensor readings into choice map.
-constraint_from_sensors(t :: Int, readings :: Vector{Float64}) :: ChoiceMap =
+constraint_from_sensors(t, readings) =
     choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
 
 constraints_low_deviation = [constraint_from_sensors(o...) for o in enumerate(observations_low_deviation)]
@@ -1727,12 +1725,12 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
 # There is a much faster and simpler way, at the cost of so little incremental weight variance that it has empirically negligible impact on inference performance: ignore the data $o_t$, and just draw $z_t$ from (the restriction to the inverse grid of) the path model.  This strategy is implemented by `grid_bwd_proposal` below.
 
 # %%
-function vector_grid(center :: Vector{Float64}, grid_n_points :: Vector{Int}, grid_sizes :: Vector{Float64}) :: Vector{Vector{Float64}}
+function vector_grid(center, grid_n_points, grid_sizes)
     offset = center .- (grid_n_points .+ 1) .* grid_sizes ./ 2.
     return reshape(map(I -> [Tuple(I)...] .* grid_sizes .+ offset, CartesianIndices(Tuple(grid_n_points))), (:,))
 end
 
-inverse_grid_index(grid_n_points :: Vector{Int}, j :: Int) :: Int =
+inverse_grid_index(grid_n_points, j) =
     LinearIndices(Tuple(grid_n_points))[(grid_n_points .+ 1 .- [Tuple(CartesianIndices(Tuple(grid_n_points))[j])...])...]
 
 # Sample from the posterior, restricted to the grid.
