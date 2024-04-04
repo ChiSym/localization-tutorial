@@ -1607,7 +1607,6 @@ end
 function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, ESS_threshold, rejuv_kernel, rejuv_args_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
 
     t = 0
@@ -1622,10 +1621,12 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     end
 
     for rejuv_args in rejuv_args_schedule
+        vizs_collected = []
         for i in 1:N_particles
-            traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+            traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+            append!(vizs_collected, vizs)
         end
-        push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+        push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
     end
 
     for t in 1:T
@@ -1641,10 +1642,12 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
         end
 
         for rejuv_args in rejuv_args_schedule
+            vizs_collected = []
             for i in 1:N_particles
-                traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                append!(vizs_collected, vizs)
             end
-            push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+            push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
         end
     end
 
@@ -1680,17 +1683,17 @@ end;
 # %%
 # The argument `fwd_proposal` corresponds to `(k,\~g)` above.
 # Its input, a trace `t`, corresponds to `z` above.
-# Its output has the form `(cm_t, cm_u, viz)` where
+# Its output has the form `(cm_t, cm_u, vizs)` where
 # * `t2, _ = update(t, cm_t)` is the proposed new particle trace, corresponding to `z'` above,
 # * `cm_u` is a choice map for `bwd_proposal`, corresponding to `u'` above, and
-# * `viz` is data we supply for use in visualization.
-# The argument `bwd_proposal` works vice versa for `(\ell,\~g^{-1})` above, sans the `viz`.
+# * `vizs` is data we supply for use in visualization.
+# The argument `bwd_proposal` works vice versa for `(\ell,\~g^{-1})` above, sans the `vizs`.
 function smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_args)
     fwd_proposal_trace = simulate(fwd_proposal, (particle, proposal_args...))
-    (fwd_model_update, bwd_proposal_choicemap, viz) = get_retval(fwd_proposal_trace)
+    (fwd_model_update, bwd_proposal_choicemap, vizs) = get_retval(fwd_proposal_trace)
     fwd_proposal_weight = get_score(fwd_proposal_trace)
     # Gen shorthand for the above lines:
-    # _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, viz) = propose(fwd_proposal, (particle, proposal_args...))
+    # _, fwd_proposal_weight, (fwd_model_update, bwd_proposal_choicemap, vizs) = propose(fwd_proposal, (particle, proposal_args...))
 
     proposed_particle, model_weight_diff, _, _ = update(particle, fwd_model_update)
 
@@ -1699,7 +1702,7 @@ function smcp3_step(particle, log_weight, fwd_proposal, bwd_proposal, proposal_a
     # bwd_proposal_weight, _ = assess(bwd_proposal, (proposed_particle, proposal_args...), bwd_proposal_choicemap)
 
     proposed_log_weight = log_weight + model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
-    return proposed_particle, proposed_log_weight, viz
+    return proposed_particle, proposed_log_weight, vizs
 end
 
 smcp3_kernel(fwd_proposal, bwd_proposal) =
@@ -1748,10 +1751,10 @@ inverse_grid_index(grid_n_points, j) =
     fwd_j ~ categorical(pose_norm_weights)
     bwd_j = inverse_grid_index(grid_n_points, fwd_j)
 
-    viz = (objs = ([Pose([x, y], h) for (x, y, h) in pose_grid],),
-           params = (color=:red, label="pose grid"))
+    vizs = [(objs = ([Pose([x, y], h) for (x, y, h) in pose_grid],),
+             params = (color=:red, label="pose grid"))]
 
-    return choicemap_grid[fwd_j], choicemap((:bwd_j, bwd_j)), viz
+    return choicemap_grid[fwd_j], choicemap((:bwd_j, bwd_j)), vizs
 end
 
 # Sample from the prior, restricted to the inverse grid.
@@ -1953,12 +1956,12 @@ the_plot
     drift_hd ~ normal(undrift_hd, drift_factor * hd_noise)
 
     std_devs_radius = 2.5 * drift_factor * p_noise
-    viz = (objs = make_circle(undrift_p, std_devs_radius),
-           params = (color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25))
+    vizs = [(objs = make_circle(undrift_p, std_devs_radius),
+             params = (color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.1))]
 
     return choicemap((prefix_address(t+1, :pose => :p), drift_p), (prefix_address(t+1, :pose => :hd), drift_hd)),
            choicemap((:undrift_p, undrift_p), (:undrift_hd, undrift_hd)),
-           viz
+           vizs
 end
 
 @gen function drift_bwd_proposal(trace, drift_factor)
@@ -2026,8 +2029,8 @@ the_plot
 
 # %%
 function mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
-    proposed_particle, proposed_log_weight, viz = mcmc_proposal(particle, log_weight, mcmc_args)
-    return mcmc_rule([particle, proposed_particle], [log_weight, proposed_log_weight])..., viz
+    proposed_particle, proposed_log_weight, vizs = mcmc_proposal(particle, log_weight, mcmc_args)
+    return mcmc_rule([particle, proposed_particle], [log_weight, proposed_log_weight])..., vizs
 end
 mcmc_kernel(mcmc_proposal, mcmc_rule) =
     (particle, log_weight, mcmc_args) -> mcmc_step(particle, log_weight, mcmc_proposal, mcmc_args, mcmc_rule)
@@ -2378,7 +2381,6 @@ end
 function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
-    vizs = Vector{NamedTuple}(undef, N_particles)
     infos = []
 
     fitness_function, fitness_allowance_schedule = fitness_test
@@ -2421,10 +2423,12 @@ function particle_filter_controlled_infos(model, T, args, constraints, N_particl
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
             if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
             for rejuv_args in rejuv_args_schedule
+                vizs_collected = []
                 for i in 1:N_particles
-                    traces[i], log_weights[i], vizs[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                    traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                    append!(vizs_collected, vizs)
                 end
-                push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = copy(vizs)))
+                push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
             end
         end
 
