@@ -2447,21 +2447,17 @@ fitness_test = log_average_weight_fitness(T, -1e3)
 
 # The sequence of rejuvenation strategies:
 
-# First try a quick Gaussian drift.
-drift_args_schedule = [0.5^k for k=1:4]
-
-# Then try a more thorough, but still cheap, Gaussian drift.
+# First try a quicker Gaussian drift.
 drift_args_schedule_wide = [0.7^k for k=1:7]
 
-# Third try a more determined grid search.
+# Then try a more determined grid search.
 grid_n_points = [3, 3, 3]
 grid_sizes = [.5, .5, π/10]
 grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
 grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
 
 rejuv_schedule =
-    [(drift_mh_kernel, drift_args_schedule),
-     (drift_mh_kernel, drift_args_schedule_wide),
+    [(drift_mh_kernel, drift_args_schedule_wide),
      (grid_smcp3_kernel, grid_args_schedule),
      (grid_smcp3_kernel, grid_args_schedule_harder)];
 
