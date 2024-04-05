@@ -2006,7 +2006,7 @@ drift_smcp3_kernel = smcp3_kernel(drift_fwd_proposal, drift_bwd_proposal);
 # %%
 N_particles = 10
 
-drift_args_schedule = [0.3^k for k=1:3]
+drift_args_schedule = [0.7^k for k=1:7]
 
 N_samples = 10
 
