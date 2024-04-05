@@ -2125,7 +2125,7 @@ the_plot
 # The ingredients of the particle filter programs we have written may certainly be abstracted, then reused with brevity.  Although we will not do so here, out of an intention to keep all the techniques explicit, we note that such abstractions are provided by the `GenParticleFilters` library.  For an example of its use, the reader is encouraged to peer into `black_box.jl` and compare the inference code there to the present state of our approach to the robot problem.
 
 # %% [markdown]
-# ## Improving robustness
+# ## Improving performance and robustness
 
 # %% [markdown]
 # ### Unanticipated challenges
@@ -2259,22 +2259,157 @@ the_plot
 # Other problems, such as kidnapping and map discrepancy, require a model that is flexible enough to accommodate what we encounter in the first place.  For this we will employ Bayesian *hierarchical models* that express the belief that rare discrepancies occur.
 
 # %% [markdown]
-# ### Adaptive inference: measuring fitness
+# ### Adaptive inference: measuring and responding to fitness
 #
-# We the inference programmers do not have to be stuck with some fixed amount of rejuvenation effort: we get to choose how much computing resource to devote to our particle population's sample quality.  To do so programmatically, we will need some numerical test for the fitness of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions, for example, rounds of increasingly expensive rejuvenation.
+# We the inference programmers do not have to be stuck with some fixed amount of rejuvenation effort: we get to choose how much computing resource to devote to our particle population's sample quality.  To do so programmatically, we will assume given some numerical test for the fitness of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions, for example, rounds of increasingly expensive rejuvenation.
 #
-# Recall that we are assessing the suitability of a family of weighted particles $(w_t^{(i)}, z_{0:t}^{(i)})_{i=1}^N$ constructed up to time $t$.  These particles were constructed either using `Gen.generate` at the first time step $t=0$, or otherwise extended from a family $(w_{t-1}^{(i)},z_{0:t-1}^{(i)})_{i=1}^N$ using `Gen.update`.  These `Gen` operations also returned some (log) *weight* $\~w_t^{(i)}$, namely the importance weight $\~w_0^{(i)} := w_0^{(i)}$ in the first case, and the incremental weight $\~w_t^{(i)} := w_t^{(i)}/w_{t-1}^{(i)}$ in the second case.  Each of these weights $\~w_t^{(i)}$ is equal to the sensor model probability density $P_\text{sensor}(o_t^{(i)};z_t^{(i)},\ldots)$ of the observations $o_t^{(i)}$.  Thus, on the one hand, one can recover these numbers in a unform manner using `Gen.project` as explained earlier, and on the other hand, they measure the fitness of the step $z_t^{(i)}$ as an extension of the particle to time $t$.
+# What we particularly mean by a "fitness test" recollects some ideas from earlier in this tutorial, as follows.
 #
-# Out of many possible design choices for testing the fitness of particles, we will limit ourselves to considering when a given function $h(w)$ of tuples $w = (w^{(i)})_{i=1}^N$ meets a given "allowance" bound when evaluated at $\~w_t := (\~w_t^{(i)})_{i=1}^N$.  Here are two choices of such functions $h$.  They have been normalized so that the allowances do not need to be adjusted as the number $N$ of particles is changed:
+# We are assessing the suitability of a family of weighted particles $(w_t^{(i)}, z_{0:t}^{(i)})_{i=1}^N$ constructed up to time $t$.  These particles were constructed either using `Gen.generate` at the first time step $t=0$, or otherwise extended from a family $(w_{t-1}^{(i)},z_{0:t-1}^{(i)})_{i=1}^N$ using `Gen.update`.  Both of these `Gen` operations also returned some kind (log) "weight" $\~w_t^{(i)}$, namely the importance weight $\~w_0^{(i)} := w_0^{(i)}$ in the first case, and the incremental weight $\~w_t^{(i)} := w_t^{(i)}/w_{t-1}^{(i)}$ in the second case.  Each of these weights $\~w_t^{(i)}$ is equal to the sensor model probability density $P_\text{sensor}(o_t^{(i)};z_t^{(i)},\ldots)$ of the observations $o_t^{(i)}$ at time step $t$.  Thus, on the one hand, one can recover these numbers in a unform manner using `Gen.project` as explained earlier, and on the other hand, they measure the fitness of the step $z_t^{(i)}$ as an extension of the particle to time $t$.
+#
+# Out of many possible design choices, we will limit ourselves to considering when a given function $h(w)$ of tuples $w = (w^{(i)})_{i=1}^N$ meets a given "allowance" bound when evaluated at $\~w_t := (\~w_t^{(i)})_{i=1}^N$.  Here are two choices of such functions $h$.  They have been normalized so that the allowances do not need to be adjusted as the number $N$ of particles is changed:
 # * The average log weight, $h(w) = \frac1N \sum_{i=1}^N \log w^{(i)}$.  
 # * The log average weight, also known as the *log marginal likelihood estimate*, $h(w) = \log \big[ \frac1N \sum_{i=1}^n w^{(i)} \big]$.  
 #
 # The first of these responds equally to changes in each weight, and therefore measures the fitness of all the particles, whereas the second is predominately determined by the largest weights, and therefore measures the fitness of the best-fitting particles.  Let's have a look at how an inference step is assessed by these rules.
 
+# %%
+function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_kernel, rejuv_args_schedule)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+
+    fitness_function, fitness_allowance_schedule = fitness_test
+
+    t = 0
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
+    end
+
+    if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+        traces, log_weights = resample(traces, log_weights)
+    end
+
+    for rejuv_args in rejuv_args_schedule
+        if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
+        for i in 1:N_particles
+            traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+        end
+    end
+
+    for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
+        end
+
+        for rejuv_args in rejuv_args_schedule
+            if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
+            for i in 1:N_particles
+                traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+            end
+        end
+    end
+
+    return sample(traces, log_weights)
+end
+
+function particle_filter_fitness_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_kernel, rejuv_args_schedule)
+    traces = Vector{Trace}(undef, N_particles)
+    log_weights = Vector{Float64}(undef, N_particles)
+    infos = []
+
+    fitness_function, fitness_allowance_schedule = fitness_test
+
+    t = 0
+    for i in 1:N_particles
+        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
+    end
+    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+
+    if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+        traces, log_weights = resample(traces, log_weights)
+        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+    end
+
+    for rejuv_args in rejuv_args_schedule
+        if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
+        vizs_collected = []
+        for i in 1:N_particles
+            traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+            append!(vizs_collected, vizs)
+        end
+        push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
+    end
+
+    for t in 1:T
+        for i in 1:N_particles
+            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+            log_weights[i] += log_weight_increment
+        end
+        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
+            push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
+        end
+
+        for rejuv_args in rejuv_args_schedule
+            if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
+            vizs_collected = []
+            for i in 1:N_particles
+                traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                append!(vizs_collected, vizs)
+            end
+            push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
+        end
+    end
+
+    traces, log_weights = resample(traces, log_weights; M=1)
+    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+
+    return infos
+end;
+
+# %%
+# Fitness test options:
+
+# For now, use a constant allowance.
+log_average_weight_fitness(T, allowance) =
+    (log_weights -> logsumexp(log_weights) - log(length(log_weights)),
+     [allowance for _ in 1:(T+1)])
+average_log_weight_fitness(T, allowance) =
+    (log_weights -> sum(log_weights) / length(log_weights),
+     [allowance for _ in 1:(T+1)])
+
+fitness_test = log_average_weight_fitness(T, -1e3)
+
+# The sequence of rejuvenation strategies:
+
+# First try a quick Gaussian drift.
+drift_args_schedule = [0.5^k for k=1:4]
+
+# Then try a more thorough, but still cheap, Gaussian drift.
+drift_args_schedule_wide = [0.8^k for k=1:12]
+
+# Third try a more determined grid search.
+grid_n_points = [3, 3, 3]
+grid_sizes_start = [.7, .7, π/10]
+grid_args_schedule = [(grid_n_points, grid_sizes_start .* (2/3)^(j-1)) for j=1:4]
+grid_args_schedule_wide = [([5, 5, 5], [1.2, 1.2, π/6]), grid_args_schedule...]
+
+rejuv_schedule =
+    [(drift_mh_kernel, drift_args_schedule),
+     (drift_mh_kernel, drift_args_schedule_wide),
+     (grid_smcp3_kernel, grid_args_schedule_wide)];
+
 # %% [markdown]
-# ### Adaptive inference: controller
+# ### Adaptive inference: backtracking
 #
-# The code below is just one embodiment of the idea of programmatically controlled inference.  As already discussed, we employ a fitness test to determine whether to continue with rounds of rejuvenation.  But if those do not suffice, we try something new: we consider that prior time steps might have led us into a dead end, so we roll back some number of steps and try again.
+# Sometimes the particle filter finds itself invested in paths with no good extensions, and no amount of rejuvenation on the final step alone seems to help.  In such cases we can choose to essentially broaden our scope to rejuvenating the final several steps.  In other words, if we find ourselves in a dead end, we can back out and try again.
 #
 # Note carefully how breaking the time flow, alternating forwards and back, could lead to an inference process that is stuck in indecision.  This is especially a risk when given data that admit no good fits, or data whose good fits are exceedingly hard to find: when do we decide to keep working, versus accept what we have, versus quit?
 #
@@ -2287,7 +2422,7 @@ the_plot
 # %%
 incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor)))
 
-function particle_filter_controlled(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
+function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
@@ -2367,7 +2502,7 @@ function particle_filter_controlled(model, T, args, constraints, N_particles, ES
     return sample(traces, log_weights)
 end
 
-function particle_filter_controlled_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
+function particle_filter_backtrack_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
@@ -2457,39 +2592,12 @@ end;
 # ![](imgs_stable/controlled_smcp3_with_code.gif)
 
 # %%
-# Here we fix the parameters of the inference strategy that determine the kind effort it will expend.
-
-# The suitability test for the particle family as hypotheses.
-log_average_weight_fitness =
-    (log_weights -> logsumexp(log_weights) - log(length(log_weights)), [-1e3 for _ in 1:(T+1)])
-average_log_weight_fitness =
-    (log_weights -> sum(log_weights) / length(log_weights), [-1e3 for _ in 1:(T+1)])
-
-# The sequence of rejuvenation strategies:
-
-# First try a quick Gaussian drift.
-drift_args_schedule = [0.5^k for k=1:4]
-
-# Then try a more thorough, but still cheap, Gaussian drift.
-drift_args_schedule_wide = [0.8^k for k=1:12]
-
-# Third try a more determined grid search.
-grid_n_points = [3, 3, 3]
-grid_sizes_start = [.7, .7, π/10]
-grid_args_schedule = [(grid_n_points, grid_sizes_start .* (2/3)^(j-1)) for j=1:4]
-grid_args_schedule_wide = [([5, 5, 5], [1.2, 1.2, π/6]), grid_args_schedule...]
-
-rejuv_schedule =
-    [(drift_mh_kernel, drift_args_schedule),
-     (drift_mh_kernel, drift_args_schedule_wide),
-     (grid_smcp3_kernel, grid_args_schedule_wide)]
-
 # The sequence of backtracking amounts.
 backtrack_schedule = [2, 4, 8];
 
 # %%
 t1 = now()
-infos = particle_filter_controlled_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_fitness, rejuv_schedule, backtrack_schedule)
+infos = particle_filter_backtrack_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 
@@ -2504,13 +2612,13 @@ gif(ani, "imgs/controlled_smcp3.gif", fps=1)
 N_particles = 10
 
 t1 = now()
-traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, log_average_weight_fitness, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
+traces = [particle_filter_backtrack_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [particle_filter_controlled(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, log_average_weight_fitness, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
+traces = [particle_filter_backtrack_infos(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
