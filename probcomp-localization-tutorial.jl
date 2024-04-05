@@ -2297,7 +2297,7 @@ the_plot
 # The first of these responds equally to changes in each weight, and therefore measures the fitness of all the particles, whereas the second is predominately determined by the largest weights, and therefore measures the fitness of the best-fitting particles.  Let's have a look at how an inference step is assessed by these rules.
 
 # %%
-function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_kernel, rejuv_args_schedule)
+function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
@@ -2312,10 +2312,12 @@ function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_t
         traces, log_weights = resample(traces, log_weights)
     end
 
-    for rejuv_args in rejuv_args_schedule
+    for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
         if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
-        for i in 1:N_particles
-            traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+        for rejuv_args in rejuv_args_schedule
+            for i in 1:N_particles
+                traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+            end
         end
     end
 
@@ -2329,10 +2331,12 @@ function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_t
             traces, log_weights = resample(traces, log_weights)
         end
 
-        for rejuv_args in rejuv_args_schedule
+        for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
             if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
-            for i in 1:N_particles
-                traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+            for rejuv_args in rejuv_args_schedule
+                for i in 1:N_particles
+                    traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                end
             end
         end
     end
@@ -2340,7 +2344,7 @@ function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_t
     return sample(traces, log_weights)
 end
 
-function particle_filter_fitness_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_kernel, rejuv_args_schedule)
+function particle_filter_fitness_infos(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
@@ -2358,14 +2362,16 @@ function particle_filter_fitness_infos(model, T, args, constraints, N_particles,
         push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
-    for rejuv_args in rejuv_args_schedule
+    for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
         if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
-        vizs_collected = []
-        for i in 1:N_particles
-            traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
-            append!(vizs_collected, vizs)
+        for rejuv_args in rejuv_args_schedule
+            vizs_collected = []
+            for i in 1:N_particles
+                traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                append!(vizs_collected, vizs)
+            end
+            push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
         end
-        push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
     end
 
     for t in 1:T
@@ -2380,14 +2386,16 @@ function particle_filter_fitness_infos(model, T, args, constraints, N_particles,
             push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
         end
 
-        for rejuv_args in rejuv_args_schedule
+        for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
             if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
-            vizs_collected = []
-            for i in 1:N_particles
-                traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
-                append!(vizs_collected, vizs)
+            for rejuv_args in rejuv_args_schedule
+                vizs_collected = []
+                for i in 1:N_particles
+                    traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                    append!(vizs_collected, vizs)
+                end
+                push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
             end
-            push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
         end
     end
 
@@ -2616,7 +2624,6 @@ end;
 # ![](imgs_stable/controlled_smcp3_with_code.gif)
 
 # %%
-# The sequence of backtracking amounts.
 backtrack_schedule = [2, 4, 8];
 
 # %%
@@ -2636,13 +2643,13 @@ gif(ani, "imgs/controlled_smcp3.gif", fps=1)
 N_particles = 10
 
 t1 = now()
-traces = [particle_filter_backtrack_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
+traces = [particle_filter_backtrack(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
-traces = [particle_filter_backtrack_infos(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
+traces = [particle_filter_backtrack(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
