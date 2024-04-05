@@ -1061,13 +1061,13 @@ prior_plot = frame_from_traces(world, "Prior on robot paths", nothing, nothing, 
 t1 = now()
 traces = [BlackBox.black_box_inference(full_model, full_model_args, T, constraints_low_deviation) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "posterior samples")
 
 t1 = now()
 traces = [BlackBox.black_box_inference(full_model, full_model_args, T, constraints_high_deviation) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "posterior samples")
 
 the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. approximate posteriors")
@@ -1214,7 +1214,7 @@ MAX_attempts = 5000
 t1 = now()
 traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
 t2 = now()
-println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms.")
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1232,7 +1232,7 @@ MAX_attempts = 5000
 t1 = now()
 traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
 t2 = now()
-println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms.")
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1250,7 +1250,7 @@ MAX_attempts = 5000
 t1 = now()
 traces = rejection_sample(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_burn_in, N_particles, MAX_attempts)
 t2 = now()
-println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (short path): $(value(t2 - t1) / N_particles) ms.")
 
 ani = Animation()
 for (i, trace) in enumerate(traces)
@@ -1321,7 +1321,7 @@ N_samples = 10
 t1 = now()
 traces = [sampling_importance_resampling(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (short path): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (short path): $(value(t2 - t1) / N_samples) ms.")
 
 the_plot = frame_from_traces(world, "SIR (short path)", path_low_deviation[1:(T_short+1)], "path to fit", traces, "SIR samples")
 savefig("imgs/SIR_short")
@@ -1339,7 +1339,7 @@ N_samples = 10
 t1 = now()
 traces = [sampling_importance_resampling(full_model, (T, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 
 the_plot = frame_from_traces(world, "SIR (low dev)", path_low_deviation, "path to fit", traces, "RS samples")
 savefig("imgs/SIR_final")
@@ -1551,13 +1551,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_bootstrap(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_bootstrap(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF+Bootstrap")
@@ -1847,13 +1847,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
@@ -1871,13 +1871,13 @@ the_plot
 # t1 = now()
 # traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_exact, grid_args_schedule) for _ in 1:N_samples]
 # t2 = now()
-# println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+# println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 # posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 # t1 = now()
 # traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_exact, grid_args_schedule) for _ in 1:N_samples]
 # t2 = now()
-# println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+# println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 # posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 # the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
@@ -1895,13 +1895,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (1pc)")
@@ -1922,13 +1922,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule_harder) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule_harder) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (1pc)")
@@ -2013,13 +2013,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Drift")
@@ -2082,13 +2082,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + Boltzmann/Drift")
@@ -2122,13 +2122,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + MH/Drift")
@@ -2150,13 +2150,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + MH/Drift (1pc)")
@@ -2207,7 +2207,7 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_askew_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (askew start): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (askew start): $(value(t2 - t1) / N_samples) ms.")
 the_plot = frame_from_traces(world, "Askew start", path_backward_start, "path to be fit", traces, "samples")
 savefig("imgs/askew_start")
 the_plot
@@ -2259,7 +2259,7 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_kidnapped, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
 the_plot = frame_from_traces(world, "Kidnapped after t=4", path_kidnapped, "path to be fit", traces, "samples")
 savefig("imgs/backwards_start")
 the_plot
@@ -2296,7 +2296,7 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_cluttered, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
 the_plot = frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", traces, "samples"; show_clutters=true)
 savefig("imgs/backwards_start")
 the_plot
@@ -2673,13 +2673,13 @@ N_samples = 10
 t1 = now()
 traces = [particle_filter_backtrack(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
 
 t1 = now()
 traces = [particle_filter_backtrack(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Controlled PF")
