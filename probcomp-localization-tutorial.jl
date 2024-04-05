@@ -1314,9 +1314,10 @@ sampling_importance_resampling_library(model, args, merged_constraints, N_SIR) =
 
 # %%
 T_short = 6
+N_SIR = 500
 
 N_samples = 10
-N_SIR = 500
+
 t1 = now()
 traces = [sampling_importance_resampling(full_model, (T_short, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
 t2 = now()
@@ -1332,6 +1333,8 @@ the_plot
 # %%
 N_samples = 10
 N_SIR = 500
+
+N_samples = 10
 
 t1 = now()
 traces = [sampling_importance_resampling(full_model, (T, full_model_args...), merged_constraints_low_deviation, N_SIR) for _ in 1:N_samples]
@@ -1448,6 +1451,7 @@ end;
 
 # %%
 N_particles = 10
+
 infos = particle_filter_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles)
 
 ani = Animation()
@@ -1459,6 +1463,7 @@ gif(ani, "imgs/pf_animation_low.gif", fps=1)
 
 # %%
 N_particles = 10
+
 infos = particle_filter_infos(full_model, T, full_model_args, constraints_high_deviation, N_particles)
 
 ani = Animation()
@@ -1837,6 +1842,8 @@ gif(ani, "imgs/PF_smcp3_grid.gif", fps=1)
 # %%
 N_particles = 10
 
+N_samples = 10
+
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -1859,6 +1866,8 @@ the_plot
 # %%
 # N_particles = 10
 
+# N_samples = 10
+
 # t1 = now()
 # traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_exact, grid_args_schedule) for _ in 1:N_samples]
 # t2 = now()
@@ -1880,6 +1889,8 @@ the_plot
 
 # %%
 N_particles = 1
+
+N_samples = 10
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
@@ -1905,6 +1916,8 @@ N_particles = 1
 
 grid_n_points = [3, 3, 3]
 grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
+
+N_samples = 10
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule_harder) for _ in 1:N_samples]
@@ -1995,6 +2008,8 @@ N_particles = 10
 
 drift_args_schedule = [0.3^k for k=1:3]
 
+N_samples = 10
+
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_smcp3_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2062,6 +2077,8 @@ N_particles = 10
 
 drift_args_schedule = [0.7^k for k=1:7]
 
+N_samples = 10
+
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2100,6 +2117,8 @@ N_particles = 10
 
 drift_args_schedule = [0.7^k for k=1:7]
 
+N_samples = 10
+
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2125,6 +2144,8 @@ the_plot
 N_particles = 1
 
 drift_args_schedule = [2 * 0.9^k for k=1:27]
+
+N_samples = 10
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
@@ -2181,6 +2202,8 @@ N_particles = 10
 
 drift_args_schedule = [0.8^j for j=1:10]
 
+N_samples = 10
+
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_backward_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2231,6 +2254,8 @@ N_particles = 10
 
 drift_args_schedule = [0.8^k for k=1:10]
 
+N_samples = 10
+
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_kidnapped, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
@@ -2265,6 +2290,8 @@ gif(ani, "imgs/cluttered.gif", fps=2)
 N_particles = 10
 
 drift_args_schedule = [0.8^k for k=1:10]
+
+N_samples = 10
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_cluttered, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
@@ -2627,10 +2654,9 @@ end;
 backtrack_schedule = [2, 4, 8];
 
 # %%
-t1 = now()
+N_particles = 10
+
 infos = particle_filter_backtrack_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
-t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
 
 ani = Animation()
 for info in infos
@@ -2641,6 +2667,8 @@ gif(ani, "imgs/controlled_smcp3.gif", fps=1)
 
 # %%
 N_particles = 10
+
+N_samples = 10
 
 t1 = now()
 traces = [particle_filter_backtrack(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule) for _ in 1:N_samples]
