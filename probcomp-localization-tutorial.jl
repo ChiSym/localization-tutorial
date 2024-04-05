@@ -2117,7 +2117,30 @@ savefig("imgs/PF_mh_drift")
 the_plot
 
 # %% [markdown]
-# We have recovered comparable inference performance to the grid search, at a fraction of the compute cost.
+# Thus we can recover most of inference performance to the grid search, at a fraction of the compute cost.
+#
+# Can we again replace particle multiplicity with more aggressive rejuvenation?  For drift rejuvenation on its own, there is a clearer penalty in inference quality.
+
+# %%
+N_particles = 1
+
+drift_args_schedule = [2 * 0.9^k for k=1:27]
+
+t1 = now()
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+t1 = now()
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + MH/Drift (1pc)")
+savefig("imgs/PF_mh_drift_1")
+the_plot
 
 # %% [markdown]
 # ### Reusable components
