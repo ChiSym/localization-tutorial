@@ -1861,7 +1861,7 @@ savefig("imgs/PF_SMCP3_grid")
 the_plot
 
 # %% [markdown]
-# The speed of this approach is already perhaps an issue.  The performance is even worse (a factor of ~15x slower) using the "exact" backwards kernel, with no discernible improvement in inference, as can be seen by uncommenting and running the code below.
+# The speed of this approach is already perhaps an issue.  The performance is even worse (~15x slower) using the "exact" backwards kernel, with no discernible improvement in inference, as can be seen by uncommenting and running the code below.
 
 # %%
 # N_particles = 10
@@ -2443,12 +2443,10 @@ average_log_weight_fitness(T, allowance) =
     (log_weights -> sum(log_weights) / length(log_weights),
      [allowance for _ in 1:(T+1)])
 
-fitness_test = log_average_weight_fitness(T, -1e3)
-
 # The sequence of rejuvenation strategies:
 
 # First try a quicker Gaussian drift.
-drift_args_schedule_wide = [0.7^k for k=1:7]
+drift_args_schedule = [0.7^k for k=1:7]
 
 # Then try a more determined grid search.
 grid_n_points = [3, 3, 3]
@@ -2457,9 +2455,43 @@ grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
 grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
 
 rejuv_schedule =
-    [(drift_mh_kernel, drift_args_schedule_wide),
-     (grid_smcp3_kernel, grid_args_schedule),
-     (grid_smcp3_kernel, grid_args_schedule_harder)];
+    [(drift_mh_kernel, drift_args_schedule),
+     (grid_smcp3_kernel, grid_args_schedule)];
+
+# %%
+N_particles = 10
+
+infos = particle_filter_fitness_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule)
+
+ani = Animation()
+for info in infos
+    graph = frame_from_info(world, "Run of Controlled PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, graph)
+end
+gif(ani, "imgs/PF_controlled.gif", fps=1)
+
+# %%
+fitness_test = make_log_average_weight_fitness(T, -1e2)
+
+N_particles = 10
+
+N_samples = 10
+
+t1 = now()
+traces = [particle_filter_fitness(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+t1 = now()
+traces = [particle_filter_fitness(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Controlled PF")
+savefig("imgs/PF_controller")
+the_plot
 
 # %% [markdown]
 # ### Adaptive inference: backtracking
@@ -2656,10 +2688,10 @@ infos = particle_filter_backtrack_infos(full_model, T, full_model_args, constrai
 
 ani = Animation()
 for info in infos
-    graph = frame_from_info(world, "Run of Controlled PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    graph = frame_from_info(world, "Run of Backtracking PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
     frame(ani, graph)
 end
-gif(ani, "imgs/controlled_smcp3.gif", fps=1)
+gif(ani, "imgs/PF_backtrack.gif", fps=1)
 
 # %%
 N_particles = 10
@@ -2678,8 +2710,8 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Controlled PF")
-savefig("imgs/PF_controller")
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Backtracking PF")
+savefig("imgs/PF_backtrack")
 the_plot
 
 # %% [markdown]
