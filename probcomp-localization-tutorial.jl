@@ -1818,9 +1818,9 @@ grid_smcp3_kernel_exact = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_exac
 # %%
 N_particles = 10
 
-grid_n_points_start = [3, 3, 3]
-grid_sizes_start = [.5, .5, π/10]
-grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:4]
+grid_n_points = [3, 3, 3]
+grid_sizes = [.5, .5, π/10]
+grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)
 
@@ -1903,8 +1903,8 @@ the_plot
 # %%
 N_particles = 1
 
-grid_sizes_start_harder = [1.5, 1.5, π/10]
-grid_args_schedule_harder = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:7]
+grid_n_points = [3, 3, 3]
+grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule_harder) for _ in 1:N_samples]
@@ -2397,14 +2397,15 @@ drift_args_schedule_wide = [0.8^k for k=1:12]
 
 # Third try a more determined grid search.
 grid_n_points = [3, 3, 3]
-grid_sizes_start = [.7, .7, π/10]
-grid_args_schedule = [(grid_n_points, grid_sizes_start .* (2/3)^(j-1)) for j=1:4]
-grid_args_schedule_wide = [([5, 5, 5], [1.2, 1.2, π/6]), grid_args_schedule...]
+grid_sizes = [.5, .5, π/10]
+grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
+grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
 
 rejuv_schedule =
     [(drift_mh_kernel, drift_args_schedule),
      (drift_mh_kernel, drift_args_schedule_wide),
-     (grid_smcp3_kernel, grid_args_schedule_wide)];
+     (grid_smcp3_kernel, grid_args_schedule),
+     (grid_smcp3_kernel, grid_args_schedule_harder)];
 
 # %% [markdown]
 # ### Adaptive inference: backtracking
