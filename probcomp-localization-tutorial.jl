@@ -2181,21 +2181,21 @@ the_plot
 # %%
 full_settings_low_dev = (full_settings..., motion_settings=motion_settings_low_deviation)
 
-ensure_backward_start = choicemap((prefix_address(1, :pose => :hd), Float64(pi)))
-trace_backward_start, _ = generate(full_model, (T, robot_inputs, world_inputs, full_settings_low_dev), ensure_backward_start)
-path_backward_start = get_path(trace_backward_start)
-observations_backward_start = get_sensors(trace_backward_start)
-constraints_backward_start = [constraint_from_sensors(o...) for o in enumerate(observations_backward_start)]
+ensure_askew_start = choicemap((prefix_address(1, :pose => :hd), Float64(pi/5)))
+trace_askew_start, _ = generate(full_model, (T, robot_inputs, world_inputs, full_settings_low_dev), ensure_askew_start)
+path_askew_start = get_path(trace_askew_start)
+observations_askew_start = get_sensors(trace_askew_start)
+constraints_askew_start = [constraint_from_sensors(o...) for o in enumerate(observations_askew_start)]
 
 ani = Animation()
-frames_backward_start = frames_from_full_trace(world, "Backward start", trace_backward_start)
-for frame_plot in frames_backward_start[2:2:end]
+frames_askew_start = frames_from_full_trace(world, "Askew start", trace_askew_start)
+for frame_plot in frames_askew_start[2:2:end]
     frame(ani, frame_plot)
 end
-gif(ani, "imgs/backward_start.gif", fps=2)
+gif(ani, "imgs/askew_start.gif", fps=2)
 
 # %% [markdown]
-# Our model doesn't propose any realistic hypotheses for the inference strategy to work with:
+# Our model doesn't propose very realistic hypotheses for the inference strategy to work with:
 
 # %%
 N_particles = 10
@@ -2205,11 +2205,11 @@ drift_args_schedule = [0.8^j for j=1:10]
 N_samples = 10
 
 t1 = now()
-traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_backward_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_askew_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
-println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-the_plot = frame_from_traces(world, "Backwards start", path_backward_start, "path to be fit", traces, "samples")
-savefig("imgs/backwards_start")
+println("Time elapsed per run (askew start): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+the_plot = frame_from_traces(world, "Askew start", path_backward_start, "path to be fit", traces, "samples")
+savefig("imgs/askew_start")
 the_plot
 
 # %% [markdown]
