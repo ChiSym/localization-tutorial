@@ -1819,7 +1819,7 @@ grid_smcp3_kernel_exact = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal_exac
 N_particles = 10
 
 grid_n_points_start = [3, 3, 3]
-grid_sizes_start = [.7, .7, π/10]
+grid_sizes_start = [.5, .5, π/10]
 grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:4]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)
@@ -1836,10 +1836,6 @@ gif(ani, "imgs/PF_smcp3_grid.gif", fps=1)
 
 # %%
 N_particles = 10
-
-grid_n_points_start = [3, 3, 3]
-grid_sizes_start = [.7, .7, π/10]
-grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
@@ -1863,10 +1859,6 @@ the_plot
 # %%
 # N_particles = 10
 
-# grid_n_points_start = [3, 3, 3]
-# grid_sizes_start = [.7, .7, π/10]
-# grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
-
 # t1 = now()
 # traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel_exact, grid_args_schedule) for _ in 1:N_samples]
 # t2 = now()
@@ -1884,40 +1876,10 @@ the_plot
 # the_plot
 
 # %% [markdown]
-# Because that our rejuvenation scheme improves sample quality, perhaps we do not even need to track many particles.  Let's try out *three* particles:
-
-# %%
-N_particles = 3
-
-grid_n_points_start = [3, 3, 3]
-grid_sizes_start = [.7, .7, π/10]
-grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
-
-t1 = now()
-traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
-
-t1 = now()
-traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
-posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
-
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (3pc)")
-savefig("imgs/PF_SMCP3_grid_3")
-the_plot
-
-# %% [markdown]
-# We have retained most of the accuracy in less than one third of the compute time.  Let's try with *one* particle (and vacuous resampling):
+# Because that our rejuvenation scheme improves sample quality, perhaps we do not even need to track many particles.  Let's try out *one* particle (and vacuous resampling):
 
 # %%
 N_particles = 1
-
-grid_n_points_start = [3, 3, 3]
-grid_sizes_start = [.7, .7, π/10]
-grid_args_schedule = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:3]
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule) for _ in 1:N_samples]
@@ -1936,7 +1898,34 @@ savefig("imgs/PF_SMCP3_grid_1")
 the_plot
 
 # %% [markdown]
-# Here we see some degredation in the inference quality.
+# Here we see some degredation in the inference quality.  But since there is one particle, maybe we can spend a little more effort in the grid search.
+
+# %%
+N_particles = 1
+
+grid_sizes_start_harder = [1.5, 1.5, π/10]
+grid_args_schedule_harder = [(grid_n_points_start, grid_sizes_start .* (2/3)^(j-1)) for j=1:7]
+
+t1 = now()
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule_harder) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_low_deviation = frame_from_traces(world, "Low dev observations", path_low_deviation, "path to be fit", traces, "samples")
+
+t1 = now()
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_high_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule_harder) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms. (Total: $(value(t2 - t1)) ms.)")
+posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
+
+the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (1pc)")
+savefig("imgs/PF_SMCP3_grid_1_hard")
+the_plot
+
+# %% [markdown]
+# Similar quality, and ~5x faster!
+#
+# This example embodies one of the central attitudes of ProbComp: devote computational effort to constructing *better* particles instead of to constructing *more* particles.
 
 # %% [markdown]
 # ### MCMC rejuvenation / Gaussian drift proposal
