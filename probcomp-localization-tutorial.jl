@@ -2208,7 +2208,7 @@ t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_askew_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (askew start): $(value(t2 - t1) / N_samples) ms.")
-the_plot = frame_from_traces(world, "Askew start", path_backward_start, "path to be fit", traces, "samples")
+the_plot = frame_from_traces(world, "Askew start", path_askew_start, "path to be fit", traces, "samples")
 savefig("imgs/askew_start")
 the_plot
 
@@ -2459,6 +2459,8 @@ rejuv_schedule =
      (grid_smcp3_kernel, grid_args_schedule)];
 
 # %%
+fitness_test = log_average_weight_fitness(T, -1e2)
+
 N_particles = 10
 
 infos = particle_filter_fitness_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule)
@@ -2471,8 +2473,6 @@ end
 gif(ani, "imgs/PF_controlled.gif", fps=1)
 
 # %%
-fitness_test = make_log_average_weight_fitness(T, -1e2)
-
 N_particles = 10
 
 N_samples = 10
