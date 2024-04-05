@@ -2046,7 +2046,7 @@ drift_mh_kernel = mcmc_kernel(drift_smcp3_kernel, mh_rule);
 # %%
 N_particles = 10
 
-drift_args_schedule = [0.8^k for k=1:10]
+drift_args_schedule = [0.7^k for k=1:7]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule)
 
@@ -2060,7 +2060,7 @@ gif(ani, "imgs/PF_boltzmann_drift.gif", fps=1)
 # %%
 N_particles = 10
 
-drift_args_schedule = [0.8^k for k=1:10]
+drift_args_schedule = [0.7^k for k=1:7]
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_boltzmann_kernel, drift_args_schedule) for _ in 1:N_samples]
@@ -2084,7 +2084,7 @@ the_plot
 # %%
 N_particles = 10
 
-drift_args_schedule = [0.8^k for k=1:10]
+drift_args_schedule = [0.7^k for k=1:7]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule)
 
@@ -2098,7 +2098,7 @@ gif(ani, "imgs/PF_mh_drift.gif", fps=1)
 # %%
 N_particles = 10
 
-drift_args_schedule = [0.8^k for k=1:10]
+drift_args_schedule = [0.7^k for k=1:7]
 
 t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
@@ -2393,7 +2393,7 @@ fitness_test = log_average_weight_fitness(T, -1e3)
 drift_args_schedule = [0.5^k for k=1:4]
 
 # Then try a more thorough, but still cheap, Gaussian drift.
-drift_args_schedule_wide = [0.8^k for k=1:12]
+drift_args_schedule_wide = [0.7^k for k=1:7]
 
 # Third try a more determined grid search.
 grid_n_points = [3, 3, 3]
