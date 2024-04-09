@@ -1341,7 +1341,7 @@ traces = [sampling_importance_resampling(full_model, (T, full_model_args...), me
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 
-the_plot = frame_from_traces(world, "SIR (low dev)", path_low_deviation, "path to fit", traces, "RS samples")
+the_plot = frame_from_traces(world, "SIR (low dev)", path_low_deviation, "path to fit", traces, "SIR samples")
 savefig("imgs/SIR_final")
 the_plot
 
