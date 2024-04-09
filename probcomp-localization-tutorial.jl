@@ -1935,6 +1935,21 @@ the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; siz
 savefig("imgs/PF_SMCP3_grid_1_hard")
 the_plot
 
+# %%
+N_particles = 1
+
+grid_n_points = [3, 3, 3]
+grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
+
+infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)
+
+ani = Animation()
+for info in infos
+    graph = frame_from_info(world, "Run of PF + SMCP3/Grid (1pc)", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
+    frame(ani, graph)
+end
+gif(ani, "imgs/PF_smcp3_grid.gif", fps=1)
+
 # %% [markdown]
 # Similar quality, and ~5x faster!
 #
