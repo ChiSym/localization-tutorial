@@ -2339,6 +2339,8 @@ the_plot
 # The first of these responds equally to changes in each weight, and therefore measures the fitness of all the particles, whereas the second is predominately determined by the largest weights, and therefore measures the fitness of the best-fitting particles.  Let's have a look at how an inference step is assessed by these rules.
 
 # %%
+incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor)))
+
 function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -2522,8 +2524,6 @@ the_plot
 # Note the appearance of `Gen.update`'s sibling `Gen.regenerate`: instead of hand-fixing certain stochastic choices in a trace, it simply redraws them from the immanent distribution; it may also modify functional parameters in same way.
 
 # %%
-incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor)))
-
 function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule, backtrack_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
