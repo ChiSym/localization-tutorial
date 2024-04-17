@@ -2187,8 +2187,6 @@ function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_t
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
-    fitness_function, fitness_allowance_schedule = fitness_test
-
     for t in 0:T
         if t == 0
             for i in 1:N_particles
@@ -2206,7 +2204,7 @@ function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_t
         end
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-            if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
+            if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2222,8 +2220,6 @@ function particle_filter_fitness_infos(model, T, args, constraints, N_particles,
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
-
-    fitness_function, fitness_allowance_schedule = fitness_test
 
     for t in 0:T
         if t == 0
@@ -2245,7 +2241,7 @@ function particle_filter_fitness_infos(model, T, args, constraints, N_particles,
         end
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-            if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
+            if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]; break end
             for rejuv_args in rejuv_args_schedule
                 vizs_collected = []
                 for i in 1:N_particles
@@ -2268,11 +2264,11 @@ end;
 
 # For now, use a constant allowance.
 log_average_weight_fitness(T, allowance) =
-    (log_weights -> logsumexp(log_weights) - log(length(log_weights)),
-     [allowance for _ in 1:(T+1)])
+    (func = log_weights -> logsumexp(log_weights) - log(length(log_weights)),
+     allowances = [allowance for _ in 1:(T+1)])
 average_log_weight_fitness(T, allowance) =
-    (log_weights -> sum(log_weights) / length(log_weights),
-     [allowance for _ in 1:(T+1)])
+    (func = log_weights -> sum(log_weights) / length(log_weights),
+     allowances = [allowance for _ in 1:(T+1)])
 
 # The sequence of rejuvenation strategies:
 
@@ -2482,8 +2478,6 @@ function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
-    fitness_function, fitness_allowance_schedule = fitness_test
-
     # The flag `backtrack_state` holds the value `0` when no backtracking is taking place.
     # Otherwise, `t_saved` marks the time from which we have backtracked a distance of
     # `backtrack_schedule[backtrack_state]`, and `candidates` holds traces constructed on
@@ -2519,7 +2513,7 @@ function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS
         end
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-            if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
+            if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]; break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2528,7 +2522,7 @@ function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS
         end
 
         # Advance-or-backtrack logic.
-        if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]
+        if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]
             # The fitness criterion has been met, so advance to the next time step.
             # If we are at the end of a backtrack then clear the backtracking state.
             if backtrack_state > 0 && t == t_saved
@@ -2563,8 +2557,6 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
 
-    fitness_function, fitness_allowance_schedule = fitness_test
-
     backtrack_state, candidates, t_saved = 0, [], 0
 
     t = 0
@@ -2577,7 +2569,7 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
             push!(infos, (type = :initialize, time = now(), t = t, label = "initialize fresh particles", traces = copy(traces), log_weights = copy(log_weights)))
         elseif action == :advance
             t = t + 1
-            log_avgerage_weight_target = fitness_function(log_weights) + fitness_allowance_schedule[t+1]
+            log_avgerage_weight_target = fitness_test.func(log_weights) + fitness_test.allowances[t+1]
             for i in 1:N_particles
                 traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                 log_weights[i] += log_weight_increment
@@ -2601,7 +2593,7 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
         end
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-            if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
+            if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]; break end
             for rejuv_args in rejuv_args_schedule
                 vizs_collected = []
                 for i in 1:N_particles
@@ -2612,7 +2604,7 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
             end
         end
 
-        if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]
+        if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]
             if backtrack_state > 0 && t == t_saved
                 backtrack_state, candidates = 0, []
             end
