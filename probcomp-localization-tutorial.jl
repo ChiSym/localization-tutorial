@@ -2169,20 +2169,8 @@ the_plot
 # ### Adaptive inference: measuring and responding to fitness
 #
 # We the inference programmers do not have to be stuck with some fixed amount of rejuvenation effort: we get to choose how much computing resource to devote to our particle population's sample quality.  To do so programmatically, we will assume given some numerical test for the fitness of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions, for example, rounds of increasingly expensive rejuvenation.
-#
-# What we particularly mean by a "fitness test" recollects some ideas from earlier in this tutorial, as follows.
-#
-# We are assessing the suitability of a family of weighted particles $(w_t^{(i)}, z_{0:t}^{(i)})_{i=1}^N$ constructed up to time $t$.  These particles were constructed either using `Gen.generate` at the first time step $t=0$, or otherwise extended from a family $(w_{t-1}^{(i)},z_{0:t-1}^{(i)})_{i=1}^N$ using `Gen.update`.  Both of these `Gen` operations also returned some kind (log) "weight" $\~w_t^{(i)}$, namely the importance weight $\~w_0^{(i)} := w_0^{(i)}$ in the first case, and the incremental weight $\~w_t^{(i)} := w_t^{(i)}/w_{t-1}^{(i)}$ in the second case.  Each of these weights $\~w_t^{(i)}$ is equal to the sensor model probability density $P_\text{sensor}(o_t^{(i)};z_t^{(i)},\ldots)$ of the observations $o_t^{(i)}$ at time step $t$.  Thus, on the one hand, one can recover these numbers in a unform manner using `Gen.project` as explained earlier, and on the other hand, they measure the fitness of the step $z_t^{(i)}$ as an extension of the particle to time $t$.
-#
-# Out of many possible design choices, we will limit ourselves to considering when a given function $h(w)$ of tuples $w = (w^{(i)})_{i=1}^N$ meets a given "allowance" bound when evaluated at $\~w_t := (\~w_t^{(i)})_{i=1}^N$.  Here are two choices of such functions $h$.  They have been normalized so that the allowances do not need to be adjusted as the number $N$ of particles is changed:
-# * The average log weight, $h(w) = \frac1N \sum_{i=1}^N \log w^{(i)}$.  
-# * The log average weight, also known as the *log marginal likelihood estimate*, $h(w) = \log \big[ \frac1N \sum_{i=1}^n w^{(i)} \big]$.  
-#
-# The first of these responds equally to changes in each weight, and therefore measures the fitness of all the particles, whereas the second is predominately determined by the largest weights, and therefore measures the fitness of the best-fitting particles.  Let's have a look at how an inference step is assessed by these rules.
 
 # %%
-incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor)))
-
 function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_threshold, fitness_test, rejuv_schedule)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
@@ -2204,7 +2192,7 @@ function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_t
         end
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-            if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]; break end
+            if fitness_test(traces, t); break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2241,7 +2229,7 @@ function particle_filter_fitness_infos(model, T, args, constraints, N_particles,
         end
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-            if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]; break end
+            if fitness_test(traces, t); break end
             for rejuv_args in rejuv_args_schedule
                 vizs_collected = []
                 for i in 1:N_particles
@@ -2259,18 +2247,30 @@ function particle_filter_fitness_infos(model, T, args, constraints, N_particles,
     return infos
 end;
 
+# %% [markdown]
+# What we particularly mean by a "fitness test" recollects some ideas from earlier in this tutorial, as follows.
+#
+# We are assessing the suitability of a family of weighted particles $(w_t^{(i)}, z_{0:t}^{(i)})_{i=1}^N$ constructed up to time $t$.  These particles were constructed either using `Gen.generate` at the first time step $t=0$, or otherwise extended from a family $(w_{t-1}^{(i)},z_{0:t-1}^{(i)})_{i=1}^N$ using `Gen.update`.  Both of these `Gen` operations also returned some kind (log) "weight" $\~w_t^{(i)}$, namely the importance weight $\~w_0^{(i)} := w_0^{(i)}$ in the first case, and the incremental weight $\~w_t^{(i)} := w_t^{(i)}/w_{t-1}^{(i)}$ in the second case.  Each of these weights $\~w_t^{(i)}$ is equal to the sensor model probability density $P_\text{sensor}(o_t^{(i)};z_t^{(i)},\ldots)$ of the observations $o_t^{(i)}$ at time step $t$.  Thus, on the one hand, one can recover these numbers in a unform manner using `Gen.project` as explained earlier, and on the other hand, they measure the fitness of the step $z_t^{(i)}$ as an extension of the particle to time $t$.
+#
+# Out of many possible design choices, we will limit ourselves to considering when a given function $h(w)$ of tuples $w = (w^{(i)})_{i=1}^N$ meets a given "allowance" bound when evaluated at $\~w_t := (\~w_t^{(i)})_{i=1}^N$.  Here are two choices of such functions $h$.  They have been normalized so that the allowances do not need to be adjusted as the number $N$ of particles is changed:
+# * The average log weight, $h(w) = \frac1N \sum_{i=1}^N \log w^{(i)}$.  
+# * The log average weight, also known as the *log marginal likelihood estimate*, $h(w) = \log \big[ \frac1N \sum_{i=1}^n w^{(i)} \big]$.  
+#
+# The first of these responds equally to changes in each weight, and therefore measures the fitness of all the particles, whereas the second is predominately determined by the largest weights, and therefore measures the fitness of the best-fitting particles.  Let's have a look at how an inference step is assessed by these rules.
+
 # %%
-# Fitness test options:
+# Fitness tests:
 
-# For now, use a constant allowance.
-log_average_weight_fitness(T, allowance) =
-    (func = log_weights -> logsumexp(log_weights) - log(length(log_weights)),
-     allowances = [allowance for _ in 1:(T+1)])
-average_log_weight_fitness(T, allowance) =
-    (func = log_weights -> sum(log_weights) / length(log_weights),
-     allowances = [allowance for _ in 1:(T+1)])
+incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor)))
+make_fitness_test(func, allowances) =
+    (traces, t) -> func([incremental_weight(trace, t) for trace in traces]) > allowances[t+1]
 
-# The sequence of rejuvenation strategies:
+log_average_weight(log_weights) = logsumexp(log_weights) - log(length(log_weights))
+average_log_weight(log_weights) = sum(log_weights) / length(log_weights)
+
+fitness_test = make_fitness_test(log_average_weight, [-1e2 for _ in 1:(T+1)])
+
+# Sequence of rejuvenation strategies:
 
 # First try a quicker Gaussian drift.
 drift_args_schedule = [0.7^k for k=1:7]
@@ -2286,8 +2286,6 @@ rejuv_schedule =
      (grid_smcp3_kernel, grid_args_schedule)];
 
 # %%
-fitness_test = log_average_weight_fitness(T, -1e2)
-
 N_particles = 10
 
 infos = particle_filter_fitness_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule)
@@ -2513,7 +2511,7 @@ function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS
         end
 
         for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-            if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]; break end
+            if fitness_test(traces, t); break end
             for rejuv_args in rejuv_args_schedule
                 for i in 1:N_particles
                     traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -2522,7 +2520,7 @@ function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS
         end
 
         # Advance-or-backtrack logic.
-        if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]
+        if fitness_test(traces, t)
             # The fitness criterion has been met, so advance to the next time step.
             # If we are at the end of a backtrack then clear the backtracking state.
             if backtrack_state > 0 && t == t_saved
@@ -2592,7 +2590,7 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
         end
 
         for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-            if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]; break end
+            if fitness_test(traces, t); break end
             for rejuv_args in rejuv_args_schedule
                 vizs_collected = []
                 for i in 1:N_particles
@@ -2603,7 +2601,7 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
             end
         end
 
-        if fitness_test.func([incremental_weight(trace, t) for trace in traces]) > fitness_test.allowances[t+1]
+        if fitness_test(traces, t)
             if backtrack_state > 0 && t == t_saved
                 backtrack_state, candidates = 0, []
             end
