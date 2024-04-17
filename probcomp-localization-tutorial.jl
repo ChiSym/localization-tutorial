@@ -1405,7 +1405,7 @@ function particle_filter_infos(model, T, args, constraints, N_particles)
     end
 
     traces, log_weights = resample(traces, log_weights; M=1)
-    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
 
     return infos
 end;
@@ -1534,7 +1534,7 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
     end
 
     traces, log_weights = resample(traces, log_weights; M=1)
-    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
 
     return infos
 end;
@@ -1639,7 +1639,7 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     end
 
     traces, log_weights = resample(traces, log_weights; M=1)
-    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
 
     return infos
 end;
@@ -2242,7 +2242,7 @@ function particle_filter_fitness_infos(model, T, args, constraints, N_particles,
     end
 
     traces, log_weights = resample(traces, log_weights; M=1)
-    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
 
     return infos
 end;
@@ -2484,7 +2484,7 @@ function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS
 
     t = 0
     action = :initialize
-    while !(t >= T && action == :advance)
+    while !(t == T && action == :advance)
         if action == :initialize
             for i in 1:N_particles
                 traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
@@ -2559,7 +2559,7 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
 
     t = 0
     action = :initialize
-    while !(t >= T && action == :advance)
+    while !(t == T && action == :advance)
         if action == :initialize
             for i in 1:N_particles
                 traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
@@ -2626,7 +2626,7 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
     end
 
     traces, log_weights = resample(traces, log_weights; M=1)
-    push!(infos, (type = :final_sample, time = now(), t = t, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
+    push!(infos, (type = :final_sample, time = now(), t = T, label = "final sample", traces = copy(traces), log_weights = copy(log_weights)))
 
     return infos
 end;
