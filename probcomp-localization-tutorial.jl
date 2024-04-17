@@ -1368,15 +1368,16 @@ function particle_filter(model, T, args, constraints, N_particles)
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
-    t = 0
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
-    end
-
-    for t in 1:T
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
+    for t in 0:T
+        if t == 0
+            for i in 1:N_particles
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+            end
+        else
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
         end
     end
 
@@ -1388,18 +1389,19 @@ function particle_filter_infos(model, T, args, constraints, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
 
-    t = 0
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
-    end
-    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
-
-    for t in 1:T
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
+    for t in 0:T
+        if t == 0
+            for i in 1:N_particles
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+            end
+            push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+        else
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
+            push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
         end
-        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
     traces, log_weights = resample(traces, log_weights; M=1)
@@ -1486,19 +1488,20 @@ function particle_filter_bootstrap(model, T, args, constraints, N_particles, ESS
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
-    t = 0
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
-    end
-
-    for t in 1:T
-        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
-            traces, log_weights = resample(traces, log_weights)
+    for t in 0:T
+        if t == 0
+            for i in 1:N_particles
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+            end
+        else
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
         end
 
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
+        if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
+            traces, log_weights = resample(traces, log_weights)
         end
     end
 
@@ -1510,23 +1513,24 @@ function particle_filter_bootstrap_infos(model, T, args, constraints, N_particle
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
 
-    t = 0
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
-    end
-    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+    for t in 0:T
+        if t == 0
+            for i in 1:N_particles
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+            end
+            push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+        else
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
+            push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
+        end
 
-    for t in 1:T
         if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
             traces, log_weights = resample(traces, log_weights)
             push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
         end
-
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
-        end
-        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
     end
 
     traces, log_weights = resample(traces, log_weights; M=1)
@@ -1574,31 +1578,22 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_thr
     traces = Vector{Trace}(undef, N_particles)
     log_weights = Vector{Float64}(undef, N_particles)
 
-    t = 0
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
-    end
-
-    if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
-        traces, log_weights = resample(traces, log_weights)
-    end
-
-    for rejuv_args in rejuv_args_schedule
-        for i in 1:N_particles
-            traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
-        end
-    end
-
-    for t in 1:T
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
+    for t in 0:T
+        if t == 0
+            for i in 1:N_particles
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+            end
+        else
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
         end
 
         if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
             traces, log_weights = resample(traces, log_weights)
         end
-
+    
         for rejuv_args in rejuv_args_schedule
             for i in 1:N_particles
                 traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -1614,38 +1609,25 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
     log_weights = Vector{Float64}(undef, N_particles)
     infos = []
 
-    t = 0
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
-    end
-    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
-
-    if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
-        traces, log_weights = resample(traces, log_weights)
-        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
-    end
-
-    for rejuv_args in rejuv_args_schedule
-        vizs_collected = []
-        for i in 1:N_particles
-            traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
-            append!(vizs_collected, vizs)
+    for t in 0:T
+        if t == 0
+            for i in 1:N_particles
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[t+1])
+            end
+            push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+        else
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
+            push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
         end
-        push!(infos, (type = :rejuvenate, time = now(), t = t, label = "rejuvenate", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
-    end
-
-    for t in 1:T
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
-        end
-        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
 
         if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
             traces, log_weights = resample(traces, log_weights)
             push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
         end
-
+    
         for rejuv_args in rejuv_args_schedule
             vizs_collected = []
             for i in 1:N_particles
@@ -2347,28 +2329,16 @@ function particle_filter_fitness(model, T, args, constraints, N_particles, ESS_t
 
     fitness_function, fitness_allowance_schedule = fitness_test
 
-    t = 0
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
-    end
-
-    if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
-        traces, log_weights = resample(traces, log_weights)
-    end
-
-    for (rejuv_kernel, rejuv_args_schedule) in rejuv_schedule
-        if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
-        for rejuv_args in rejuv_args_schedule
+    for t in 0:T
+        if t == 0
             for i in 1:N_particles
-                traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
             end
-        end
-    end
-
-    for t in 1:T
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
+        else
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
         end
 
         if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
@@ -2395,35 +2365,19 @@ function particle_filter_fitness_infos(model, T, args, constraints, N_particles,
 
     fitness_function, fitness_allowance_schedule = fitness_test
 
-    t = 0
-    for i in 1:N_particles
-        traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
-    end
-    push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
-
-    if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
-        traces, log_weights = resample(traces, log_weights)
-        push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
-    end
-
-    for (r, (rejuv_kernel, rejuv_args_schedule)) in enumerate(rejuv_schedule)
-        if fitness_function([incremental_weight(trace, t) for trace in traces]) > fitness_allowance_schedule[t+1]; break end
-        for rejuv_args in rejuv_args_schedule
-            vizs_collected = []
+    for t in 0:T
+        if t == 0
             for i in 1:N_particles
-                traces[i], log_weights[i], vizs = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
-                append!(vizs_collected, vizs)
+                traces[i], log_weights[i] = generate(model, (t, args...), constraints[1])
             end
-            push!(infos, (type = :rejuvenate, time=now(), t = t, label = "rejuvenate #$r", traces = copy(traces), log_weights = copy(log_weights), vizs = vizs_collected))
+            push!(infos, (type = :initialize, time = now(), t = t, label = "sample from start pose prior", traces = copy(traces), log_weights = copy(log_weights)))
+        else
+            for i in 1:N_particles
+                traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
+                log_weights[i] += log_weight_increment
+            end
+            push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
         end
-    end
-
-    for t in 1:T
-        for i in 1:N_particles
-            traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
-            log_weights[i] += log_weight_increment
-        end
-        push!(infos, (type = :update, time = now(), t = t, label = "update to next step", traces = copy(traces), log_weights = copy(log_weights)))
 
         if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
             traces, log_weights = resample(traces, log_weights)
