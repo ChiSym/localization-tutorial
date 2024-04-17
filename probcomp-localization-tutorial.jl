@@ -2569,7 +2569,6 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
             push!(infos, (type = :initialize, time = now(), t = t, label = "initialize fresh particles", traces = copy(traces), log_weights = copy(log_weights)))
         elseif action == :advance
             t = t + 1
-            log_avgerage_weight_target = fitness_test.func(log_weights) + fitness_test.allowances[t+1]
             for i in 1:N_particles
                 traces[i], log_weight_increment, _, _ = update(traces[i], (t, args...), change_only_T, constraints[t+1])
                 log_weights[i] += log_weight_increment
