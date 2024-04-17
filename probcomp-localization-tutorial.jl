@@ -2166,7 +2166,7 @@ the_plot
 # The ingredients of the particle filter programs we have written may certainly be abstracted, then reused with brevity.  Although we will not do so here, out of an intention to keep all the techniques explicit, we note that such abstractions are provided by the `GenParticleFilters` library.  For an example of its use, the reader is encouraged to peer into `black_box.jl` and compare the inference code there to the present state of our approach to the robot problem.
 
 # %% [markdown]
-# ### Adaptive inference: measuring and responding to fitness
+# ### Adaptive inference
 #
 # We the inference programmers do not have to be stuck with some fixed amount of rejuvenation effort: we get to choose how much computing resource to devote to our particle population's sample quality.  To do so programmatically, we will assume given some numerical test for the fitness of each proposed new time step in the family of particles.  If the proposed new particles meet the criterion, we do no further work on them and move on to the next time step.  As long as they do not, we keep trying more interventions, for example, rounds of increasingly expensive rejuvenation.
 
@@ -2265,8 +2265,8 @@ incremental_weight(trace, t) = project(trace, select(prefix_address(t+1, :sensor
 make_fitness_test(func, allowances) =
     (traces, t) -> func([incremental_weight(trace, t) for trace in traces]) > allowances[t+1]
 
-log_average_weight(log_weights) = logsumexp(log_weights) - log(length(log_weights))
 average_log_weight(log_weights) = sum(log_weights) / length(log_weights)
+log_average_weight(log_weights) = logsumexp(log_weights) - log(length(log_weights))
 
 fitness_test = make_fitness_test(log_average_weight, [-1e2 for _ in 1:(T+1)])
 
@@ -2459,7 +2459,7 @@ the_plot
 # Other problems, such as kidnapping and map discrepancy, require a model that is flexible enough to accommodate what we encounter in the first place.  For this we will employ Bayesian *hierarchical models* that express the belief that rare discrepancies occur.
 
 # %% [markdown]
-# ### Adaptive inference: backtracking
+# ### Backtracking
 #
 # Sometimes the particle filter finds itself invested in paths with no good extensions, and no amount of rejuvenation on the final step alone seems to help.  In such cases we can choose to essentially broaden our scope to rejuvenating the final several steps.  In other words, if we find ourselves in a dead end, we can back out and try again.
 #
