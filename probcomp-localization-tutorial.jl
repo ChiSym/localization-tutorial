@@ -1810,7 +1810,7 @@ N_particles = 10
 
 grid_n_points = [3, 3, 3]
 grid_sizes = [.5, .5, π/10]
-grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
+grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:3]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)
 
@@ -1829,7 +1829,7 @@ N_particles = 10
 
 grid_n_points = [3, 3, 3]
 grid_sizes = [.5, .5, π/10]
-grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
+grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:3]
 
 N_samples = 10
 
@@ -1857,7 +1857,7 @@ the_plot
 
 # grid_n_points = [3, 3, 3]
 # grid_sizes = [.5, .5, π/10]
-# grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
+# grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:3]
 
 # N_samples = 10
 
@@ -1885,7 +1885,7 @@ N_particles = 1
 
 grid_n_points = [3, 3, 3]
 grid_sizes = [.5, .5, π/10]
-grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
+grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:3]
 
 N_samples = 10
 
@@ -1913,7 +1913,7 @@ N_particles = 1
 
 grid_n_points = [3, 3, 3]
 grid_sizes = [.5, .5, π/10]
-grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
+grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:6]
 
 N_samples = 10
 
@@ -1938,7 +1938,7 @@ N_particles = 1
 
 grid_n_points = [3, 3, 3]
 grid_sizes = [.5, .5, π/10]
-grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
+grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:6]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)
 
@@ -2295,8 +2295,8 @@ drift_args_schedule = [0.7^k for k=1:7]
 # Then try a more determined grid search.
 grid_n_points = [3, 3, 3]
 grid_sizes = [.5, .5, π/10]
-grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
-grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
+grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:3]
+grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:6]
 
 rejuv_schedule =
     [(drift_mh_kernel, drift_args_schedule),
@@ -2367,7 +2367,7 @@ gif(ani, "imgs/askew_start.gif", fps=2)
 # %%
 N_particles = 10
 
-drift_args_schedule = [0.8^j for j=1:10]
+drift_args_schedule = [0.8^k for k=1:10]
 
 N_samples = 10
 
