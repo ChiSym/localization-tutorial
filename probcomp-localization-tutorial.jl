@@ -1827,6 +1827,10 @@ gif(ani, "imgs/PF_smcp3_grid.gif", fps=1)
 # %%
 N_particles = 10
 
+grid_n_points = [3, 3, 3]
+grid_sizes = [.5, .5, π/10]
+grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
+
 N_samples = 10
 
 t1 = now()
@@ -1851,6 +1855,10 @@ the_plot
 # %%
 # N_particles = 10
 
+# grid_n_points = [3, 3, 3]
+# grid_sizes = [.5, .5, π/10]
+# grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
+
 # N_samples = 10
 
 # t1 = now()
@@ -1874,6 +1882,10 @@ the_plot
 
 # %%
 N_particles = 1
+
+grid_n_points = [3, 3, 3]
+grid_sizes = [.5, .5, π/10]
+grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:4]
 
 N_samples = 10
 
@@ -1900,6 +1912,7 @@ the_plot
 N_particles = 1
 
 grid_n_points = [3, 3, 3]
+grid_sizes = [.5, .5, π/10]
 grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
 
 N_samples = 10
@@ -1924,6 +1937,7 @@ the_plot
 N_particles = 1
 
 grid_n_points = [3, 3, 3]
+grid_sizes = [.5, .5, π/10]
 grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^(j-1)) for j=1:7]
 
 infos = particle_filter_rejuv_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, grid_smcp3_kernel, grid_args_schedule)
