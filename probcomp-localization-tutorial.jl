@@ -1569,6 +1569,9 @@ savefig("imgs/PF_bootstrap")
 the_plot
 
 # %% [markdown]
+# The results are already more accurate than blind SIR for only a fraction of the work.
+
+# %% [markdown]
 # ### Rejuvenation
 #
 # After resampling, our particles are more concentrated on the more likely ones, but they have the defficiency of being redundant.  We may again intervene by independently modifying the particles, for example by adding noise to increase diversity, and possibly using our knowledge of the target distrubtion to better approximate it.  Such modification is called *rejuvenation*.  The general structure is as follows.
