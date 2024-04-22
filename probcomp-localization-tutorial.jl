@@ -2336,146 +2336,6 @@ savefig("imgs/PF_controller")
 the_plot
 
 # %% [markdown]
-# ## Improving performance and robustness
-
-# %% [markdown]
-# ### Unanticipated challenges
-#
-# We may have a reasonable means of tracking the robot's position, when we maintain near-idealized conditions.  But how well does our inference code work when it is run on observation data sets that break our hypotheses?
-#
-# For example, what happens when we start the robot facing the wrong way?
-
-# %%
-full_settings_low_dev = (full_settings..., motion_settings=motion_settings_low_deviation)
-
-ensure_askew_start = choicemap((prefix_address(1, :pose => :hd), Float64(pi/5)))
-trace_askew_start, _ = generate(full_model, (T, robot_inputs, world_inputs, full_settings_low_dev), ensure_askew_start)
-path_askew_start = get_path(trace_askew_start)
-observations_askew_start = get_sensors(trace_askew_start)
-constraints_askew_start = [constraint_from_sensors(o...) for o in enumerate(observations_askew_start)]
-
-ani = Animation()
-frames_askew_start = frames_from_full_trace(world, "Askew start", trace_askew_start)
-for frame_plot in frames_askew_start[2:2:end]
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/askew_start.gif", fps=2)
-
-# %% [markdown]
-# Our model doesn't propose very realistic hypotheses for the inference strategy to work with:
-
-# %%
-N_particles = 10
-
-drift_args_schedule = [0.8^k for k=1:10]
-
-N_samples = 10
-
-t1 = now()
-traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_askew_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (askew start): $(value(t2 - t1) / N_samples) ms.")
-the_plot = frame_from_traces(world, "Askew start", path_askew_start, "path to be fit", traces, "samples")
-savefig("imgs/askew_start")
-the_plot
-
-# %% [markdown]
-# Or how about if we "kidnapped" the robot: partway through the journey, the robot is paused, moved to another room, then resumed?
-#
-# Constructing such data using a single trace from the current `full_model` would be a little tricky, because the poses appearing in the trace are only *attempted* step destinations, which are then subjected to wall-collision detection: just using `generate` with a constraint for a pose drawn in the next room would only run the robot into the wall.
-#
-# Since we only need a data set, rather than a bona fide trace, we proceed instead by splicing two trajectories (or rather their observations), the second of which has been validly steered into the wrong room.
-
-# %%
-trace_kidnapped_first = simulate(full_model, (T, robot_inputs, world_inputs, full_settings_low_dev))
-path_kidnapped_first = get_path(trace_kidnapped_first)
-observations_kidnapped_first = get_sensors(trace_kidnapped_first)
-
-controls_kidnapping = [Control(1.8,0.), Control(0.,-pi/2.), Control(4.,0.), Control(0.,pi/2.)]
-T_kidnap = length(controls_kidnapping)
-controls_kidnapped = [controls_kidnapping..., robot_inputs.controls[(T_kidnap+1):end]...]
-trace_kidnapped_second = simulate(full_model, (T, (robot_inputs..., controls=controls_kidnapped), world_inputs, full_settings_low_dev))
-path_kidnapped_second = get_path(trace_kidnapped_second)
-observations_kidnapped_second = get_sensors(trace_kidnapped_second)
-
-path_kidnapped = [path_kidnapped_first[1:T_kidnap]..., path_kidnapped_second[(T_kidnap+1):end]...]
-observations_kidnapped = [observations_kidnapped_first[1:T_kidnap]..., observations_kidnapped_second[(T_kidnap+1):end]...]
-constraints_kidnapped = [constraint_from_sensors(o...) for o in enumerate(observations_kidnapped)]
-
-ani = Animation()
-for t in 1:(T+1)
-    frame_plot = frame_from_sensors(
-        world, "Kidnapped after t=4",
-        path_kidnapped[1:t], :black, nothing,
-        path_kidnapped[t], observations_kidnapped[t], "sampled sensors",
-        full_settings.sensor_settings)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/kidnapped.gif", fps=2)
-
-# %% [markdown]
-# Again, inference only produces explanations that were plausible in terms of the given `full_model`:
-
-# %%
-N_particles = 10
-
-drift_args_schedule = [0.8^k for k=1:10]
-
-N_samples = 10
-
-t1 = now()
-traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_kidnapped, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
-the_plot = frame_from_traces(world, "Kidnapped after t=4", path_kidnapped, "path to be fit", traces, "samples")
-savefig("imgs/backwards_start")
-the_plot
-
-# %% [markdown]
-# For another challenge, what if our map were modestly inaccurate?
-#
-# At the beginning of the notebook, we illustrated the data of "clutters", or extra boxes left inside the environment.  These would impact the motion and the sensory *observation data* of a run of the robot, but are not accounted for in the above *model* when attempting to infer its path.  How well does the inference process work in the presence of such discrepancies?
-
-# %%
-world_inputs_cluttered = (world_inputs..., walls=world.walls_clutters)
-trace_cluttered = simulate(full_model, (T, robot_inputs, world_inputs_cluttered, full_settings_low_dev))
-path_cluttered = get_path(trace_cluttered)
-observations_cluttered = get_sensors(trace_cluttered)
-constraints_cluttered = [constraint_from_sensors(o...) for o in enumerate(observations_cluttered)]
-
-ani = Animation()
-frames_cluttered = frames_from_full_trace(world, "Cluttered space", trace_cluttered; show_clutters=true)
-for frame_plot in frames_cluttered[2:2:end]
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/cluttered.gif", fps=2)
-
-# %% [markdown]
-# TODO: arrange clutters to confuse the inference!  Then comment here on how it breaks down.
-
-# %%
-N_particles = 10
-
-drift_args_schedule = [0.8^k for k=1:10]
-
-N_samples = 10
-
-t1 = now()
-traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_cluttered, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
-t2 = now()
-println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
-the_plot = frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", traces, "samples"; show_clutters=true)
-savefig("imgs/backwards_start")
-the_plot
-
-# %% [markdown]
-# We take up the task of accommodating a wider range of phenomena in our modeling and inference.  As the above examples make clear, a variety of innovations will be needed.
-#
-# Some problems, like the backwards-starting robot, can be addressed simply by working with greater uncertainty and compute budget.  For this we will introduce an adaptive *inference controller* that intervenes more drastically as it fails to find a good fit, applying more intensive rejuvenation proposals, and if necessary backing out some steps and trying again.
-#
-# Other problems, such as kidnapping and map discrepancy, require a model that is flexible enough to accommodate what we encounter in the first place.  For this we will employ Bayesian *hierarchical models* that express the belief that rare discrepancies occur.
-
-# %% [markdown]
 # ### Backtracking
 #
 # Sometimes the particle filter finds itself invested in paths with no good extensions, and no amount of rejuvenation on the final step alone seems to help.  In such cases we can choose to essentially broaden our scope to rejuvenating the final several steps.  In other words, if we find ourselves in a dead end, we can back out and try again.
@@ -2688,6 +2548,144 @@ posterior_plot_high_deviation = frame_from_traces(world, "High dev observations"
 the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Backtracking PF")
 savefig("imgs/PF_backtrack")
 the_plot
+
+# %% [markdown]
+# ## Improving robustness
+
+# %% [markdown]
+# ### Unanticipated challenges
+#
+# We may have a reasonable means of tracking the robot's position, when we maintain near-idealized conditions.  But how well does our inference code work when it is run on observation data sets that break our hypotheses?
+#
+# For example, what happens when we start the robot facing the wrong way?
+
+# %%
+full_settings_low_dev = (full_settings..., motion_settings=motion_settings_low_deviation)
+
+ensure_askew_start = choicemap((prefix_address(1, :pose => :hd), Float64(pi/5)))
+trace_askew_start, _ = generate(full_model, (T, robot_inputs, world_inputs, full_settings_low_dev), ensure_askew_start)
+path_askew_start = get_path(trace_askew_start)
+observations_askew_start = get_sensors(trace_askew_start)
+constraints_askew_start = [constraint_from_sensors(o...) for o in enumerate(observations_askew_start)]
+
+ani = Animation()
+frames_askew_start = frames_from_full_trace(world, "Askew start", trace_askew_start)
+for frame_plot in frames_askew_start[2:2:end]
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/askew_start.gif", fps=2)
+
+# %% [markdown]
+# Our model doesn't propose very realistic hypotheses for the inference strategy to work with:
+
+# %%
+N_particles = 10
+
+drift_args_schedule = [0.8^k for k=1:10]
+
+N_samples = 10
+
+t1 = now()
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_askew_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (askew start): $(value(t2 - t1) / N_samples) ms.")
+the_plot = frame_from_traces(world, "Askew start", path_askew_start, "path to be fit", traces, "samples")
+savefig("imgs/askew_start")
+the_plot
+
+# %% [markdown]
+# Or how about if we "kidnapped" the robot: partway through the journey, the robot is paused, moved to another room, then resumed?
+#
+# Constructing such data using a single trace from the current `full_model` would be a little tricky, because the poses appearing in the trace are only *attempted* step destinations, which are then subjected to wall-collision detection: just using `generate` with a constraint for a pose drawn in the next room would only run the robot into the wall.
+#
+# Since we only need a data set, rather than a bona fide trace, we proceed instead by splicing two trajectories (or rather their observations), the second of which has been validly steered into the wrong room.
+
+# %%
+trace_kidnapped_first = simulate(full_model, (T, robot_inputs, world_inputs, full_settings_low_dev))
+path_kidnapped_first = get_path(trace_kidnapped_first)
+observations_kidnapped_first = get_sensors(trace_kidnapped_first)
+
+controls_kidnapping = [Control(1.8,0.), Control(0.,-pi/2.), Control(4.,0.), Control(0.,pi/2.)]
+T_kidnap = length(controls_kidnapping)
+controls_kidnapped = [controls_kidnapping..., robot_inputs.controls[(T_kidnap+1):end]...]
+trace_kidnapped_second = simulate(full_model, (T, (robot_inputs..., controls=controls_kidnapped), world_inputs, full_settings_low_dev))
+path_kidnapped_second = get_path(trace_kidnapped_second)
+observations_kidnapped_second = get_sensors(trace_kidnapped_second)
+
+path_kidnapped = [path_kidnapped_first[1:T_kidnap]..., path_kidnapped_second[(T_kidnap+1):end]...]
+observations_kidnapped = [observations_kidnapped_first[1:T_kidnap]..., observations_kidnapped_second[(T_kidnap+1):end]...]
+constraints_kidnapped = [constraint_from_sensors(o...) for o in enumerate(observations_kidnapped)]
+
+ani = Animation()
+for t in 1:(T+1)
+    frame_plot = frame_from_sensors(
+        world, "Kidnapped after t=4",
+        path_kidnapped[1:t], :black, nothing,
+        path_kidnapped[t], observations_kidnapped[t], "sampled sensors",
+        full_settings.sensor_settings)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/kidnapped.gif", fps=2)
+
+# %% [markdown]
+# Again, inference only produces explanations that were plausible in terms of the given `full_model`:
+
+# %%
+N_particles = 10
+
+drift_args_schedule = [0.8^k for k=1:10]
+
+N_samples = 10
+
+t1 = now()
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_kidnapped, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
+the_plot = frame_from_traces(world, "Kidnapped after t=4", path_kidnapped, "path to be fit", traces, "samples")
+savefig("imgs/backwards_start")
+the_plot
+
+# %% [markdown]
+# For another challenge, what if our map were modestly inaccurate?
+#
+# At the beginning of the notebook, we illustrated the data of "clutters", or extra boxes left inside the environment.  These would impact the motion and the sensory *observation data* of a run of the robot, but are not accounted for in the above *model* when attempting to infer its path.  How well does the inference process work in the presence of such discrepancies?
+
+# %%
+world_inputs_cluttered = (world_inputs..., walls=world.walls_clutters)
+trace_cluttered = simulate(full_model, (T, robot_inputs, world_inputs_cluttered, full_settings_low_dev))
+path_cluttered = get_path(trace_cluttered)
+observations_cluttered = get_sensors(trace_cluttered)
+constraints_cluttered = [constraint_from_sensors(o...) for o in enumerate(observations_cluttered)]
+
+ani = Animation()
+frames_cluttered = frames_from_full_trace(world, "Cluttered space", trace_cluttered; show_clutters=true)
+for frame_plot in frames_cluttered[2:2:end]
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/cluttered.gif", fps=2)
+
+# %% [markdown]
+# TODO: arrange clutters to confuse the inference!  Then comment here on how it breaks down.
+
+# %%
+N_particles = 10
+
+drift_args_schedule = [0.8^k for k=1:10]
+
+N_samples = 10
+
+t1 = now()
+traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_cluttered, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
+t2 = now()
+println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
+the_plot = frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", traces, "samples"; show_clutters=true)
+savefig("imgs/backwards_start")
+the_plot
+
+# %% [markdown]
+# We take up the task of accommodating a wider range of phenomena in our modeling and inference.
+#
+# We require a model that is flexible enough to accommodate what we encounter in the first place.  Some of the above scenarios involve data that occur with zero probability under the prior.  (The probability of the backwards start underflows to zero in the floating point arithmetic; the probability of the kidnapping is definitely zero.)  For this we will employ Bayesian *hierarchical models* that express the belief that rare discrepancies occur.  We will also adjust our inference code to work with the richer model.
 
 # %% [markdown]
 # ### Hierarchical modeling
