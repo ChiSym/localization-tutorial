@@ -2180,7 +2180,7 @@ the_plot
 # %% [markdown]
 # ### Reusable components
 #
-# The ingredients of the particle filter programs we have written may certainly be abstracted, then reused with brevity.  Although we will not do so here, out of an intention to keep all the techniques explicit, we note that such abstractions are provided by the `GenParticleFilters` library.  For an example of its use, the reader is encouraged to peer into `black_box.jl` and compare the inference code there to the present state of our approach to the robot problem.
+# The ingredients of the particle filter programs we have written may certainly be abstracted, then reused with brevity.  Although we will not do so here, out of an intention to keep all the techniques explicit, we note that such abstractions are provided by the `GenParticleFilters` library.  For an example of its use, the reader is encouraged to peer into the file `black_box.jl` in this repo and compare the inference code there to the present state of our approach to the robot problem.
 
 # %% [markdown]
 # ### Adaptive inference
