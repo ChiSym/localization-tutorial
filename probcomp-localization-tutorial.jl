@@ -2399,21 +2399,23 @@ function particle_filter_backtrack(model, T, args, constraints, N_particles, ESS
         # Advance-or-backtrack logic.
         if fitness_test(traces, t)
             # The fitness criterion has been met, so advance to the next time step.
-            # If we are at the end of a backtrack then clear the backtracking state.
+            # If we are at the end of a backtrack then clear the backtracking state,
+            # including discarding the prior, unfit runs up to `t_saved`.
             if backtrack_state > 0 && t == t_saved
                 backtrack_state, candidates = 0, []
             end
             action = :advance
         else
-            # Save the particles if they are constructed to the maximal time step.
-            # Otherwise advance to the end of the backtrack without saving them.
+            # The fitness criterion has failed, so decide what to do.
+            # If we are either not yet backtracking, or at the end of some backtrack, then save the particles.
+            # Otherwise, we are in an incomplete backtrack; terminate the current backtrack without saving it.
             if backtrack_state == 0 || t == t_saved
                 append!(candidates, zip(traces, log_weights))
             else
                 t = t_saved
             end
-            # If more backtracking is on the schedule then do it,
-            # otherwise resample from the available candidates and move on.
+            # If more backtracking is on the schedule then do it.
+            # Otherwise, resample from the available saved candidates, clear the state, and move on.
             if backtrack_state < length(backtrack_schedule)
                 action = :backtrack
             else
@@ -2493,7 +2495,7 @@ function particle_filter_backtrack_infos(model, T, args, constraints, N_particle
                 action = :backtrack
             else
                 traces, log_weights = first.(candidates), last.(candidates)
-                push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: the candidates", traces = copy(traces), log_weights = copy(log_weights)))
+                push!(infos, (type = :indecision1, time = now(), t = t, label = "indecision: all candidates", traces = copy(traces), log_weights = copy(log_weights)))
                 traces, log_weights = resample(traces, log_weights; M=N_particles)
                 push!(infos, (type = :indecision2, time = now(), t = t, label = "indecision: resample", traces = copy(traces), log_weights = copy(log_weights)))
                 backtrack_state, candidates = 0, []
