@@ -23,18 +23,39 @@
 # Global setup code
 
 # The dependencies consist of the following Python packages.
+from __future__ import annotations
 import datetime
 import json  
 import matplotlib.pyplot as plt  
+
+import jax
+import jax.numpy as jnp
 import genjax 
+from genjax import interpreted_gen_fn
+
 import os
-from math import cos, sin, atan2, pi, sqrt
+from math import atan2, pi
 from typing import Optional
-from __future__ import annotations
+
 import numpy as np
+
+import anywidget 
+import traitlets
+
+import genjax.studio.src as src
+
 
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
+
+# %% 
+
+class CounterWidget(anywidget.AnyWidget):
+    _esm = "studio/dist/counter.js"
+    _css = "studio/dist/styles.css"
+    value = traitlets.Int(0).tag(sync=True)
+
+CounterWidget()
 
 # %% [markdown]
 # ## The "real world"
@@ -59,24 +80,21 @@ os.makedirs("imgs", exist_ok=True)
 # %%
 # General code here
 
-def norm(v):
-    return sqrt(sum(v**2))
-
 class Pose:
-    def __init__(self, p: list[float], hd: Optional[float] = None, dp: Optional[list[float]] = None):
+    def __init__(self, p: np.ndarray, hd: Optional[float] = None, dp: Optional[np.ndarray] = None):
         """
         Initializes a Pose object either from a heading (hd) or a direction vector (dp).
         
-        :param p: The position as a list of floats [x, y].
+        :param p: The position as a numpy array [x, y].
         :param hd: The heading in radians. Optional if dp is provided.
-        :param dp: The direction vector as a list of floats [dx, dy]. Optional if hd is provided.
+        :param dp: The direction vector as a numpy array [dx, dy]. Optional if hd is provided.
         """
         self.p = p
         if hd is not None:
             self.hd = hd % (2 * pi)  # Ensuring the heading is within 0 to 2π
-            self.dp = [cos(self.hd), sin(self.hd)]
+            self.dp = np.array([np.cos(self.hd), np.sin(self.hd)])
         elif dp is not None:
-            self.hd = atan2(dp[1], dp[0])
+            self.hd = np.arctan2(dp[1], dp[0])
             self.dp = dp
         else:
             raise ValueError("Either 'hd' (heading) or 'dp' (direction vector) must be provided, not both None.")
@@ -86,7 +104,7 @@ class Pose:
 
     def step_along(self, s: float) -> Pose:
         """Moves along the direction of the pose by a scalar and returns a new Pose."""
-        new_p = [self.p[0] + s * self.dp[0], self.p[1] + s * self.dp[1]]
+        new_p = self.p + s * self.dp
         return Pose(new_p, hd=self.hd)
 
     def rotate(self, a: float) -> Pose:
@@ -95,7 +113,7 @@ class Pose:
         return Pose(self.p, hd=new_hd)
 
 # Example usage:
-pose = Pose([1.0, 2.0], hd=1.57)
+pose = Pose(np.array([1.0, 2.0]), hd=1.57)
 print(pose)
 
 # Move the pose along its direction
@@ -111,9 +129,9 @@ class Segment:
             self.p1 = p1.p
             self.p2 = p2.p
         else:
-            self.p1 = p1
-            self.p2 = p2
-        self.dp = [p2_i - p1_i for p1_i, p2_i in zip(self.p1, self.p2)]
+            self.p1 = np.array(p1)
+            self.p2 = np.array(p2)
+        self.dp = self.p2 - self.p1
 
     def __repr__(self):
         return f"Segment({self.p1}, {self.p2})"
@@ -128,9 +146,10 @@ class Control:
         self.dhd = dhd
 
 def create_segments(verts, loop_around=False):
-    segs = [Segment(p1, p2) for p1, p2 in zip(verts[:-1], verts[1:])]
+    verts_np = np.array(verts)
+    segs = [Segment(p1, p2) for p1, p2 in zip(verts_np[:-1], verts_np[1:])]
     if loop_around:
-        segs.append(Segment(verts[-1], verts[0]))
+        segs.append(Segment(verts_np[-1], verts_np[0]))
     return segs
 
 def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
@@ -153,16 +172,14 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     walls_clutters = walls + [item for sublist in clutters for item in sublist]
     
     # Combine all points for bounding box calculation
-    all_points = walls_vec + [item for sublist in clutters_vec for item in sublist] + [start.p]
-    x_min = min(p[0] for p in all_points)
-    x_max = max(p[0] for p in all_points)
-    y_min = min(p[1] for p in all_points)
-    y_max = max(p[1] for p in all_points)
+    all_points_np = np.vstack((np.array(walls_vec), np.concatenate(clutters_vec), np.array([start.p])))
+    x_min, y_min = np.min(all_points_np, axis=0)
+    x_max, y_max = np.max(all_points_np, axis=0)
     
     # Calculate bounding box, box size, and center point
     bounding_box = (x_min, x_max, y_min, y_max)
     box_size = max(x_max - x_min, y_max - y_min)
-    center_point = [(x_min + x_max) / 2.0, (y_min + y_max) / 2.0]
+    center_point = np.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0])
     
     # Determine the total number of control steps
     T = len(controls)
@@ -186,9 +203,9 @@ def load_world(file_name, loop_around=False):
     with open(file_name, 'r') as file:
         data = json.load(file)
     
-    walls_vec = [list(map(float, vert)) for vert in data["wall_verts"]]
-    clutters_vec = [[list(map(float, vert)) for vert in clutter] for clutter in data["clutter_vert_groups"]]
-    start = Pose(list(map(float, data["start_pose"]["p"])), float(data["start_pose"]["hd"]))
+    walls_vec = [np.array(vert, dtype=float) for vert in data["wall_verts"]]
+    clutters_vec = [np.array(clutter, dtype=float) for clutter in data["clutter_vert_groups"]]
+    start = Pose(np.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"]))
     controls = [Control(float(control["ds"]), float(control["dhd"])) for control in data["program_controls"]]
     
     return make_world(walls_vec, clutters_vec, start, controls, loop_around=loop_around)
@@ -223,7 +240,7 @@ def integrate_controls_unphysical(robot_inputs):
     for control in robot_inputs['controls']:
         # Compute the new position (p) by applying the distance change (ds) in the direction of dp
         # Note: dp is derived from the current heading (hd) to ensure movement in the correct direction
-        p = [path[-1].p[0] + control.ds * path[-1].dp[0], path[-1].p[1] + control.ds * path[-1].dp[1]]
+        p = path[-1].p + control.ds * path[-1].dp
         # Compute the new heading (hd) by adding the heading change (dhd)
         hd = path[-1].hd + control.dhd
         # Create a new Pose with the updated position and heading, and add it to the path
@@ -272,7 +289,7 @@ def distance(p, seg):
     """
     s, t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
     if s is None or s < 0 or not (0 <= t <= 1):
-        return float('inf')
+        return np.inf
     else:
         return s
 
@@ -300,13 +317,13 @@ def physical_step(p1, p2, hd, world_inputs):
         collision_point = np.add(p1, np.multiply(closest_wall_distance, step_pose.dp))
         wall_normal_direction = world_inputs['walls'][closest_wall_index].dp
         normalized_wall_direction = np.divide(wall_normal_direction, np.linalg.norm(wall_normal_direction))
-        wall_normal = [-normalized_wall_direction[1], normalized_wall_direction[0]]
+        wall_normal = np.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
         
         if np.cross(step_pose.dp, wall_normal_direction) < 0:
-            wall_normal = -np.array(wall_normal)
+            wall_normal = -wall_normal
         
         bounce_off_point = np.add(collision_point, np.multiply(world_inputs['bounce'], wall_normal))
-        return Pose(bounce_off_point.tolist(), hd)
+        return Pose(bounce_off_point, hd)
 
 def integrate_controls(robot_inputs, world_inputs):
     """
@@ -321,7 +338,7 @@ def integrate_controls(robot_inputs, world_inputs):
     """
     path = [robot_inputs['start']]
     for control in robot_inputs['controls']:
-        next_position = np.add(path[-1].p, np.multiply(control.ds, path[-1].dp)).tolist()
+        next_position = path[-1].p + control.ds * path[-1].dp
         next_heading = path[-1].hd + control.dhd
         path.append(physical_step(path[-1].p, next_position, next_heading, world_inputs))
     return path
@@ -422,4 +439,155 @@ plt.savefig("imgs/given_data")
 # Show the plot
 plt.show()
 
+# %%
+
+
+# %% [markdown]
+# We can also visualize the behavior of the model of physical motion:
+#
+# ![](../imgs_stable/physical_motion.gif)
+
+# %% [markdown]
+# ## Gen basics
+#
+# As said initially, we are uncertain about the true initial position and subsequent motion of the robot.  In order to reason about these, we now specify a model using `Gen`.
+#
+# Each piece of the model is declared as a *generative function* (GF).  The `Gen` library provides two DSLs for constructing GFs: the dynamic DSL using the decorator `@gen` on a function declaration, and the static DSL similarly decorated with `@gen (static)`.  The dynamic DSL allows a rather wide class of program structures, whereas the static DSL only allows those for which a certain static analysis may be performed.
+#
+# The library offers two basic constructs for use within these DSLs: primitive *distributions* such as "Bernoulli" and "normal", and the sampling operator `~`.  Recursively, GFs may sample from other GFs using `~`.
+
+# %% [markdown]
+# ### Components of the motion model
+#
+# We start with the two building blocks: the starting pose and individual steps of motion.
+
+# %%
+
+
+# %%
+@interpreted_gen_fn
+def start_pose_prior(start, motion_settings):
+    """
+    Defines a generative function for the prior distribution of the robot's starting pose.
+    
+    This function generates a sample for the starting position (p) and heading (hd) of the robot
+    based on the provided mean (start.p and start.hd) and the noise levels specified in the
+    motion_settings dictionary. The position is sampled from a multivariate normal distribution
+    with a diagonal covariance matrix where the variance is the square of the position noise level.
+    The heading is sampled from a normal distribution with a variance equal to the square of the
+    heading noise level.
+    
+    Args:
+    - start (Pose): The mean starting pose of the robot.
+    - motion_settings (dict): A dictionary containing the noise levels for position ('p_noise')
+                              and heading ('hd_noise').
+    
+    Returns:
+    - Pose: A Pose object representing the sampled starting pose of the robot.
+    """
+    # Sample the starting position from a multivariate normal distribution
+    p = genjax.mv_normal(start.p, motion_settings['p_noise']**2 * np.eye(2)) @ "p"
+    # Sample the starting heading from a normal distribution
+    hd = genjax.normal(start.hd, motion_settings['hd_noise']) @ "hd"
+    return Pose(p, hd)
+
+
+@interpreted_gen_fn
+def step_model(start, c, world_inputs, motion_settings):
+    """
+    Defines a generative function for the robot's motion step model.
+    
+    This function generates a sample for the new position (p) and heading (hd) of the robot after
+    taking a step according to the control input (c). The new position is sampled from a multivariate
+    normal distribution centered around the predicted new position, which is calculated by moving
+    from the starting position (start.p) in the direction of the starting pose (start.dp) by a
+    distance specified by the control input (c.ds). The covariance matrix for the position is diagonal
+    with variance equal to the square of the position noise level. The new heading is sampled from a
+    normal distribution centered around the predicted new heading, which is the starting heading
+    (start.hd) plus the heading change specified by the control input (c.dhd), with variance equal to
+    the square of the heading noise level.
+    
+    Args:
+    - start (Pose): The starting pose of the robot before taking the step.
+    - c (Control): The control input specifying the distance to move forward (ds) and the change in
+                    heading (dhd).
+    - world_inputs (dict): A dictionary containing world-related inputs that may affect the step.
+    - motion_settings (dict): A dictionary containing the noise levels for position ('p_noise') and
+                              heading ('hd_noise').
+    
+    Returns:
+    - Pose: A Pose object representing the sampled pose of the robot after taking the step.
+    """
+    # Predict the new position and sample from a multivariate normal distribution
+    p = mvnormal(start.p + c.ds * start.dp, motion_settings['p_noise']**2 * np.eye(2)) @ "p"
+    # Predict the new heading and sample from a normal distribution
+    hd = normal(start.hd + c.dhd, motion_settings['hd_noise']) @ "hd"
+    # Return the result of a physical step with the sampled position and heading
+    return physical_step(start.p, p, hd, world_inputs)
+# %% [markdown]
+# Returning to the code, we can call a GF like a normal function and it will just run stochastically:
+
+
+# %%
+# Generate points on the unit circle
+theta = np.linspace(0, 2*np.pi, 500)
+unit_circle_xs = np.cos(theta)
+unit_circle_ys = np.sin(theta)
+
+# Function to create a circle with center p and radius r
+def make_circle(p, r):
+    return (p[0] + r * unit_circle_xs, p[1] + r * unit_circle_ys)
+
+# %%
+# Set the motion settings
+motion_settings = {'p_noise': 0.5, 'hd_noise': 2*np.pi / 360}
+
+# Generate N_samples of starting poses from the prior
+N_samples = 50
+key = jax.random.PRNGKey(314159)
+key, *sub_keys = jax.random.split(key, N_samples + 1)
+pose_samples = [start_pose_prior.simulate(k, (robot_inputs['start'], motion_settings)) for k in sub_keys]
+
+
+
+
+sampler(start_pose_prior, robot_inputs['start'], motion_settings)
+start_pose_prior.simulate(key, (robot_inputs['start'], motion_settings)).get_retval()
+
+# editorTextFocus &&  !notebookEditorFocused && isWorkspaceTrusted && jupyter.ownsSelection && !findInputFocussed && !replaceInputFocussed && editorLangId == 'python' &&
+
+# Calculate the radius of the 95% confidence region
+std_devs_radius = 2.5 * motion_settings['p_noise']
+
+# Plot the world, starting pose samples, and 95% confidence region
+the_plot = plot_world(world, "Start pose prior (samples)")
+circle_xs, circle_ys = make_circle(robot_inputs['start'].p, std_devs_radius)
+plt.fill(circle_xs, circle_ys, color='red', alpha=0.25, label="95% region")
+plt.plot([pose.choices['p'].value[0] for pose in pose_samples], [pose.choices['p'].value[1] for pose in pose_samples], 'r.', label="start pose samples")
+plt.legend()
+plt.savefig("imgs/start_prior.png")
+plt.show()
+
+# %%
+from pathlib import Path
+
+def get_function_def(func_name):
+    source = Path(__file__).read_text()
+    lines = source.split('\n')
+    # Python functions start with 'def' followed by the function name and a colon
+    start_index = next((i for i, line in enumerate(lines) if line.strip().startswith(f"def {func_name}(")), None)
+    if start_index is None:
+        return None  # Function not found
+    # Find the end of the function by looking for a line that is not indented
+    end_index = next((i for i, line in enumerate(lines[start_index+1:], start_index+1) if not line.startswith((' ', '\t'))), None)
+    # If the end is not found, assume the function goes until the end of the file
+    end_index = end_index or len(lines)
+    return '\n'.join(lines[start_index:end_index])
+
+print(get_function_def("start_pose_prior"))
+
+## source code highlighter as one reusable visualizer. 
+## initial state - grab source (eg. from current file given function def)
+## then set highlights at different times t.
+## the time-series db will show all the visualizers according to the current time (step).
 # %%

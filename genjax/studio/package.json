@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "esbuild": "^0.20.2",
+    "tailwindcss": "^3.4.3"
+  },
+  "scripts": {
+    "watch": "npx esbuild --bundle --format=esm --outdir=./src/js_dist $(find 'src/js' -name '*.jsx' -or -name '*.js') --watch"
+  }
+}
