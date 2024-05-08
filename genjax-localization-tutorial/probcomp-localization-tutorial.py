@@ -3,6 +3,7 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: -all
+#     custom_cell_magics: kql
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -19,13 +20,13 @@
 #
 # This notebook aims to give an introduction to probabilistic computation (ProbComp).  This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probablistic programming language (PPL).  The programmer can thus encode their probabilistic intuition for solving a problem into an algorithm.  Back-end language work automates the routine but error-prone derivations.
 
+# Dependencies are specified in pyproject.toml.
 # %%
 # Global setup code
 
-# The dependencies consist of the following Python packages.
 from __future__ import annotations
-import datetime
 import json  
+import gen.studio.plot as Plot
 import matplotlib.pyplot as plt  
 
 import jax
@@ -39,23 +40,9 @@ from typing import Optional
 
 import numpy as np
 
-import anywidget 
-import traitlets
-
-import genjax.studio.src as src
-
 
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
-
-# %% 
-
-class CounterWidget(anywidget.AnyWidget):
-    _esm = "studio/dist/counter.js"
-    _css = "studio/dist/styles.css"
-    value = traitlets.Int(0).tag(sync=True)
-
-CounterWidget()
 
 # %% [markdown]
 # ## The "real world"
@@ -85,9 +72,13 @@ class Pose:
         """
         Initializes a Pose object either from a heading (hd) or a direction vector (dp).
         
-        :param p: The position as a numpy array [x, y].
-        :param hd: The heading in radians. Optional if dp is provided.
-        :param dp: The direction vector as a numpy array [dx, dy]. Optional if hd is provided.
+        Args:
+            p (np.ndarray): The position as a numpy array [x, y].
+            hd (float, optional): The heading in radians. Optional if dp is provided.
+            dp (np.ndarray, optional): The direction vector as a numpy array [dx, dy]. Optional if hd is provided.
+        
+        Raises:
+            ValueError: If both 'hd' and 'dp' are None.
         """
         self.p = p
         if hd is not None:
@@ -103,12 +94,28 @@ class Pose:
         return f"Pose(p={self.p}, hd={self.hd})"
 
     def step_along(self, s: float) -> Pose:
-        """Moves along the direction of the pose by a scalar and returns a new Pose."""
+        """
+        Moves along the direction of the pose by a scalar and returns a new Pose.
+        
+        Args:
+            s (float): The scalar distance to move along the pose's direction.
+        
+        Returns:
+            Pose: A new Pose object representing the moved position.
+        """
         new_p = self.p + s * self.dp
         return Pose(new_p, hd=self.hd)
 
     def rotate(self, a: float) -> Pose:
-        """Rotates the pose by angle 'a' (in radians) and returns a new Pose."""
+        """
+        Rotates the pose by angle 'a' (in radians) and returns a new Pose.
+        
+        Args:
+            a (float): The angle in radians to rotate the pose.
+        
+        Returns:
+            Pose: A new Pose object representing the rotated pose.
+        """
         new_hd = self.hd + a
         return Pose(self.p, hd=new_hd)
 
@@ -135,9 +142,6 @@ class Segment:
 
     def __repr__(self):
         return f"Segment({self.p1}, {self.p2})"
-
-# %%
-
 # %% 
 
 class Control:
@@ -248,7 +252,6 @@ def integrate_controls_unphysical(robot_inputs):
     
     return path
 
-# %%
 # %% [markdown]
 # This code has the problem that it is **unphysical**: the walls in no way constrain the robot motion.
 #
@@ -325,6 +328,7 @@ def physical_step(p1, p2, hd, world_inputs):
         bounce_off_point = np.add(collision_point, np.multiply(world_inputs['bounce'], wall_normal))
         return Pose(bounce_off_point, hd)
 
+#%%
 def integrate_controls(robot_inputs, world_inputs):
     """
     Integrates controls to generate a path, taking into account physical interactions with walls.
@@ -344,6 +348,9 @@ def integrate_controls(robot_inputs, world_inputs):
     return path
 
 # %%
+
+import importlib 
+importlib.reload(Plot)
 
 # Define the world's inputs including walls and how bouncy they are.
 world_inputs = {'walls': world['walls'], 'bounce': 0.1}
@@ -373,7 +380,7 @@ def plot_segments(segments, color='black', label=None, linewidth=0.5):
     - linewidth: The width of the lines used to plot the segments.
     """
     segments = [segments] if isinstance(segments, Segment) else flatten(segments)
-
+    
     for i, seg in enumerate(segments):
         current_label = label if i == 0 else None
         plt.plot([seg.p1[0], seg.p2[0]], [seg.p1[1], seg.p2[1]], color=color, label=current_label, linewidth=linewidth)
@@ -404,19 +411,16 @@ def plot_world(world, title, label_world=False, show_clutters=False):
     Plots the world configuration including walls and optionally clutters.
     The world is represented within a specified bounding box, with an optional title and labels for walls and clutters.
     """
-    border = world['box_size'] * (3./19.)
-    plt.figure(figsize=(5, 5))
-    plt.axis('equal')
-    plt.grid(False)
-    plt.xlim(world['bounding_box'][0]-border, world['bounding_box'][1]+border)
-    plt.ylim(world['bounding_box'][2]-border, world['bounding_box'][3]+border)
-    plt.title(title)
-    plot_segments(world['walls'], color='black', label="walls" if label_world else None)
+    border = world['box_size'] * (3./19.)  # Calculate border size based on box size
+    plt.figure(figsize=(5, 5))  # Create a new figure with specified size
+    plt.axis('equal')  # Set equal aspect ratio for x and y axes
+    plt.grid(False)  # Turn off the grid
+    plt.xlim(world['bounding_box'][0]-border, world['bounding_box'][1]+border)  # Set x-axis limits
+    plt.ylim(world['bounding_box'][2]-border, world['bounding_box'][3]+border)  # Set y-axis limits
+    plt.title(title)  # Set the plot title
+    plot_segments(world['walls'], color='black', label="walls" if label_world else None)  # Plot wall segments
     if show_clutters:
-        plot_segments(world['clutters'], color='magenta', label="clutters")
-    
-
-# %%
+        plot_segments(world['clutters'], color='magenta', label="clutters")  # Plot clutter segments if enabled
 
 # Following this initial display of the given data, we suppress the clutters until much later in the notebook.
 
@@ -438,6 +442,41 @@ plt.savefig("imgs/given_data")
 
 # Show the plot
 plt.show()
+
+def flatten(list_of_lists):
+    """
+    Flattens a list of lists into a single list, recursively flattening nested lists.
+    """
+    flattened = []
+    for element in list_of_lists:
+        if isinstance(element, list):
+            flattened.extend(flatten(element))
+        else:
+            flattened.append(element)
+    return flattened
+
+world_plot = Plot.new(
+    [Plot.line([wall.p1, wall.p2], strokeWidth=1, stroke=Plot.constantly('walls'),) for wall in world['walls']],
+         Plot.size(500), 
+         Plot.margin(0), 
+         Plot.title("Given data"), 
+         Plot.color_legend,
+         Plot.inset(50),
+         Plot.color_map({'walls': '#000000', 'clutters': 'magenta'}),
+         Plot.frame(strokeWidth=4, stroke="#ddd"))
+
+def clutter_points(segments):
+    return [[p[0], p[1]] 
+     for segment in segments
+     for p in [segment.p1, segment.p2]]
+    
+clutters_plot = [Plot.line(clutter_points(clutter), 
+                        fill=Plot.constantly('clutters'))
+              for clutter in world['clutters']]    
+
+world_plot + clutters_plot
+
+
 
 # %%
 
