@@ -35,7 +35,7 @@ import genjax
 from genjax import interpreted_gen_fn
 
 import os
-from math import atan2, pi
+from math import sin, cos, pi
 from typing import Optional
 
 import numpy as np
@@ -395,6 +395,7 @@ arrow_options = {
     'linewidth': 0.5
 }
 
+
 # Function to plot a pose with an optional radius and additional arguments.
 def plot_pose(p, r=0.5, color='blue', label=None):
     """
@@ -442,7 +443,7 @@ plt.savefig("imgs/given_data")
 
 # Show the plot
 plt.show()
-
+#%%
 def flatten(list_of_lists):
     """
     Flattens a list of lists into a single list, recursively flattening nested lists.
@@ -457,25 +458,58 @@ def flatten(list_of_lists):
 
 world_plot = Plot.new(
     [Plot.line([wall.p1, wall.p2], strokeWidth=1, stroke=Plot.constantly('walls'),) for wall in world['walls']],
-         Plot.size(500), 
-         Plot.margin(0), 
-         Plot.title("Given data"), 
+        {'width': 500,
+         'height': 500, 
+         'margin': 0, 
+         'title': "Given data",
+         'inset': 50},
          Plot.color_legend,
-         Plot.inset(50),
-         Plot.color_map({'walls': '#000000', 'clutters': 'magenta'}),
+         Plot.color_map({'walls': '#000000', 
+                         'clutters': 'magenta',
+                         'path from integrating controls': 'lightgreen', 
+                         'given start pose': 'darkgreen'}),
          Plot.frame(strokeWidth=4, stroke="#ddd"))
 
 def clutter_points(segments):
     return [[p[0], p[1]] 
      for segment in segments
      for p in [segment.p1, segment.p2]]
+
+def arrowhead_coords(point, hd, wingLength=0.4, wingAngle=pi/4):
+    """
+    Calculates the coordinates of an arrowhead given a point and heading.
     
-clutters_plot = [Plot.line(clutter_points(clutter), 
-                        fill=Plot.constantly('clutters'))
+    Args:
+        point (list): The [x, y] coordinates of the arrowhead's tip.
+        hd (float): The heading angle in radians.
+        wingLength (float, optional): The length of the arrowhead's wings. Defaults to 0.4.
+        wingAngle (float, optional): The angle of the arrowhead's wings in radians. Defaults to pi/4.
+        
+    Returns:
+        list: A list of three [x, y] points representing the left wing tip, arrow tip, and right wing tip.
+    """
+    leftWingAngle = hd + wingAngle
+    rightWingAngle = hd - wingAngle
+    
+    leftWingEnd = [point[0] - wingLength * cos(leftWingAngle), 
+                   point[1] - wingLength * sin(leftWingAngle)]
+    rightWingEnd = [point[0] - wingLength * cos(rightWingAngle),
+                    point[1] - wingLength * sin(rightWingAngle)]
+    
+    return [leftWingEnd, point, rightWingEnd]
+    
+def pose_arrow(p, r=0.5, **kwargs):
+    start = p.p
+    end = p.step_along(r).p
+    opts = {'strokeWidth': 2, **kwargs}
+    return Plot.line([start, end], **opts) + Plot.line(arrowhead_coords(end, p.hd), **opts)
+
+clutters_plot = [Plot.line(clutter_points(clutter), fill=Plot.constantly('clutters'))
               for clutter in world['clutters']]    
 
-world_plot + clutters_plot
+path_from_controls_plot = Plot.dot([pose.p for pose in path_integrated], fill=Plot.constantly('path from integrating controls'))
 
+world_plot + clutters_plot + path_from_controls_plot + pose_arrow(robot_inputs['start'], stroke=Plot.constantly('given start pose'))
 
 
 # %%
