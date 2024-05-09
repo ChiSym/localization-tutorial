@@ -352,116 +352,47 @@ def integrate_controls(robot_inputs, world_inputs):
 import importlib 
 importlib.reload(Plot)
 
-# Define the world's inputs including walls and how bouncy they are.
+# How bouncy the walls are in this world.
 world_inputs = {'walls': world['walls'], 'bounce': 0.1}
 
-# Integrate the path based on robot inputs and world configuration.
 path_integrated = integrate_controls(robot_inputs, world_inputs)
 
-def flatten(segments_list):
-        flat_list = []
-        for item in segments_list:
-            if isinstance(item, list):
-                flat_list.extend(flatten(item))
-            else:
-                flat_list.append(item)
-        return flat_list
+# %% [markdown]
+# ### Plot such data
 
-# Function to plot a segment or a list of segments.
-def plot_segments(segments, color='black', label=None, linewidth=0.5):
-    """
-    Plots segments on a matplotlib plot with a specified line width. Can handle a single segment or a list of segments.
-    Each segment is expected to be an instance of the Segment class or a similar structure with p1 and p2 attributes.
+# %%
+
+def clutter_points(clutter):
+    points = []
+    for segment in clutter:
+        points.append(segment.p1)
+    points.append(clutter[-1].p2)
+    return points
     
-    Args:
-    - segments: A single Segment instance or a list of Segment instances to be plotted.
-    - color: The color of the segments.
-    - label: The label for the segments.
-    - linewidth: The width of the lines used to plot the segments.
-    """
-    segments = [segments] if isinstance(segments, Segment) else flatten(segments)
+def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi/4, **kwargs):
+    leftWingAngle = heading + wingAngle
+    rightWingAngle = heading - wingAngle
     
-    for i, seg in enumerate(segments):
-        current_label = label if i == 0 else None
-        plt.plot([seg.p1[0], seg.p2[0]], [seg.p1[1], seg.p2[1]], color=color, label=current_label, linewidth=linewidth)
+    leftWingEnd = [point[0] - wingLength * cos(leftWingAngle), 
+                   point[1] - wingLength * sin(leftWingAngle)]
+    rightWingEnd = [point[0] - wingLength * cos(rightWingAngle),
+                    point[1] - wingLength * sin(rightWingAngle)]
+    
+    return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)
 
-        
-# Define arrow style options for plotting a pose.
-arrow_options = {
-    'head_width': 0.5, 
-    'head_length': 0.5, 
-    'fill': False, 
-    'overhang': 1, 
-    'linewidth': 0.5
-}
-
-
-# Function to plot a pose with an optional radius and additional arguments.
-def plot_pose(p, r=0.5, color='blue', label=None):
-    """
-    Plots a pose as an arrow on a matplotlib plot.
-    The pose is represented by a point and a direction, optionally with a specified radius to extend the arrow.
-    Adjusted the head width and length to make the arrow more visible.
-    """
-    end_point = p.step_along(r).p
-    plt.arrow(p.p[0], p.p[1], end_point[0] - p.p[0], end_point[1] - p.p[1], color=color, label=label, **arrow_options)
-
-# Function to plot the world with optional labels for walls and clutters.
-def plot_world(world, title, label_world=False, show_clutters=False):
-    """
-    Plots the world configuration including walls and optionally clutters.
-    The world is represented within a specified bounding box, with an optional title and labels for walls and clutters.
-    """
-    border = world['box_size'] * (3./19.)  # Calculate border size based on box size
-    plt.figure(figsize=(5, 5))  # Create a new figure with specified size
-    plt.axis('equal')  # Set equal aspect ratio for x and y axes
-    plt.grid(False)  # Turn off the grid
-    plt.xlim(world['bounding_box'][0]-border, world['bounding_box'][1]+border)  # Set x-axis limits
-    plt.ylim(world['bounding_box'][2]-border, world['bounding_box'][3]+border)  # Set y-axis limits
-    plt.title(title)  # Set the plot title
-    plot_segments(world['walls'], color='black', label="walls" if label_world else None)  # Plot wall segments
-    if show_clutters:
-        plot_segments(world['clutters'], color='magenta', label="clutters")  # Plot clutter segments if enabled
-
-# Following this initial display of the given data, we suppress the clutters until much later in the notebook.
-
-# Plot the world without clutters
-the_plot = plot_world(world, "Given data", label_world=True, show_clutters=True)
-
-# Plot the starting pose of the robot
-plot_pose(robot_inputs['start'], color='green', label="given start pose")
-
-# Plot the path from integrating controls
-x_coords = [pose.p[0] for pose in path_integrated]
-y_coords = [pose.p[1] for pose in path_integrated]
-plt.scatter(x_coords, y_coords, color='lightgreen', label="path from integrating controls", s=3)
-
-plt.legend(loc='lower left', fontsize='small')
-
-# Save the figure to a file
-plt.savefig("imgs/given_data")
-
-# Show the plot
-plt.show()
-#%%
-def flatten(list_of_lists):
-    """
-    Flattens a list of lists into a single list, recursively flattening nested lists.
-    """
-    flattened = []
-    for element in list_of_lists:
-        if isinstance(element, list):
-            flattened.extend(flatten(element))
-        else:
-            flattened.append(element)
-    return flattened
-
+def pose_arrow(p, r=0.5, **kwargs):
+    start = p.p
+    end = p.step_along(r).p
+    opts = {'strokeWidth': 2, **kwargs}
+    return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)
+    
+# Plot the world with walls only
 world_plot = Plot.new(
     [Plot.line([wall.p1, wall.p2], strokeWidth=1, stroke=Plot.constantly('walls'),) for wall in world['walls']],
-        {'width': 500,
+        {'title': "Given data",
+         'width': 500,
          'height': 500, 
          'margin': 0, 
-         'title': "Given data",
          'inset': 50},
          Plot.color_legend,
          Plot.color_map({'walls': '#000000', 
@@ -470,46 +401,22 @@ world_plot = Plot.new(
                          'given start pose': 'darkgreen'}),
          Plot.frame(strokeWidth=4, stroke="#ddd"))
 
-def clutter_points(segments):
-    return [[p[0], p[1]] 
-     for segment in segments
-     for p in [segment.p1, segment.p2]]
+# Plot of the starting pose of the robot
+starting_pose_plot = pose_arrow(robot_inputs['start'], stroke=Plot.constantly('given start pose'))
 
-def arrowhead_coords(point, hd, wingLength=0.4, wingAngle=pi/4):
-    """
-    Calculates the coordinates of an arrowhead given a point and heading.
-    
-    Args:
-        point (list): The [x, y] coordinates of the arrowhead's tip.
-        hd (float): The heading angle in radians.
-        wingLength (float, optional): The length of the arrowhead's wings. Defaults to 0.4.
-        wingAngle (float, optional): The angle of the arrowhead's wings in radians. Defaults to pi/4.
-        
-    Returns:
-        list: A list of three [x, y] points representing the left wing tip, arrow tip, and right wing tip.
-    """
-    leftWingAngle = hd + wingAngle
-    rightWingAngle = hd - wingAngle
-    
-    leftWingEnd = [point[0] - wingLength * cos(leftWingAngle), 
-                   point[1] - wingLength * sin(leftWingAngle)]
-    rightWingEnd = [point[0] - wingLength * cos(rightWingAngle),
-                    point[1] - wingLength * sin(rightWingAngle)]
-    
-    return [leftWingEnd, point, rightWingEnd]
-    
-def pose_arrow(p, r=0.5, **kwargs):
-    start = p.p
-    end = p.step_along(r).p
-    opts = {'strokeWidth': 2, **kwargs}
-    return Plot.line([start, end], **opts) + Plot.line(arrowhead_coords(end, p.hd), **opts)
+# Plot of the path from integrating controls
+controls_path_plot = Plot.dot([pose.p for pose in path_integrated], fill=Plot.constantly('path from integrating controls'))
 
+# Plot of the clutters
 clutters_plot = [Plot.line(clutter_points(clutter), fill=Plot.constantly('clutters'))
               for clutter in world['clutters']]    
 
-path_from_controls_plot = Plot.dot([pose.p for pose in path_integrated], fill=Plot.constantly('path from integrating controls'))
+# Save the figure to a file
+# plt.savefig("imgs/given_data")
 
-world_plot + clutters_plot + path_from_controls_plot + pose_arrow(robot_inputs['start'], stroke=Plot.constantly('given start pose'))
+# Following this initial display of the given data, we suppress the clutters until much later in the notebook.
+
+world_plot + controls_path_plot + starting_pose_plot + clutters_plot
 
 
 # %%
