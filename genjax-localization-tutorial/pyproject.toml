@@ -10,14 +10,14 @@ package-mode = false
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
 jupytext = "^1.16.1"
-genjax = {path = "../../genjax", develop = true} # {version = "^0.2.1", source = "gcp"}
+genjax = {version = "^0.2.1", source = "gcp"}
 ipykernel = "^6.29.3"
 matplotlib = "^3.8.3"
 anywidget = "^0.9.7"
 watchfiles = "^0.21.0"
 markdown = "^3.6"
-pyobsplot = {git="https://github.com/mhuebert/pyobsplot.git", rev="ec85aab9c63524304e58228a020c177bb7250ca7"}
-
+#gen-studio = {path = "../../gen-studio", develop = true}
+gen-studio = {git = "git+ssh://git@github.com/probcomp/gen-studio.git", rev = "9acbb61e8e4b2fec29d39fb11a4891b750c85227"}
 
 [[tool.poetry.source]]
 name = "gcp"
