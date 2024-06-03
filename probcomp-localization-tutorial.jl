@@ -40,17 +40,15 @@ mkpath("imgs");
 # %% [markdown]
 # ## The "real world"
 #
-# We assume given
+# We assume given the *world data* of
 # * a map of a space, together with
 # * some clutters that sometimes unexpectedly exist in that space.
 #
-# We also assume given a description of a robot's behavior via
-# * an estimated initial pose (= position + heading), and
-# * a program of controls (= advance distance, followed by rotate heading).
+# We will work with two kinds of data to determine the robot's location:
+# * sensor data, to be produced shortly, and/or
+# * a given estimated initial pose (= position + heading) and program controls (= forward distance, followed by rotate heading).
 #
-# *In addition to the uncertainty in the initial pose, we are uncertain about the true execution of the motion of the robot.*
-#
-# Below, we will also introduce sensors.
+# *The sensor data, initial pose, and execution of the motion program are all carry uncertainty, which we must negotiate.*
 
 # %% [markdown]
 # ### Load map and robot data
@@ -128,84 +126,6 @@ end;
 world, robot_inputs, T = load_world("example_20_program.json");
 
 # %% [markdown]
-# ### Integrate a path from a starting pose and controls
-#
-# If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
-
-# %%
-function integrate_controls_unphysical(robot_inputs)
-    path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
-    path[1] = robot_inputs.start
-    for t in 1:length(robot_inputs.controls)
-        p = path[t].p + robot_inputs.controls[t].ds * path[t].dp
-        hd = path[t].hd + robot_inputs.controls[t].dhd
-        path[t+1] = Pose(p, hd)
-    end
-    return path
-end;
-
-# %% [markdown]
-# This code has the problem that it is **unphysical**: the walls in no way constrain the robot motion.
-#
-# We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance from the point of contact in the normal direction to the wall.
-
-# %%
-# Return unique s, t such that p + s*u == q + t*v.
-function solve_lines(p, u, q, v; PARALLEL_TOL=1.0e-10)
-    det = u[1] * v[2] - u[2] * v[1]
-    if abs(det) < PARALLEL_TOL
-        return nothing, nothing
-    else
-        s = (v[1] * (p[2]-q[2]) - v[2] * (p[1]-q[1])) / det
-        t = (u[2] * (q[1]-p[1]) - u[1] * (q[2]-p[2])) / det
-        return s, t
-    end
-end
-
-function distance(p, seg)
-    s, t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
-    # Solving failed (including, by fiat, if pose is parallel to segment) iff isnothing(s).
-    # Pose is oriented away from segment iff s < 0.
-    # Point of intersection lies on segment (as opposed to the infinite line) iff 0 <= t <= 1.
-    return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
-end
-
-function physical_step(p1, p2, hd, world_inputs)
-    step_pose = Pose(p1, p2 - p1)
-    (s, i) = findmin(w -> distance(step_pose, w), world_inputs.walls)
-    if s > norm(p2 - p1)
-        # Step succeeds without contact with walls.
-        return Pose(p2, hd)
-    else
-        contact_point = p1 + s * step_pose.dp
-        unit_tangent = world_inputs.walls[i].dp / norm(world_inputs.walls[i].dp)
-        unit_normal = [-unit_tangent[2], unit_tangent[1]]
-        # Sign of 2D cross product determines orientation of bounce.
-        if step_pose.dp[1] * world_inputs.walls[i].dp[2] - step_pose.dp[2] * world_inputs.walls[i].dp[1] < 0.
-            unit_normal = -unit_normal
-        end
-        return Pose(contact_point + world_inputs.bounce * unit_normal, hd)
-    end
-end
-
-function integrate_controls(robot_inputs, world_inputs)
-    path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
-    path[1] = robot_inputs.start
-    for t in 1:length(robot_inputs.controls)
-        p = path[t].p + robot_inputs.controls[t].ds * path[t].dp
-        hd = path[t].hd + robot_inputs.controls[t].dhd
-        path[t+1] = physical_step(path[t].p, p, hd, world_inputs)
-    end
-    return path
-end;
-
-# %%
-# How bouncy the walls are in this world.
-world_inputs = (walls = world.walls, bounce = 0.1)
-
-path_integrated = integrate_controls(robot_inputs, world_inputs);
-
-# %% [markdown]
 # ### Plot such data
 
 # %%
@@ -240,7 +160,168 @@ function plot_world(world, title; label_world=false, show_clutters=false)
 end;
 
 # %% [markdown]
-# Following this initial display of the given data, we *suppress the clutters* until much later in the notebook.
+# Following this initial display of the given world data, we *suppress the clutters* until much later in the notebook.
+
+# %%
+the_plot = plot_world(world, "World data", label_world=true, show_clutters=true)
+savefig("imgs/world_data")
+the_plot
+
+# %% [markdown]
+# ### Sensor data
+#
+# We assume the robot is equipped with sensors that cast rays upon the environment at certain angles relative to the given pose, and return the distance to a hit.
+#
+# We first describe the ideal case, where the sensors return the true distances to the walls.
+
+# %%
+# Return unique s, t such that p + s*u == q + t*v.
+function solve_lines(p, u, q, v; PARALLEL_TOL=1.0e-10)
+    det = u[1] * v[2] - u[2] * v[1]
+    if abs(det) < PARALLEL_TOL
+        return nothing, nothing
+    else
+        pq = p - q
+        s = (v[1] * pq[2] - v[2] * pq[1]) / det
+        t = (u[1] * pq[2] - u[2] * pq[1]) / det
+        return s, t
+    end
+end
+
+function distance(pose, segment)
+    s, t = solve_lines(pose.p, pose.dp, segment.p1, segment.dp)
+    # Solving failed (including, by fiat, if pose is parallel to segment) iff isnothing(s).
+    # Pose is oriented away from segment iff s < 0.
+    # Point of intersection lies on segment (as opposed to the infinite line) iff 0 <= t <= 1.
+    return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
+end
+
+function sensor_distance(pose, walls, box_size)
+    d = minimum(distance(pose, segment) for segment in walls)
+    # Capping to a finite value avoids issues below.
+    return isinf(d) ? 2. * box_size : d
+end;
+
+sensor_angle(sensor_settings, j) =
+    sensor_settings.fov * (j - (sensor_settings.num_angles - 1) / 2.) / (sensor_settings.num_angles - 1)
+
+function ideal_sensor(pose, walls, sensor_settings)
+    readings = Vector{Float64}(undef, sensor_settings.num_angles)
+    for j in 1:sensor_settings.num_angles
+        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
+        readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
+    end
+    return readings
+end;
+
+# %%
+# Plot sensor data.
+
+function plot_sensors!(pose, readings, label, sensor_settings)
+    projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
+    plot!(first.(projections), last.(projections);
+            color=:blue, label=label, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
+    plot!([Segment(pose.p, pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
+end;
+
+# %%
+sensor_settings = (fov = 2π*(2/3), num_angles = 41, box_size = world.box_size)
+
+ani = Animation()
+for _ in 1:20
+    pose = Pose([uniform(world.bounding_box[1], world.bounding_box[2]), uniform(world.bounding_box[1], world.bounding_box[2])], uniform(-pi,pi))
+    readings = ideal_sensor(pose, world.walls, sensor_settings)
+    frame_plot = plot_world(world, "Ideal sensor distances")
+    plot_sensors!(pose, readings, "ideal sensors", sensor_settings)
+    plot!(pose; color=:red, label="pose")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/ideal_distances.gif", fps=1)
+
+# %% [markdown]
+# Let us work instead with less ideal sensors, whose readings are somewhat stochastically inexact.
+
+# %%
+function noisy_sensor(pose, walls, sensor_settings)
+    readings = Vector{Float64}(undef, sensor_settings.num_angles)
+    for j in 1:sensor_settings.num_angles
+        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
+        readings[j] = normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
+    end
+    return readings
+end;
+
+# %%
+sensor_settings = (sensor_settings..., s_noise = 0.10)
+
+ani = Animation()
+for _ in 1:20
+    pose = Pose([uniform(world.bounding_box[1], world.bounding_box[2]), uniform(world.bounding_box[1], world.bounding_box[2])], uniform(-pi,pi))
+    readings = noisy_sensor(pose, world.walls, sensor_settings)
+    frame_plot = plot_world(world, "Noisy sensor distances")
+    plot_sensors!(pose, readings, "noisy sensors", sensor_settings)
+    plot!(pose; color=:red, label="pose")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/noisy_distances.gif", fps=1)
+
+# %% [markdown]
+# ### Integrate a path from a starting pose and controls
+#
+# If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
+
+# %%
+function integrate_controls_unphysical(robot_inputs)
+    path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
+    path[1] = robot_inputs.start
+    for t in 1:length(robot_inputs.controls)
+        p = path[t].p + robot_inputs.controls[t].ds * path[t].dp
+        hd = path[t].hd + robot_inputs.controls[t].dhd
+        path[t+1] = Pose(p, hd)
+    end
+    return path
+end;
+
+# %% [markdown]
+# This code has the problem that it is **unphysical**: the walls in no way constrain the robot motion.
+#
+# We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance from the point of contact in the normal direction to the wall.
+
+# %%
+function physical_step(p1, p2, hd, world_inputs)
+    step_pose = Pose(p1, p2 - p1)
+    (s, i) = findmin(w -> distance(step_pose, w), world_inputs.walls)
+    if s > norm(p2 - p1)
+        # Step succeeds without contact with walls.
+        return Pose(p2, hd)
+    else
+        contact_point = p1 + s * step_pose.dp
+        unit_tangent = world_inputs.walls[i].dp / norm(world_inputs.walls[i].dp)
+        unit_normal = [-unit_tangent[2], unit_tangent[1]]
+        # Sign of 2D cross product determines orientation of bounce.
+        if step_pose.dp[1] * world_inputs.walls[i].dp[2] - step_pose.dp[2] * world_inputs.walls[i].dp[1] < 0.
+            unit_normal = -unit_normal
+        end
+        return Pose(contact_point + world_inputs.bounce * unit_normal, hd)
+    end
+end
+
+function integrate_controls(robot_inputs, world_inputs)
+    path = Vector{Pose}(undef, length(robot_inputs.controls) + 1)
+    path[1] = robot_inputs.start
+    for t in 1:length(robot_inputs.controls)
+        p = path[t].p + robot_inputs.controls[t].ds * path[t].dp
+        hd = path[t].hd + robot_inputs.controls[t].dhd
+        path[t+1] = physical_step(path[t].p, p, hd, world_inputs)
+    end
+    return path
+end;
+
+# %%
+# How bouncy the walls are in this world.
+world_inputs = (walls = world.walls, bounce = 0.1)
+
+path_integrated = integrate_controls(robot_inputs, world_inputs);
 
 # %%
 the_plot = plot_world(world, "Given data", label_world=true, show_clutters=true)
@@ -609,64 +690,6 @@ end;
 function integrate_controls_noisy(robot_inputs, world_inputs, motion_settings)
     return get_path(simulate(path_model, (length(robot_inputs.controls), robot_inputs, world_inputs, motion_settings)))
 end;
-
-# %% [markdown]
-# ### Ideal sensors
-#
-# We now, additionally, assume the robot is equipped with sensors that cast rays upon the environment at certain angles relative to the given pose, and return the distance to a hit.
-#
-# We first describe the ideal case, where the sensors return the true distances to the walls.
-
-# %%
-function sensor_distance(pose, walls, box_size)
-    d = minimum(distance(pose, seg) for seg in walls)
-    # Capping to a finite value avoids issues below.
-    return isinf(d) ? 2. * box_size : d
-end;
-
-sensor_angle(sensor_settings, j) =
-    sensor_settings.fov * (j - (sensor_settings.num_angles - 1) / 2.) / (sensor_settings.num_angles - 1)
-
-function ideal_sensor(pose, walls, sensor_settings)
-    readings = Vector{Float64}(undef, sensor_settings.num_angles)
-    for j in 1:sensor_settings.num_angles
-        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
-        readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
-    end
-    return readings
-end;
-
-# %%
-# Plot sensor data.
-
-function plot_sensors!(pose, color, readings, label, sensor_settings)
-    plot!([pose.p[1]], [pose.p[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
-    projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
-    plot!(first.(projections), last.(projections);
-            color=:blue, label=label, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
-    plot!([Segment(pose.p, pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
-end
-
-function frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false)
-    the_plot = plot_world(world, title; show_clutters=show_clutters)
-    plot!(poses; color=poses_color, label=poses_label)
-    plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
-    return the_plot
-end;
-
-# %%
-sensor_settings = (fov = 2π*(2/3), num_angles = 41, box_size = world.box_size)
-
-ani = Animation()
-for pose in path_integrated
-    frame_plot = frame_from_sensors(
-        world, "Ideal sensor distances",
-        path_integrated, :green2, "some path",
-        pose, ideal_sensor(pose, world.walls, sensor_settings), "ideal sensors",
-        sensor_settings)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/ideal_distances.gif", fps=1)
 
 # %% [markdown]
 # ### Noisy sensors
