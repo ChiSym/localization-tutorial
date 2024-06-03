@@ -2303,7 +2303,7 @@ rejuv_schedule =
      (grid_smcp3_kernel, grid_args_schedule)];
 
 # %%
-N_particles = 10
+N_particles = 1
 
 infos = particle_filter_fitness_infos(full_model, T, full_model_args, constraints_low_deviation, N_particles, ESS_threshold, fitness_test, rejuv_schedule)
 
@@ -2312,10 +2312,10 @@ for info in infos
     graph = frame_from_info(world, "Run of Controlled PF", path_low_deviation, "path to fit", info, "particles"; min_alpha=0.08)
     frame(ani, graph)
 end
-gif(ani, "imgs/PF_controlled.gif", fps=1)
+gif(ani, "imgs/PF_controlled.gif", fps=5)
 
 # %%
-N_particles = 10
+N_particles = 1
 
 N_samples = 10
 
