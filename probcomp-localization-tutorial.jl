@@ -32,6 +32,7 @@ Pkg.instantiate()
 using Dates: now, value
 using JSON: parsefile
 using Plots
+using Flux
 using Gen
 
 # Ensure a location for image generation.
@@ -74,6 +75,7 @@ struct Pose
     dp :: Vector{Float64}
     Pose(p :: Vector{Float64}, hd :: Float64) = new(p, rem2pi(hd, RoundNearest), [cos(hd), sin(hd)])
 end
+Pose(v :: Vector{Float64}) = Pose([v[1], v[2]], v[3])
 Pose(p :: Vector{Float64}, dp :: Vector{Float64}) = Pose(p, atan(dp[2], dp[1]))
 Base.show(io :: IO, p :: Pose) = Base.show(io, "Pose($(p.p), $(p.hd))")
 
@@ -264,6 +266,30 @@ for _ in 1:20
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/noisy_distances.gif", fps=1)
+
+# %% [markdown]
+# ## Single-pose localization
+#
+# We consider several approaches to the problem where, given a set of sensor readings taken from a single position of the robot, we are to determine the likely values of this position.
+
+# %% [markdown]
+# ### Using a neural net
+#
+# Let us start with a typical attack using a simple neural net.
+
+# %%
+function make_localizer_net(world, sensor_settings, N_training_data)
+    # Document this chioice of model!
+    net = Chain(Dense(sensor_settings.num_angles, length(world.walls), relu),
+                Dense(length(world.walls), 3, sigmoid))
+    # Minimize how log-unlikely the noisy sensor readings 
+    loss(model, sensors, pose) = ideal_sensor(Pose(model(sensors)))
+end
+
+# %% [markdown]
+# ## Localization in motion
+#
+# We turn to the scenario where the robot noisily executes of a program consisting of controls, and we are to use the sensor data to determine its likely path.
 
 # %% [markdown]
 # ### Integrate a path from a starting pose and controls
