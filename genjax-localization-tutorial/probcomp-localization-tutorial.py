@@ -25,14 +25,13 @@
 # Global setup code
 
 from __future__ import annotations
-import json  
+import json
 import genstudio.plot as Plot
-import matplotlib.pyplot as plt  
+import matplotlib.pyplot as plt
 
 import jax
 import jax.numpy as jnp
-import genjax 
-from genjax import interpreted_gen_fn, static_gen_fn
+import genjax
 
 import os
 from math import sin, cos, pi
@@ -71,12 +70,12 @@ class Pose:
     def __init__(self, p: np.ndarray, hd: Optional[float] = None, dp: Optional[np.ndarray] = None):
         """
         Initializes a Pose object either from a heading (hd) or a direction vector (dp).
-        
+
         Args:
             p (np.ndarray): The position as a numpy array [x, y].
             hd (float, optional): The heading in radians. Optional if dp is provided.
             dp (np.ndarray, optional): The direction vector as a numpy array [dx, dy]. Optional if hd is provided.
-        
+
         Raises:
             ValueError: If both 'hd' and 'dp' are None.
         """
@@ -96,10 +95,10 @@ class Pose:
     def step_along(self, s: float) -> Pose:
         """
         Moves along the direction of the pose by a scalar and returns a new Pose.
-        
+
         Args:
             s (float): The scalar distance to move along the pose's direction.
-        
+
         Returns:
             Pose: A new Pose object representing the moved position.
         """
@@ -109,10 +108,10 @@ class Pose:
     def rotate(self, a: float) -> Pose:
         """
         Rotates the pose by angle 'a' (in radians) and returns a new Pose.
-        
+
         Args:
             a (float): The angle in radians to rotate the pose.
-        
+
         Returns:
             Pose: A new Pose object representing the rotated pose.
         """
@@ -142,7 +141,7 @@ class Segment:
 
     def __repr__(self):
         return f"Segment({self.p1}, {self.p2})"
-# %% 
+# %%
 
 class Control:
     def __init__(self, ds: float, dhd: float):
@@ -159,14 +158,14 @@ def create_segments(verts, loop_around=False):
 def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     """
     Constructs the world by creating segments for walls and clutters, calculates the bounding box, and prepares the simulation parameters.
-    
+
     Args:
     - walls_vec (list of list of float): A list of 2D points representing the vertices of walls.
     - clutters_vec (list of list of list of float): A list where each element is a list of 2D points representing the vertices of a clutter.
     - start (Pose): The starting pose of the robot.
     - controls (list of Control): A list of control actions for the robot.
     - loop_around (bool, optional): Whether to connect the last and first vertices of walls and clutters. Defaults to False.
-    
+
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
@@ -174,20 +173,20 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     walls = create_segments(walls_vec, loop_around=loop_around)
     clutters = [create_segments(clutter, loop_around=loop_around) for clutter in clutters_vec]
     walls_clutters = walls + [item for sublist in clutters for item in sublist]
-    
+
     # Combine all points for bounding box calculation
     all_points_np = np.vstack((np.array(walls_vec), np.concatenate(clutters_vec), np.array([start.p])))
     x_min, y_min = np.min(all_points_np, axis=0)
     x_max, y_max = np.max(all_points_np, axis=0)
-    
+
     # Calculate bounding box, box size, and center point
     bounding_box = (x_min, x_max, y_min, y_max)
     box_size = max(x_max - x_min, y_max - y_min)
     center_point = np.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0])
-    
+
     # Determine the total number of control steps
     T = len(controls)
-    
+
     return ({'walls': walls, 'clutters': clutters, 'walls_clutters': walls_clutters,
              'bounding_box': bounding_box, 'box_size': box_size, 'center_point': center_point},
             {'start': start, 'controls': controls},
@@ -196,22 +195,22 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
 def load_world(file_name, loop_around=False):
     """
     Loads the world configuration from a specified file and constructs the world.
-    
+
     Args:
     - file_name (str): The name of the file containing the world configuration.
     - loop_around (bool, optional): Whether to connect the last and first vertices of walls and clutters. Defaults to False.
-    
+
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
     with open(file_name, 'r') as file:
         data = json.load(file)
-    
+
     walls_vec = [np.array(vert, dtype=float) for vert in data["wall_verts"]]
     clutters_vec = [np.array(clutter, dtype=float) for clutter in data["clutter_vert_groups"]]
     start = Pose(np.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"]))
     controls = [Control(float(control["ds"]), float(control["dhd"])) for control in data["program_controls"]]
-    
+
     return make_world(walls_vec, clutters_vec, start, controls, loop_around=loop_around)
 # %%
 # Specific example code here
@@ -227,19 +226,19 @@ world, robot_inputs, T = load_world("../example_20_program.json");
 def integrate_controls_unphysical(robot_inputs):
     """
     Integrates the controls to generate a path from the starting pose.
-    
+
     This function takes the initial pose and a series of control steps (ds for distance, dhd for heading change)
     and computes the resulting path by applying each control step sequentially.
-    
+
     Args:
     - robot_inputs (dict): A dictionary containing the starting pose and control steps.
-    
+
     Returns:
     - list: A list of Pose instances representing the path taken by applying the controls.
     """
     # Initialize the path with the starting pose
     path = [robot_inputs['start']]
-    
+
     # Iterate over each control step to compute the new pose and add it to the path
     for control in robot_inputs['controls']:
         # Compute the new position (p) by applying the distance change (ds) in the direction of dp
@@ -249,7 +248,7 @@ def integrate_controls_unphysical(robot_inputs):
         hd = path[-1].hd + control.dhd
         # Create a new Pose with the updated position and heading, and add it to the path
         path.append(Pose(p, hd))
-    
+
     return path
 
 # %% [markdown]
@@ -262,12 +261,12 @@ def integrate_controls_unphysical(robot_inputs):
 def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
     """
     Solves for the intersection of two lines defined by points and direction vectors.
-    
+
     Args:
     - p, u: Point and direction vector defining the first line.
     - q, v: Point and direction vector defining the second line.
     - PARALLEL_TOL: Tolerance for determining if lines are parallel.
-    
+
     Returns:
     - s, t: Parameters for the line equations at the intersection point. None if lines are parallel.
     """
@@ -282,11 +281,11 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
 def distance(p, seg):
     """
     Computes the distance from a pose to a segment, considering the pose's direction.
-    
+
     Args:
     - p: The Pose object.
     - seg: The Segment object.
-    
+
     Returns:
     - float: The distance to the segment. Returns infinity if no valid intersection is found.
     """
@@ -299,12 +298,12 @@ def distance(p, seg):
 def physical_step(p1, p2, hd, world_inputs):
     """
     Computes a physical step considering wall collisions and bounces.
-    
+
     Args:
     - p1, p2: Start and end points of the step.
     - hd: Heading direction.
     - world_inputs: dict containing world configuration, including walls and bounce distance.
-    
+
     Returns:
     - Pose: The new pose after taking the step, considering potential wall collisions.
     """
@@ -313,7 +312,7 @@ def physical_step(p1, p2, hd, world_inputs):
     distances = [distance(step_pose, wall) for wall in world_inputs['walls']]
     closest_wall_distance, closest_wall_index = min((dist, idx) for (idx, dist) in enumerate(distances))
     step_length = np.linalg.norm(step_direction)
-    
+
     if closest_wall_distance >= step_length:
         return Pose(p2, hd)
     else:
@@ -321,10 +320,10 @@ def physical_step(p1, p2, hd, world_inputs):
         wall_normal_direction = world_inputs['walls'][closest_wall_index].dp
         normalized_wall_direction = np.divide(wall_normal_direction, np.linalg.norm(wall_normal_direction))
         wall_normal = np.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
-        
+
         if np.cross(step_pose.dp, wall_normal_direction) < 0:
             wall_normal = -wall_normal
-        
+
         bounce_off_point = np.add(collision_point, np.multiply(world_inputs['bounce'], wall_normal))
         return Pose(bounce_off_point, hd)
 
@@ -332,11 +331,11 @@ def physical_step(p1, p2, hd, world_inputs):
 def integrate_controls(robot_inputs, world_inputs):
     """
     Integrates controls to generate a path, taking into account physical interactions with walls.
-    
+
     Args:
     - robot_inputs: Dictionary containing the starting pose and control steps.
     - world_inputs: Dictionary containing the world configuration.
-    
+
     Returns:
     - list: A list of Pose instances representing the path taken by applying the controls.
     """
@@ -365,16 +364,16 @@ def clutter_points(clutter):
         points.append(segment.p1)
     points.append(clutter[-1].p2)
     return points
-    
+
 def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi/4, **kwargs):
     leftWingAngle = heading + wingAngle
     rightWingAngle = heading - wingAngle
-    
-    leftWingEnd = [point[0] - wingLength * cos(leftWingAngle), 
+
+    leftWingEnd = [point[0] - wingLength * cos(leftWingAngle),
                    point[1] - wingLength * sin(leftWingAngle)]
     rightWingEnd = [point[0] - wingLength * cos(rightWingAngle),
                     point[1] - wingLength * sin(rightWingAngle)]
-    
+
     return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)
 
 def pose_arrow(p, r=0.5, **kwargs):
@@ -382,19 +381,19 @@ def pose_arrow(p, r=0.5, **kwargs):
     end = p.step_along(r).p
     opts = {'strokeWidth': 2, **kwargs}
     return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)
-    
+
 # Plot the world with walls only
 world_plot = Plot.new(
     [Plot.line([wall.p1, wall.p2], strokeWidth=1, stroke=Plot.constantly('walls'),) for wall in world['walls']],
         {'title': "Given data",
          'width': 500,
-         'height': 500, 
-         'margin': 0, 
+         'height': 500,
+         'margin': 0,
          'inset': 50},
          Plot.color_legend,
-         Plot.color_map({'walls': '#000000', 
+         Plot.color_map({'walls': '#000000',
                          'clutters': 'magenta',
-                         'path from integrating controls': 'lightgreen', 
+                         'path from integrating controls': 'lightgreen',
                          'given start pose': 'darkgreen'}),
          Plot.frame(strokeWidth=4, stroke="#ddd"))
 
@@ -406,7 +405,7 @@ controls_path_plot = Plot.dot([pose.p for pose in path_integrated], fill=Plot.co
 
 # Plot of the clutters
 clutters_plot = [Plot.line(clutter_points(clutter), fill=Plot.constantly('clutters'))
-              for clutter in world['clutters']]    
+              for clutter in world['clutters']]
 
 # Save the figure to a file
 # plt.savefig("imgs/given_data")
@@ -516,7 +515,7 @@ def get_function_def(func_name):
 
 print(get_function_def("start_pose_prior"))
 
-## source code highlighter as one reusable visualizer. 
+## source code highlighter as one reusable visualizer.
 ## initial state - grab source (eg. from current file given function def)
 ## then set highlights at different times t.
 ## the time-series db will show all the visualizers according to the current time (step).

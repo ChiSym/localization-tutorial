@@ -101,20 +101,20 @@ tests-no-zope = ["attrs[tests-mypy]", "cloudpickle", "hypothesis", "pympler", "p
 
 [[package]]
 name = "beartype"
-version = "0.16.4"
+version = "0.18.5"
 description = "Unbearably fast runtime type checking in pure Python."
 optional = false
 python-versions = ">=3.8.0"
 files = [
-    {file = "beartype-0.16.4-py3-none-any.whl", hash = "sha256:64865952f9dff1e17f22684b3c7286fc79754553b47eaefeb1286224ae8c1bd9"},
-    {file = "beartype-0.16.4.tar.gz", hash = "sha256:1ada89cf2d6eb30eb6e156eed2eb5493357782937910d74380918e53c2eae0bf"},
+    {file = "beartype-0.18.5-py3-none-any.whl", hash = "sha256:5301a14f2a9a5540fe47ec6d34d758e9cd8331d36c4760fc7a5499ab86310089"},
+    {file = "beartype-0.18.5.tar.gz", hash = "sha256:264ddc2f1da9ec94ff639141fbe33d22e12a9f75aa863b83b7046ffff1381927"},
 ]
 
 [package.extras]
 all = ["typing-extensions (>=3.10.0.0)"]
-dev = ["autoapi (>=0.9.0)", "coverage (>=5.5)", "mypy (>=0.800)", "numpy", "pandera", "pydata-sphinx-theme (<=0.7.2)", "pytest (>=4.0.0)", "sphinx", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)", "tox (>=3.20.1)", "typing-extensions (>=3.10.0.0)"]
+dev = ["autoapi (>=0.9.0)", "coverage (>=5.5)", "equinox", "mypy (>=0.800)", "numpy", "pandera", "pydata-sphinx-theme (<=0.7.2)", "pytest (>=4.0.0)", "sphinx", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)", "tox (>=3.20.1)", "typing-extensions (>=3.10.0.0)"]
 doc-rtd = ["autoapi (>=0.9.0)", "pydata-sphinx-theme (<=0.7.2)", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)"]
-test-tox = ["mypy (>=0.800)", "numpy", "pandera", "pytest (>=4.0.0)", "sphinx", "typing-extensions (>=3.10.0.0)"]
+test-tox = ["equinox", "mypy (>=0.800)", "numpy", "pandera", "pytest (>=4.0.0)", "sphinx", "typing-extensions (>=3.10.0.0)"]
 test-tox-coverage = ["coverage (>=5.5)"]
 
 [[package]]
@@ -180,26 +180,6 @@ files = [
 
 [package.dependencies]
 pycparser = "*"
-
-[[package]]
-name = "chex"
-version = "0.1.86"
-description = "Chex: Testing made fun, in JAX!"
-optional = false
-python-versions = ">=3.9"
-files = [
-    {file = "chex-0.1.86-py3-none-any.whl", hash = "sha256:251c20821092323a3d9c28e1cf80e4a58180978bec368f531949bd9847eee568"},
-    {file = "chex-0.1.86.tar.gz", hash = "sha256:e8b0f96330eba4144659e1617c0f7a57b161e8cbb021e55c6d5056c7378091d1"},
-]
-
-[package.dependencies]
-absl-py = ">=0.9.0"
-jax = ">=0.4.16"
-jaxlib = ">=0.1.37"
-numpy = ">=1.24.1"
-setuptools = {version = "*", markers = "python_version >= \"3.12\""}
-toolz = ">=0.9.0"
-typing-extensions = ">=4.2.0"
 
 [[package]]
 name = "cloudpickle"
@@ -378,21 +358,6 @@ wrapt = ">=1.10,<2"
 dev = ["PyTest", "PyTest-Cov", "bump2version (<1)", "sphinx (<2)", "tox"]
 
 [[package]]
-name = "dill"
-version = "0.3.8"
-description = "serialize all of Python"
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "dill-0.3.8-py3-none-any.whl", hash = "sha256:c36ca9ffb54365bdd2f8eb3eff7d2a21237f8452b57ace88b1ac615b7e815bd7"},
-    {file = "dill-0.3.8.tar.gz", hash = "sha256:3ebe3c479ad625c4553aca177444d89b486b1d84982eeacded644afc0cf797ca"},
-]
-
-[package.extras]
-graph = ["objgraph (>=1.7.2)"]
-profile = ["gprof2dot (>=2022.7.29)"]
-
-[[package]]
 name = "dm-tree"
 version = "0.1.8"
 description = "Tree is a library for working with nested data structures."
@@ -416,13 +381,6 @@ files = [
     {file = "dm_tree-0.1.8-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:fa42a605d099ee7d41ba2b5fb75e21423951fd26e5d50583a00471238fb3021d"},
     {file = "dm_tree-0.1.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:83b7764de0d855338abefc6e3ee9fe40d301668310aa3baea3f778ff051f4393"},
     {file = "dm_tree-0.1.8-cp311-cp311-win_amd64.whl", hash = "sha256:a5d819c38c03f0bb5b3b3703c60e4b170355a0fc6b5819325bf3d4ceb3ae7e80"},
-    {file = "dm_tree-0.1.8-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:ea9e59e0451e7d29aece402d9f908f2e2a80922bcde2ebfd5dcb07750fcbfee8"},
-    {file = "dm_tree-0.1.8-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:94d3f0826311f45ee19b75f5b48c99466e4218a0489e81c0f0167bda50cacf22"},
-    {file = "dm_tree-0.1.8-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:435227cf3c5dc63f4de054cf3d00183790bd9ead4c3623138c74dde7f67f521b"},
-    {file = "dm_tree-0.1.8-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:09964470f76a5201aff2e8f9b26842976de7889300676f927930f6285e256760"},
-    {file = "dm_tree-0.1.8-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:75c5d528bb992981c20793b6b453e91560784215dffb8a5440ba999753c14ceb"},
-    {file = "dm_tree-0.1.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c0a94aba18a35457a1b5cd716fd7b46c5dafdc4cf7869b4bae665b91c4682a8e"},
-    {file = "dm_tree-0.1.8-cp312-cp312-win_amd64.whl", hash = "sha256:96a548a406a6fb15fe58f6a30a57ff2f2aafbf25f05afab00c8f5e5977b6c715"},
     {file = "dm_tree-0.1.8-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:8c60a7eadab64c2278861f56bca320b2720f163dca9d7558103c3b77f2416571"},
     {file = "dm_tree-0.1.8-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:af4b3d372f2477dcd89a6e717e4a575ca35ccc20cc4454a8a4b6f8838a00672d"},
     {file = "dm_tree-0.1.8-cp37-cp37m-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:de287fabc464b8734be251e46e06aa9aa1001f34198da2b6ce07bd197172b9cb"},
@@ -569,30 +527,26 @@ files = [
 
 [[package]]
 name = "genjax"
-version = "0.2.1"
+version = "0.3.1.post258.dev0+b103dee7"
 description = "Probabilistic programming with Gen, built on top of JAX."
 optional = false
-python-versions = ">=3.9,<3.13"
+python-versions = ">=3.10,<3.13"
 files = [
-    {file = "genjax-0.2.1-py3-none-any.whl", hash = "sha256:d324a2b8bd61ab5fb8e6486469ed5a6e5bb977d08f4321301c8344ba26a1b142"},
-    {file = "genjax-0.2.1.tar.gz", hash = "sha256:3f9200d57ec84ff274d125f049fdbc11784bce2143158b84ed1552e499a52c2b"},
+    {file = "genjax-0.3.1.post258.dev0+b103dee7-py3-none-any.whl", hash = "sha256:970dc954b8963d4cab6f5e4ba4961b5f202bb067abafc86ad7adf00b01e57d94"},
+    {file = "genjax-0.3.1.post258.dev0+b103dee7.tar.gz", hash = "sha256:c781f404941b0b6dba4bbafcee877da02360eb2156f64cf5cbd736e05550f2f9"},
 ]
 
 [package.dependencies]
-beartype = ">=0.16.4,<0.17.0"
+beartype = ">=0.18.5,<0.19.0"
 deprecated = ">=1.2.14,<2.0.0"
-dill = ">=0.3.8,<0.4.0"
-equinox = ">=0.11.3,<0.12.0"
-jax = ">=0.4.24,<0.5.0"
-jaxtyping = ">=0.2.25,<0.3.0"
-numpy = ">=1.26.4,<2.0.0"
-optax = ">=0.1.9,<0.2.0"
-oryx = ">=0.2.6,<0.3.0"
-plum-dispatch = ">=2.3.2,<3.0.0"
-pygments = ">=2.17.2,<3.0.0"
-rich = ">=13.7.0,<14.0.0"
+jax = ">=0.4.28,<0.5.0"
+jaxtyping = ">=0.2.28,<0.3.0"
+penzai = ">=0.1.1,<0.2.0"
 tensorflow-probability = ">=0.23.0,<0.24.0"
-typing_extensions = ">=4.6.0,<5"
+
+[package.extras]
+all = ["msgpack (>=1.0.8,<2.0.0)"]
+msgpack = ["msgpack (>=1.0.8,<2.0.0)"]
 
 [package.source]
 type = "legacy"
@@ -675,6 +629,7 @@ optional = false
 python-versions = ">=3.10"
 files = [
     {file = "ipython-8.25.0-py3-none-any.whl", hash = "sha256:53eee7ad44df903a06655871cbab66d156a051fd86f3ec6750470ac9604ac1ab"},
+    {file = "ipython-8.25.0.tar.gz", hash = "sha256:c6ed726a140b6e725b911528f80439c534fac915246af3efc39440a6b0f9d716"},
 ]
 
 [package.dependencies]
@@ -1313,30 +1268,6 @@ docs = ["numpydoc", "sphinx (==1.2.3)", "sphinx-rtd-theme", "sphinxcontrib-napol
 tests = ["pytest", "pytest-cov", "pytest-pep8"]
 
 [[package]]
-name = "optax"
-version = "0.1.9"
-description = "A gradient processing and optimisation library in JAX."
-optional = false
-python-versions = ">=3.9"
-files = [
-    {file = "optax-0.1.9-py3-none-any.whl", hash = "sha256:3cbcfac6e70dff9484cd7560dc92e43a50df1eac0d4af2a1f7c2e1fd116bf972"},
-    {file = "optax-0.1.9.tar.gz", hash = "sha256:731f43e8b404f50a5ef025b1261894d7d0300f7ad9cb688ea08f67b40822e94f"},
-]
-
-[package.dependencies]
-absl-py = ">=0.7.1"
-chex = ">=0.1.7"
-jax = ">=0.1.55"
-jaxlib = ">=0.1.37"
-numpy = ">=1.18.0"
-
-[package.extras]
-docs = ["dm-haiku (>=0.0.11)", "ipython (>=8.8.0)", "matplotlib (>=3.5.0)", "myst-nb (>=1.0.0)", "sphinx (>=6.0.0)", "sphinx-autodoc-typehints", "sphinx-book-theme (>=1.0.1)", "sphinx-collections (>=0.0.1)", "sphinx-gallery (>=0.14.0)", "sphinxcontrib-katex", "tensorflow (>=2.4.0)", "tensorflow-datasets (>=4.2.0)"]
-dp-accounting = ["absl-py (>=1.0.0)", "attrs (>=21.4.0)", "mpmath (>=1.2.1)", "numpy (>=1.21.4)", "scipy (>=1.7.1)"]
-examples = ["dm-haiku (>=0.0.3)", "tensorflow (>=2.4.0)", "tensorflow-datasets (>=4.2.0)"]
-test = ["dm-haiku (>=0.0.3)", "dm-tree (>=0.1.7)", "flax (==0.5.3)"]
-
-[[package]]
 name = "ordered-set"
 version = "4.1.0"
 description = "An OrderedSet is a custom MutableSet that remembers its order, so that every"
@@ -1349,21 +1280,6 @@ files = [
 
 [package.extras]
 dev = ["black", "mypy", "pytest"]
-
-[[package]]
-name = "oryx"
-version = "0.2.7"
-description = "Probabilistic programming and deep learning in JAX"
-optional = false
-python-versions = "<4.0,>=3.9"
-files = [
-    {file = "oryx-0.2.7-py3-none-any.whl", hash = "sha256:f8d3816849fedd5dc208021699223d964caab1f316fe95c8c0e53af68c6bbfbc"},
-    {file = "oryx-0.2.7.tar.gz", hash = "sha256:6fa1fea1beae126a3d289cdda54c3852934e0587541cc60cbc53a366c6c9c953"},
-]
-
-[package.dependencies]
-jax = ">=0.4.6,<0.5.0"
-tensorflow-probability = ">=0.19.0"
 
 [[package]]
 name = "packaging"
@@ -1531,24 +1447,6 @@ files = [
 docs = ["furo (>=2023.9.10)", "proselint (>=0.13)", "sphinx (>=7.2.6)", "sphinx-autodoc-typehints (>=1.25.2)"]
 test = ["appdirs (==1.4.4)", "covdefaults (>=2.3)", "pytest (>=7.4.3)", "pytest-cov (>=4.1)", "pytest-mock (>=3.12)"]
 type = ["mypy (>=1.8)"]
-
-[[package]]
-name = "plum-dispatch"
-version = "2.4.1"
-description = "Multiple dispatch in Python"
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "plum_dispatch-2.4.1-py3-none-any.whl", hash = "sha256:015b35c3081706718282da7ab248eec34b0f87cfc4aaa7fbc98ad9c34ee84a94"},
-    {file = "plum_dispatch-2.4.1.tar.gz", hash = "sha256:23914fefc8ca79148c6acf04651f4916510a62e13f105bb7dc7c64de8587fe93"},
-]
-
-[package.dependencies]
-beartype = ">=0.16.2"
-rich = ">=10.0"
-
-[package.extras]
-dev = ["black (==23.9.0)", "build", "coveralls", "ghp-import", "ipython", "jupyter-book", "mypy", "numpy", "pre-commit", "pyright (>=1.1.331)", "pytest (>=6)", "pytest-cov", "ruff (==0.1.0)", "sybil", "tox", "wheel"]
 
 [[package]]
 name = "prompt-toolkit"
@@ -1757,7 +1655,6 @@ files = [
     {file = "PyYAML-6.0.1-cp311-cp311-win_amd64.whl", hash = "sha256:bf07ee2fef7014951eeb99f56f39c9bb4af143d8aa3c21b1677805985307da34"},
     {file = "PyYAML-6.0.1-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:855fb52b0dc35af121542a76b9a84f8d1cd886ea97c84703eaa6d88e37a2ad28"},
     {file = "PyYAML-6.0.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:40df9b996c2b73138957fe23a16a4f0ba614f4c0efce1e9406a184b6d07fa3a9"},
-    {file = "PyYAML-6.0.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a08c6f0fe150303c1c6b71ebcd7213c2858041a7e01975da3a99aed1e7a378ef"},
     {file = "PyYAML-6.0.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6c22bec3fbe2524cde73d7ada88f6566758a8f7227bfbf93a408a9d86bcc12a0"},
     {file = "PyYAML-6.0.1-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:8d4e9c88387b0f5c7d5f281e55304de64cf7f9c0021a3525bd3b1c542da3b0e4"},
     {file = "PyYAML-6.0.1-cp312-cp312-win32.whl", hash = "sha256:d483d2cdf104e7c9fa60c544d92981f12ad66a457afae824d146093b8c294c54"},
@@ -1906,24 +1803,6 @@ files = [
 [package.dependencies]
 attrs = ">=22.2.0"
 rpds-py = ">=0.7.0"
-
-[[package]]
-name = "rich"
-version = "13.7.1"
-description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
-optional = false
-python-versions = ">=3.7.0"
-files = [
-    {file = "rich-13.7.1-py3-none-any.whl", hash = "sha256:4edbae314f59eb482f54e9e30bf00d33350aaa94f4bfcd4e9e3110e64d0d7222"},
-    {file = "rich-13.7.1.tar.gz", hash = "sha256:9be308cb1fe2f1f57d67ce99e95af38a1e2bc71ad9813b0e247cf7ffbcc3a432"},
-]
-
-[package.dependencies]
-markdown-it-py = ">=2.2.0"
-pygments = ">=2.13.0,<3.0.0"
-
-[package.extras]
-jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "rpds-py"
@@ -2076,21 +1955,6 @@ doc = ["jupyterlite-pyodide-kernel", "jupyterlite-sphinx (>=0.12.0)", "jupytext"
 test = ["array-api-strict", "asv", "gmpy2", "hypothesis (>=6.30)", "mpmath", "pooch", "pytest", "pytest-cov", "pytest-timeout", "pytest-xdist", "scikit-umfpack", "threadpoolctl"]
 
 [[package]]
-name = "setuptools"
-version = "70.0.0"
-description = "Easily download, build, install, upgrade, and uninstall Python packages"
-optional = false
-python-versions = ">=3.8"
-files = [
-    {file = "setuptools-70.0.0-py3-none-any.whl", hash = "sha256:54faa7f2e8d2d11bcd2c07bed282eef1046b5c080d1c32add737d7b5817b1ad4"},
-    {file = "setuptools-70.0.0.tar.gz", hash = "sha256:f211a66637b8fa059bb28183da127d4e86396c991a942b028c6650d4319c3fd0"},
-]
-
-[package.extras]
-docs = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "pygments-github-lexers (==0.0.5)", "pyproject-hooks (!=1.1)", "rst.linker (>=1.9)", "sphinx (>=3.5)", "sphinx-favicon", "sphinx-inline-tabs", "sphinx-lint", "sphinx-notfound-page (>=1,<2)", "sphinx-reredirects", "sphinxcontrib-towncrier"]
-testing = ["build[virtualenv] (>=1.0.3)", "filelock (>=3.4.0)", "importlib-metadata", "ini2toml[lite] (>=0.14)", "jaraco.develop (>=7.21)", "jaraco.envs (>=2.2)", "jaraco.path (>=3.2.0)", "mypy (==1.9)", "packaging (>=23.2)", "pip (>=19.1)", "pyproject-hooks (!=1.1)", "pytest (>=6,!=8.1.1)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-enabler (>=2.2)", "pytest-home (>=0.5)", "pytest-mypy", "pytest-perf", "pytest-ruff (>=0.2.1)", "pytest-subprocess", "pytest-timeout", "pytest-xdist (>=3)", "tomli", "tomli-w (>=1.0.0)", "virtualenv (>=13.0.0)", "wheel"]
-
-[[package]]
 name = "six"
 version = "1.16.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -2153,17 +2017,6 @@ six = ">=1.10.0"
 [package.extras]
 jax = ["jax", "jaxlib"]
 tfds = ["tensorflow-datasets (>=2.2.0)"]
-
-[[package]]
-name = "toolz"
-version = "0.12.1"
-description = "List processing tools and functional utilities"
-optional = false
-python-versions = ">=3.7"
-files = [
-    {file = "toolz-0.12.1-py3-none-any.whl", hash = "sha256:d22731364c07d72eea0a0ad45bafb2c2937ab6fd38a3507bf55eae8744aa7d85"},
-    {file = "toolz-0.12.1.tar.gz", hash = "sha256:ecca342664893f177a13dac0e6b41cbd8ac25a358e5f215316d43e2100224f4d"},
-]
 
 [[package]]
 name = "tornado"
@@ -2417,4 +2270,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.12,<3.13"
-content-hash = "3de54510e7a624928d1d3351188c44dbf24b46b9be1cacdf53edd1f145802c51"
+content-hash = "8528be70e5c18f7260d7638e99a346dfb1245b5fbb5769f636375e4c4dcaddd4"
