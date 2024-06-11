@@ -16,8 +16,7 @@ matplotlib = "^3.8.3"
 anywidget = "^0.9.7"
 watchfiles = "^0.21.0"
 markdown = "^3.6"
-# gen-studio = {path = "../../gen-studio", develop = true}
-gen-studio = {git = "git+ssh://git@github.com/probcomp/gen-studio.git", rev = "3542ec16a10733fa3b342344c4d720d70f192bb5"}
+genstudio = {version = "2024.06.07.0931.49", source = "gcp"}
 
 [[tool.poetry.source]]
 name = "gcp"

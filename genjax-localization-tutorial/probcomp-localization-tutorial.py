@@ -26,13 +26,13 @@
 
 from __future__ import annotations
 import json  
-import gen.studio.plot as Plot
+import genstudio.plot as Plot
 import matplotlib.pyplot as plt  
 
 import jax
 import jax.numpy as jnp
 import genjax 
-from genjax import interpreted_gen_fn
+from genjax import interpreted_gen_fn, static_gen_fn
 
 import os
 from math import sin, cos, pi
@@ -349,9 +349,6 @@ def integrate_controls(robot_inputs, world_inputs):
 
 # %%
 
-import importlib 
-importlib.reload(Plot)
-
 # How bouncy the walls are in this world.
 world_inputs = {'walls': world['walls'], 'bounce': 0.1}
 
@@ -418,7 +415,6 @@ clutters_plot = [Plot.line(clutter_points(clutter), fill=Plot.constantly('clutte
 
 world_plot + controls_path_plot + starting_pose_plot + clutters_plot
 
-
 # %%
 
 
@@ -445,65 +441,19 @@ world_plot + controls_path_plot + starting_pose_plot + clutters_plot
 
 
 # %%
-@interpreted_gen_fn
+@static_gen_fn
 def start_pose_prior(start, motion_settings):
-    """
-    Defines a generative function for the prior distribution of the robot's starting pose.
-    
-    This function generates a sample for the starting position (p) and heading (hd) of the robot
-    based on the provided mean (start.p and start.hd) and the noise levels specified in the
-    motion_settings dictionary. The position is sampled from a multivariate normal distribution
-    with a diagonal covariance matrix where the variance is the square of the position noise level.
-    The heading is sampled from a normal distribution with a variance equal to the square of the
-    heading noise level.
-    
-    Args:
-    - start (Pose): The mean starting pose of the robot.
-    - motion_settings (dict): A dictionary containing the noise levels for position ('p_noise')
-                              and heading ('hd_noise').
-    
-    Returns:
-    - Pose: A Pose object representing the sampled starting pose of the robot.
-    """
-    # Sample the starting position from a multivariate normal distribution
     p = genjax.mv_normal(start.p, motion_settings['p_noise']**2 * np.eye(2)) @ "p"
-    # Sample the starting heading from a normal distribution
     hd = genjax.normal(start.hd, motion_settings['hd_noise']) @ "hd"
     return Pose(p, hd)
 
 
-@interpreted_gen_fn
+@static_gen_fn
 def step_model(start, c, world_inputs, motion_settings):
-    """
-    Defines a generative function for the robot's motion step model.
-    
-    This function generates a sample for the new position (p) and heading (hd) of the robot after
-    taking a step according to the control input (c). The new position is sampled from a multivariate
-    normal distribution centered around the predicted new position, which is calculated by moving
-    from the starting position (start.p) in the direction of the starting pose (start.dp) by a
-    distance specified by the control input (c.ds). The covariance matrix for the position is diagonal
-    with variance equal to the square of the position noise level. The new heading is sampled from a
-    normal distribution centered around the predicted new heading, which is the starting heading
-    (start.hd) plus the heading change specified by the control input (c.dhd), with variance equal to
-    the square of the heading noise level.
-    
-    Args:
-    - start (Pose): The starting pose of the robot before taking the step.
-    - c (Control): The control input specifying the distance to move forward (ds) and the change in
-                    heading (dhd).
-    - world_inputs (dict): A dictionary containing world-related inputs that may affect the step.
-    - motion_settings (dict): A dictionary containing the noise levels for position ('p_noise') and
-                              heading ('hd_noise').
-    
-    Returns:
-    - Pose: A Pose object representing the sampled pose of the robot after taking the step.
-    """
-    # Predict the new position and sample from a multivariate normal distribution
-    p = mvnormal(start.p + c.ds * start.dp, motion_settings['p_noise']**2 * np.eye(2)) @ "p"
-    # Predict the new heading and sample from a normal distribution
-    hd = normal(start.hd + c.dhd, motion_settings['hd_noise']) @ "hd"
-    # Return the result of a physical step with the sampled position and heading
+    p = genjax.mvnormal(start.p + c.ds * start.dp, motion_settings['p_noise']**2 * np.eye(2)) @ "p"
+    hd = genjax.normal(start.hd + c.dhd, motion_settings['hd_noise']) @ "hd"
     return physical_step(start.p, p, hd, world_inputs)
+
 # %% [markdown]
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
 
