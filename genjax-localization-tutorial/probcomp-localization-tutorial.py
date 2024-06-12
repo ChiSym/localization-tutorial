@@ -545,27 +545,17 @@ def poses_to_plots(poses):
 
 #poses_to_plots(poses)
 poses_plot = functools.reduce(lambda p, q: p+q, poses_to_plots(poses))
-#poses_to_plots(poses)
-world_plot + poses_plot
-#len(poses.p)
-#nth_pose(poses, 21)
-# %%
-poses_plot
-
-
-# Calculate the radius of the 95% confidence region
-std_devs_radius = 2.5 * motion_settings['p_noise']
 
 # Plot the world, starting pose samples, and 95% confidence region
-# the_plot = plot_world(world, "Start pose prior (samples)")
+
+# Calculate the radius of the 95% confidence region
+confidence_circle = Plot.scaled_circle(robot_inputs['start'].p[0], 
+                       robot_inputs['start'].p[1], r=2.5 * motion_settings['p_noise'], 
+                       opacity=0.25, fill='red')
+
+world_plot + confidence_circle + poses_plot
 
 
-std_devs_radius
-(
-    world_plot +
-    poses_plot +
-    Plot.dot([robot_inputs['start'].p], r=std_devs_radius * 25, opacity=0.25, fill='red')
-)
 # %%
 # %% [markdown]
 # ### Traces: choice maps
