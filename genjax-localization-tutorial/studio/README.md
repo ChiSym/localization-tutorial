@@ -1,2 +1,0 @@
-# OpenGen Studio 
-
