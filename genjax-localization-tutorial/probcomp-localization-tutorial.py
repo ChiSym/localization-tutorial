@@ -19,7 +19,7 @@
 # # ProbComp Localization Tutorial
 #
 # This notebook aims to give an introduction to probabilistic computation (ProbComp).  This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probablistic programming language (PPL).  The programmer can thus encode their probabilistic intuition for solving a problem into an algorithm.  Back-end language work automates the routine but error-prone derivations.
-
+#
 # Dependencies are specified in pyproject.toml.
 # %%
 # Global setup code
@@ -29,15 +29,16 @@ import json
 import genstudio.plot as Plot
 import matplotlib.pyplot as plt
 
+import functools
 import jax
 import jax.numpy as jnp
 import genjax
+from genjax import SelectionBuilder as S, ChoiceMapBuilder as C
+from penzai import pz
 
 import os
 from math import sin, cos, pi
 from typing import Optional
-
-import numpy as np
 
 
 # Ensure a location for image generation.
@@ -66,31 +67,38 @@ os.makedirs("imgs", exist_ok=True)
 # %%
 # General code here
 
-class Pose:
-    def __init__(self, p: np.ndarray, hd: Optional[float] = None, dp: Optional[np.ndarray] = None):
-        """
-        Initializes a Pose object either from a heading (hd) or a direction vector (dp).
+@pz.pytree_dataclass
+class Pose(genjax.Pytree):
+    p: genjax.typing.FloatArray
+    hd: genjax.typing.FloatArray
 
-        Args:
-            p (np.ndarray): The position as a numpy array [x, y].
-            hd (float, optional): The heading in radians. Optional if dp is provided.
-            dp (np.ndarray, optional): The direction vector as a numpy array [dx, dy]. Optional if hd is provided.
+    # def __init__(self, p: jnp.ndarray, hd: Optional[float] = None, dp: Optional[jnp.ndarray] = None):
+    #     """
+    #     Initializes a Pose object either from a heading (hd) or a direction vector (dp).
 
-        Raises:
-            ValueError: If both 'hd' and 'dp' are None.
-        """
-        self.p = p
-        if hd is not None:
-            self.hd = hd % (2 * pi)  # Ensuring the heading is within 0 to 2π
-            self.dp = np.array([np.cos(self.hd), np.sin(self.hd)])
-        elif dp is not None:
-            self.hd = np.arctan2(dp[1], dp[0])
-            self.dp = dp
-        else:
-            raise ValueError("Either 'hd' (heading) or 'dp' (direction vector) must be provided, not both None.")
+    #     Args:
+    #         p (jnp.ndarray): The position as a numpy array [x, y].
+    #         hd (float, optional): The heading in radians. Optional if dp is provided.
+    #         dp (jnp.ndarray, optional): The direction vector as a numpy array [dx, dy]. Optional if hd is provided.
+
+    #     Raises:
+    #         ValueError: If both 'hd' and 'dp' are None.
+    #     """
+    #     self.p = p
+    #     if hd is not None:
+    #         self.hd = hd % (2 * pi)  # Ensuring the heading is within 0 to 2π
+    #         self.dp = jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
+    #     elif dp is not None:
+    #         self.hd = jnp.arctan2(dp[1], dp[0])
+    #         self.dp = dp
+    #     else:
+    #         raise ValueError("Either 'hd' (heading) or 'dp' (direction vector) must be provided, not both None.")
 
     def __repr__(self):
         return f"Pose(p={self.p}, hd={self.hd})"
+
+    def dp(self):
+        return jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
 
     def step_along(self, s: float) -> Pose:
         """
@@ -102,7 +110,8 @@ class Pose:
         Returns:
             Pose: A new Pose object representing the moved position.
         """
-        new_p = self.p + s * self.dp
+        dp = self.dp()
+        new_p = self.p + s * dp
         return Pose(new_p, hd=self.hd)
 
     def rotate(self, a: float) -> Pose:
@@ -119,7 +128,7 @@ class Pose:
         return Pose(self.p, hd=new_hd)
 
 # Example usage:
-pose = Pose(np.array([1.0, 2.0]), hd=1.57)
+pose = Pose(jnp.array([1.0, 2.0]), hd=1.57)
 print(pose)
 
 # Move the pose along its direction
@@ -128,16 +137,13 @@ print(pose.step_along(5))
 # Rotate the pose
 print(pose.rotate(pi / 2))
 
-class Segment:
-    def __init__(self, p1, p2):
-        # If p1 and p2 are Pose objects, extract their positions.
-        if isinstance(p1, Pose) and isinstance(p2, Pose):
-            self.p1 = p1.p
-            self.p2 = p2.p
-        else:
-            self.p1 = np.array(p1)
-            self.p2 = np.array(p2)
-        self.dp = self.p2 - self.p1
+@pz.pytree_dataclass
+class Segment(genjax.Pytree):
+    p1: genjax.typing.FloatArray
+    p2: genjax.typing.FloatArray
+
+    def dp(self):
+        return self.p2 - self.p1
 
     def __repr__(self):
         return f"Segment({self.p1}, {self.p2})"
@@ -149,7 +155,7 @@ class Control:
         self.dhd = dhd
 
 def create_segments(verts, loop_around=False):
-    verts_np = np.array(verts)
+    verts_np = jnp.array(verts)
     segs = [Segment(p1, p2) for p1, p2 in zip(verts_np[:-1], verts_np[1:])]
     if loop_around:
         segs.append(Segment(verts_np[-1], verts_np[0]))
@@ -175,14 +181,14 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     walls_clutters = walls + [item for sublist in clutters for item in sublist]
 
     # Combine all points for bounding box calculation
-    all_points_np = np.vstack((np.array(walls_vec), np.concatenate(clutters_vec), np.array([start.p])))
-    x_min, y_min = np.min(all_points_np, axis=0)
-    x_max, y_max = np.max(all_points_np, axis=0)
+    all_points_np = jnp.vstack((jnp.array(walls_vec), jnp.concatenate(clutters_vec), jnp.array([start.p])))
+    x_min, y_min = jnp.min(all_points_np, axis=0)
+    x_max, y_max = jnp.max(all_points_np, axis=0)
 
     # Calculate bounding box, box size, and center point
     bounding_box = (x_min, x_max, y_min, y_max)
     box_size = max(x_max - x_min, y_max - y_min)
-    center_point = np.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0])
+    center_point = jnp.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0])
 
     # Determine the total number of control steps
     T = len(controls)
@@ -206,9 +212,9 @@ def load_world(file_name, loop_around=False):
     with open(file_name, 'r') as file:
         data = json.load(file)
 
-    walls_vec = [np.array(vert, dtype=float) for vert in data["wall_verts"]]
-    clutters_vec = [np.array(clutter, dtype=float) for clutter in data["clutter_vert_groups"]]
-    start = Pose(np.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"]))
+    walls_vec = [jnp.array(vert, dtype=float) for vert in data["wall_verts"]]
+    clutters_vec = [jnp.array(clutter, dtype=float) for clutter in data["clutter_vert_groups"]]
+    start = Pose(jnp.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"]))
     controls = [Control(float(control["ds"]), float(control["dhd"])) for control in data["program_controls"]]
 
     return make_world(walls_vec, clutters_vec, start, controls, loop_around=loop_around)
@@ -240,10 +246,17 @@ def integrate_controls_unphysical(robot_inputs):
     path = [robot_inputs['start']]
 
     # Iterate over each control step to compute the new pose and add it to the path
+
+    controls = robot_inputs['controls']
+    for i in range(len(controls.ds)):
+        p = path[-1].p + controls.ds[i]
+        hd = path[-1].hd + controls.dhd[i]
+        path.append(Pose(p, hd))
+
     for control in robot_inputs['controls']:
         # Compute the new position (p) by applying the distance change (ds) in the direction of dp
         # Note: dp is derived from the current heading (hd) to ensure movement in the correct direction
-        p = path[-1].p + control.ds * path[-1].dp
+        p = path[-1].p + control.ds * path[-1].dp()
         # Compute the new heading (hd) by adding the heading change (dhd)
         hd = path[-1].hd + control.dhd
         # Create a new Pose with the updated position and heading, and add it to the path
@@ -257,7 +270,6 @@ def integrate_controls_unphysical(robot_inputs):
 # We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance from the point of contact in the normal direction to the wall.
 
 # %%
-
 def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
     """
     Solves for the intersection of two lines defined by points and direction vectors.
@@ -269,14 +281,25 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
 
     Returns:
     - s, t: Parameters for the line equations at the intersection point. None if lines are parallel.
+    TODO: update commentary
     """
     det = u[0] * v[1] - u[1] * v[0]
-    if abs(det) < PARALLEL_TOL:
-        return None, None
-    else:
-        s = (v[0] * (p[1]-q[1]) - v[1] * (p[0]-q[0])) / det
-        t = (u[1] * (q[0]-p[0]) - u[0] * (q[1]-p[1])) / det
-        return s, t
+    return jnp.where(
+        jnp.less(jnp.abs(det), PARALLEL_TOL),
+        jnp.array([-jnp.inf, -jnp.inf]),
+        jnp.array([
+            (v[0] * (p[1]-q[1]) - v[1] * (p[0]-q[0])) / det,
+            (u[1] * (q[0]-p[0]) - u[0] * (q[1]-p[1])) / det
+        ])
+    )
+
+
+    # if abs(det) < PARALLEL_TOL:
+    #     return None, None
+    # else:
+    #     s = (v[0] * (p[1]-q[1]) - v[1] * (p[0]-q[0])) / det
+    #     t = (u[1] * (q[0]-p[0]) - u[0] * (q[1]-p[1])) / det
+    #     return s, t
 
 def distance(p, seg):
     """
@@ -289,11 +312,23 @@ def distance(p, seg):
     Returns:
     - float: The distance to the segment. Returns infinity if no valid intersection is found.
     """
-    s, t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
-    if s is None or s < 0 or not (0 <= t <= 1):
-        return np.inf
-    else:
-        return s
+    a = solve_lines(p.p, p.dp(), seg.p1, seg.dp())
+    return jnp.where(
+        jnp.logical_and(
+            jnp.greater_equal(a[0], 0.0),
+            jnp.logical_and(
+                jnp.greater_equal(a[1], 0.0),
+                jnp.less_equal(a[1], 1.0)
+            )
+        ),
+        a[0],
+        jnp.inf
+    )
+    # if s is None or s < 0 or not (0 <= t <= 1):
+    #     return jnp.inf
+    # else:
+    #     return s
+
 
 def physical_step(p1, p2, hd, world_inputs):
     """
@@ -307,27 +342,28 @@ def physical_step(p1, p2, hd, world_inputs):
     Returns:
     - Pose: The new pose after taking the step, considering potential wall collisions.
     """
-    step_direction = np.subtract(p2, p1)
-    step_pose = Pose(p1, dp=step_direction)
+    step_direction = p2 - p1
+    # TODO(huebert,colin): alternate constructor for Pose?
+    step_pose = Pose(p1, jnp.atan2(step_direction[0], step_direction[1]))
     distances = [distance(step_pose, wall) for wall in world_inputs['walls']]
     closest_wall_distance, closest_wall_index = min((dist, idx) for (idx, dist) in enumerate(distances))
-    step_length = np.linalg.norm(step_direction)
+    step_length = jnp.linalg.norm(step_direction)
 
     if closest_wall_distance >= step_length:
         return Pose(p2, hd)
     else:
-        collision_point = np.add(p1, np.multiply(closest_wall_distance, step_pose.dp))
-        wall_normal_direction = world_inputs['walls'][closest_wall_index].dp
-        normalized_wall_direction = np.divide(wall_normal_direction, np.linalg.norm(wall_normal_direction))
-        wall_normal = np.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
+        collision_point = jnp.add(p1, jnp.multiply(closest_wall_distance, step_pose.dp()))
+        wall_normal_direction = world_inputs['walls'][closest_wall_index].dp()
+        normalized_wall_direction = jnp.divide(wall_normal_direction, jnp.linalg.norm(wall_normal_direction))
+        wall_normal = jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
 
-        if np.cross(step_pose.dp, wall_normal_direction) < 0:
+        if jnp.cross(step_pose.dp(), wall_normal_direction) < 0:
             wall_normal = -wall_normal
 
-        bounce_off_point = np.add(collision_point, np.multiply(world_inputs['bounce'], wall_normal))
+        bounce_off_point = jnp.add(collision_point, jnp.multiply(world_inputs['bounce'], wall_normal))
         return Pose(bounce_off_point, hd)
 
-#%%
+# %%
 def integrate_controls(robot_inputs, world_inputs):
     """
     Integrates controls to generate a path, taking into account physical interactions with walls.
@@ -340,10 +376,17 @@ def integrate_controls(robot_inputs, world_inputs):
     - list: A list of Pose instances representing the path taken by applying the controls.
     """
     path = [robot_inputs['start']]
-    for control in robot_inputs['controls']:
-        next_position = path[-1].p + control.ds * path[-1].dp
-        next_heading = path[-1].hd + control.dhd
+
+    controls = robot_inputs['controls']
+    for i in range(len(controls.ds)):
+        next_position = path[-1].p + controls.ds[i] * path[-1].dp()
+        next_heading = path[-1].hd + controls.dhd[i]
         path.append(physical_step(path[-1].p, next_position, next_heading, world_inputs))
+
+    # for control in robot_inputs['controls']:
+    #     next_position = path[-1].p + control.ds * path[-1].dp()
+    #     next_heading = path[-1].hd + control.dhd
+    #     path.append(physical_step(path[-1].p, next_position, next_heading, world_inputs))
     return path
 
 # %%
@@ -440,18 +483,20 @@ world_plot + controls_path_plot + starting_pose_plot + clutters_plot
 
 
 # %%
-@static_gen_fn
+@genjax.gen
 def start_pose_prior(start, motion_settings):
-    p = genjax.mv_normal(start.p, motion_settings['p_noise']**2 * np.eye(2)) @ "p"
+    p = genjax.mv_normal(start.p, motion_settings['p_noise']**2 * jnp.eye(2)) @ "p"
     hd = genjax.normal(start.hd, motion_settings['hd_noise']) @ "hd"
     return Pose(p, hd)
 
-
-@static_gen_fn
+@genjax.gen
 def step_model(start, c, world_inputs, motion_settings):
-    p = genjax.mvnormal(start.p + c.ds * start.dp, motion_settings['p_noise']**2 * np.eye(2)) @ "p"
+    p = genjax.mv_normal(start.p + c.ds * start.dp(), motion_settings['p_noise']**2 * jnp.eye(2)) @ "p"
     hd = genjax.normal(start.hd + c.dhd, motion_settings['hd_noise']) @ "hd"
-    return physical_step(start.p, p, hd, world_inputs)
+    #return physical_step(start.p, p, hd, world_inputs)
+    # TODO(important!) temporarily nerfing physical_step to get the scan working
+    # while Mathieu is here
+    return Pose(p, hd)
 
 # %% [markdown]
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
@@ -459,9 +504,9 @@ def step_model(start, c, world_inputs, motion_settings):
 
 # %%
 # Generate points on the unit circle
-theta = np.linspace(0, 2*np.pi, 500)
-unit_circle_xs = np.cos(theta)
-unit_circle_ys = np.sin(theta)
+theta = jnp.linspace(0, 2*jnp.pi, 500)
+unit_circle_xs = jnp.cos(theta)
+unit_circle_ys = jnp.sin(theta)
 
 # Function to create a circle with center p and radius r
 def make_circle(p, r):
@@ -469,54 +514,242 @@ def make_circle(p, r):
 
 # %%
 # Set the motion settings
-motion_settings = {'p_noise': 0.5, 'hd_noise': 2*np.pi / 360}
+motion_settings = {'p_noise': 0.5, 'hd_noise': 2*jnp.pi / 36.}
 
 # Generate N_samples of starting poses from the prior
 N_samples = 50
 key = jax.random.PRNGKey(314159)
-key, *sub_keys = jax.random.split(key, N_samples + 1)
-pose_samples = [start_pose_prior.simulate(k, (robot_inputs['start'], motion_settings)) for k in sub_keys]
+
+sub_keys = jax.random.split(key, N_samples + 1)
+key = sub_keys[0]
+#pose_samples = [start_pose_prior.simulate(k, (robot_inputs['start'], motion_settings)) for k in sub_keys]
+pose_samples = jax.vmap(start_pose_prior.simulate, in_axes=(0, None))(sub_keys[1:], (robot_inputs['start'], motion_settings))
 
 
+poses = pose_samples.get_retval()
+poses
+def nth_pose(poses, n):
+    # TODO(colin,huebert): this is kind of (slightly) unfortunate until we JAXify
+    # the plotting services
+    return jax.tree_map(lambda v: v[n], poses)
 
+def poses_to_plots(poses):
+    return [pose_arrow(p) for p in [
+        nth_pose(poses, i) for i in range(len(poses.p))
+    ]]
 
-sampler(start_pose_prior, robot_inputs['start'], motion_settings)
-start_pose_prior.simulate(key, (robot_inputs['start'], motion_settings)).get_retval()
+#poses_to_plots(poses)
+poses_plot = functools.reduce(lambda p, q: p+q, poses_to_plots(poses))
+#poses_to_plots(poses)
+world_plot + poses_plot
+#len(poses.p)
+#nth_pose(poses, 21)
+# %%
+poses_plot
 
-# editorTextFocus &&  !notebookEditorFocused && isWorkspaceTrusted && jupyter.ownsSelection && !findInputFocussed && !replaceInputFocussed && editorLangId == 'python' &&
 
 # Calculate the radius of the 95% confidence region
 std_devs_radius = 2.5 * motion_settings['p_noise']
 
 # Plot the world, starting pose samples, and 95% confidence region
-the_plot = plot_world(world, "Start pose prior (samples)")
-circle_xs, circle_ys = make_circle(robot_inputs['start'].p, std_devs_radius)
-plt.fill(circle_xs, circle_ys, color='red', alpha=0.25, label="95% region")
-plt.plot([pose.choices['p'].value[0] for pose in pose_samples], [pose.choices['p'].value[1] for pose in pose_samples], 'r.', label="start pose samples")
-plt.legend()
-plt.savefig("imgs/start_prior.png")
-plt.show()
+# the_plot = plot_world(world, "Start pose prior (samples)")
+
+
+std_devs_radius
+(
+    world_plot +
+    poses_plot +
+    Plot.dot([robot_inputs['start'].p], r=std_devs_radius * 25, opacity=0.25, fill='red')
+)
+# %%
+# %% [markdown]
+# ### Traces: choice maps
+#
+# We can also perform *traced execution* of a generative function using the construct `Gen.simulate`.  This means that certain information is recorded during execution and packaged into a *trace*, and this trace is returned instead of the bare return value sample.
+#
+# The foremost information stored in the trace is the *choice map*, which is an associative array from labels to the labeled stochastic choices, i.e. occurrences of the `~` operator, that were encountered.  It is accessed by `Gen.get_choices`:
 
 # %%
-from pathlib import Path
+# `simulate` takes the GF plus a tuple of args to pass to it.
+# trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
+# get_choices(trace)
 
-def get_function_def(func_name):
-    source = Path(__file__).read_text()
-    lines = source.split('\n')
-    # Python functions start with 'def' followed by the function name and a colon
-    start_index = next((i for i, line in enumerate(lines) if line.strip().startswith(f"def {func_name}(")), None)
-    if start_index is None:
-        return None  # Function not found
-    # Find the end of the function by looking for a line that is not indented
-    end_index = next((i for i, line in enumerate(lines[start_index+1:], start_index+1) if not line.startswith((' ', '\t'))), None)
-    # If the end is not found, assume the function goes until the end of the file
-    end_index = end_index or len(lines)
-    return '\n'.join(lines[start_index:end_index])
+# NOTE(colin): we don't need to run simulate again; we already have
+# a trace from the plot above. We'll reuse that in what follows.
 
-print(get_function_def("start_pose_prior"))
+# %% [markdown]
+# The choice map being the point of focus of the trace in most discussions, we often abusively just speak of a *trace* when we really mean its *choice map*.
 
-## source code highlighter as one reusable visualizer.
-## initial state - grab source (eg. from current file given function def)
-## then set highlights at different times t.
-## the time-series db will show all the visualizers according to the current time (step).
+# %% [markdown]
+# ### GenJAX API for traces
+#
+# One can access the primitive choices in a trace using the method `get_choices`.
+# One can access from a trace the GF that produced it using `Gen.get_gen_fn`, along with with arguments that were supplied using `Gen.get_args`, and the return value sample of the GF using the method `get_retval()`.  See below the fold for examples of all these.
+
 # %%
+
+pose_choices = pose_samples.get_choices()
+
+
+# %%
+pose_choices['hd']
+
+# %%
+pose_choices['p']
+# %%
+pose_samples.get_gen_fn()
+
+# %%
+pose_samples.get_args()
+
+# %%
+pose_samples.get_retval()
+
+# TODO(colin,huebert): We have used a vector trace here, instead of a single
+# trace. That shows the JAX-induced structure. It might be simpler to simulate
+# to get a single trace without vmap, or go ahead and show the JAX stuff here.
+
+# %%
+
+# %% [markdown]
+# ### Traces: scores/weights/densities
+#
+# Traced execution of a generative function also produces a particular kind of score/weight/density.  It is very important to be clear about which score/weight/density value is to be expected, and why.  Consider the following generative function
+# ```
+# p = 0.25
+# @genjax.gen
+# def g(x,y):
+#   flip = genjax.flip(p) @ 'flip'
+#   return jax.lax.select(flip, x, y)
+# end
+# ```
+# that, given two inputs `x` and `y`, flips a coin with weight `p`, and accordingly returns `x` or `y`.  When `x` and `y` are unequal, a sensible reporting of the score/weight/density in the sampling process would produce `p` or `1.0-p` accordingly.  If the user supplied equal values `x == y`, then which score/weight/density should be returned?
+#
+# One tempting view identifies a GF with a *distribution over its return values*.  In this view, the correct score/weight/density of `g` above would be $1$.
+#
+# The mathematical picture would be as follows.  Given a stochastic function $g$ from $X$ to $X'$, the results of calling $g$ on the input $x$ are described by a probability distribution $k_{g;x}$ on $X'$.  A family of probability distributions of this form is called a *probability kernel* and is indicated by the dashed arrow $k_g \colon X \dashrightarrow X'$.  And for some $x,x'$ we would be seeking the density $k_{g;x}(x')$ with which the sample $x' \sim k_{g;x}$ occurs.  Pursuing this approach requires knowlege of all execution histories that $g$ that might have followed from $x$ to $x'$, and then performing a sum or integral over them.  For some small finite situations this may be fine, but this general problem of computing marginalizations is computationally impossible.
+#
+# The marginalization question is especially forced upon us when trying to compose stochastic functions.  Given a second stochastic function $g'$ from $X'$ to $X''$, corresponding to a probability kernel $k_{g'} \colon X' \dashrightarrow X''$, the composite $g' \circ g$ from $X$ to $X''$ should correspond to the following probability kernel $k_{g' \circ g} \colon X \dashrightarrow X''$.  To sample $x'' \sim k_{g' \circ g;x}$ means "sample $x' \sim k_{g;x}$, then sample $x'' \sim k_{g';x'}$, then return $x''$".  However, computing the density $k_{g' \circ g;x}(x'')$, even if one can compute $k_{g;x}(x')$ and $k_{g';x'}(x'')$ for any given $x,x',x''$, would require summing or integrating over all possible intermediate values $x'$ (which manifests an "execution history" of $g' \circ g$) that could have intervened in producing $x''$ given $x$.
+#
+# Therefore, distribution-over-return-values is ***not the viewpoint of Gen***, and the score/weight/density being introduced here is a ***different number***.
+#
+# The only thing a program can reasonably be expected to know is the score/weight/density of its arriving at its return value *via the particular stochastic computation path* that got it there, and the approach of Gen is to report this number.  The corresponding mathematical picture imagines GFs as factored into *distributions over choice maps*, whose score/weight/density is computable, together with *deterministic functions on these data* that produce the return value from them.  In mathematical language, a GF $g$ from $X$ to $X'$ corresponds to the data of an auxiliary space $U_g$ containing all of the choice map information, a probability kernel $k_g \colon X \dashrightarrow U_g$ (with computable density) embodying the stochastic execution history, and a deterministic function that we will (somewhat abusively) denote $g \colon X \times U_g \to X'$ embodying extraction of the return value from the particular stochastic execution choices.
+#
+# In the toy example `g` above, choice map consists of `flip` so the space $U_g$ is binary; the deterministic computation $g$ amounts to the `return` statement; and the score/weight/density is `p` or `1.0-p`, regardless of whether the inputs are equal.
+#
+# Tractable compositionality holds in this formulation; let's spell it out.  If another GF $g'$ from $X'$ to $X''$ has data $U_{g'}$, $k_{g'}$, and $g' \colon X' \times U_{g'} \to X''$, then the composite GF $g' \circ g$ from $X$ to $X''$ has the following data.
+# * The auxiliary space is $U_{g' \circ g} := U_g \times U_{g'}$.
+# * The kernel $k_{g' \circ g}$ is defined by "sample $u \sim k_{g;x}$, then compute $x' = \text{ret}_g(x,u)$, then sample $u' \sim k_{g';x'}$, then return $(u,u')$", and
+# * its density is computed via $k_{g' \circ g; x}(u,u') := k_{g;x}(u) \cdot k_{g';g(x,u)}(u')$.
+# * The return value function is $(g' \circ g)(x,(u,u')) := g'(g(x,u),u')$.
+#
+# As one composes more GFs, the auxiliary space accumulates more factors $U$, reflecting how the "execution history" consists of longer and longer records.
+#
+# In this picture, one may still be concerned with the distribution on return values as in the straw man viewpoint.  This information is still embodied in the aggregate of the stochastic executions that lead to any return value, together with their weights.  (Consider that this is true even in the toy example!  More math?)  In a sense, when we kick the can of marginalization down the road, we can proceed without difficulty.
+#
+# A final caveat: The common practice of confusing traces with their choice maps continues here, and we speak of a GF inducing a "distribution over traces".
+
+# %% [markdown]
+# Let's have a look at the score/weight/densities in our running example.
+#
+# A pose consists of a pair $z = (z_\text p, z_\text{hd})$ where $z_\text p$ is a position vector and $z_\text{hd}$ is an angle.  A control consists of a pair $(s, \eta)$ where $s$ is a distance of displacement and $\eta$ is a change in angle.  Write $u(\theta) = (\cos\theta, \sin\theta)$ for the unit vector in the direction $\theta$.  We are given a "world" $w$ and "motion settings" parameters $\nu = (\nu_\text p, \nu_\text{hd})$.
+#
+# The models `start_pose_prior` and `step_model` correspond to distributions over their traces, respectively written $\text{start}$ and $\text{step}$.  In both cases these traces consist of the choices at addresses `:p` and `:hd`, so they may be identified with poses $z$ as above.  The distributions are defined as follows, when $y$ is a pose:
+# * $z \sim \text{start}(y, \nu)$ means that $z_\text p \sim \text{mvnormal}(y_\text p, \nu_\text p^2 I)$ and $z_\text{hd} \sim \text{normal}(y_\text{hd}, \nu_\text{hd})$ independently.
+# * $z \sim \text{step}(y, (s, \eta), w, \nu)$ means that $z_\text p \sim \text{mvnormal}(y_\text p + s\,u(y_\text{hd}), \nu_\text p^2 I)$ and $z_\text{hd} \sim \text{normal}(y_\text{hd} + \eta, \nu_\text {hd})$ independently.
+#
+# The return values $\text{retval}(z)$ of these models are obtained from traces $z$ by reducing $z_\text{hd}$ modulo $2\pi$, and in the second case applying collision physics (relative to $w$) to the path from $y_\text p$ to $z_\text p$.  (We invite the reader to imagine if PropComp required us to compute the marginal density of the return value here!)  We have the following closed form for the density functions:
+# $$\begin{align*}
+# P_\text{start}(z; y, \nu)
+# &= P_\text{mvnormal}(z_\text p; y_\text p, \nu_\text p^2 I)
+# \cdot P_\text{normal}(z_\text{hd}; y_\text{hd}, \nu_\text{hd}), \\
+# P_\text{step}(z; y, (s, \eta), w, \nu)
+# &= P_\text{mvnormal}(z_\text p; y_\text p + s\,u(y_\text{hd}), \nu_\text p^2 I)
+# \cdot P_\text{normal}(z_\text{hd}; y_\text{hd} + \eta, \nu_\text{hd}).
+# \end{align*}$$
+#
+# In general, the density of any trace factors as the product of the densities of the individual primitive choices that appear in it.  Since the primitive distributions of the language are equipped with efficient probability density functions, this overall computation is tractable.  It is represented by `Gen.get_score`:
+
+# %%
+pose_samples.get_score()
+
+
+# %% [markdown]
+# #### Subscores/subweights/subdensities
+#
+# Instead of (the log of) the product of all the primitive choices made in a trace, one can take the product over just a subset using `Gen.project`.  See below the fold for examples.
+
+# %%
+
+jax.random.split(jax.random.PRNGKey(3333), N_samples).shape
+
+ps0 = jax.tree.map(lambda v: v[0], pose_samples)
+ps0.project(jax.random.PRNGKey(2), S[()]), \
+ps0.project(jax.random.PRNGKey(2), S['p']), \
+ps0.project(jax.random.PRNGKey(2), S['p'] | S['hd'])
+
+#ps0.get_choices()
+
+jax.vmap(pose_samples.project, in_axes=(0, None))(
+    jax.random.split(jax.random.PRNGKey(2), N_samples),
+    all
+)
+
+# jax.vmap(pose_samples.project, in_axes=(0, None))(
+#     jax.random.split(jax.random.PRNGKey(3333), N_samples),
+#     all
+# )
+# project(trace, select())
+
+# %%
+project(trace, select(:p))
+
+# %%
+project(trace, select(:hd))
+
+
+
+
+# %%
+project(trace, select(:p, :hd)) == get_score(trace)
+
+@genjax.gen
+def path_model_start(robot_inputs, motion_settings):
+    return start_pose_prior(robot_inputs['start'], motion_settings) @ ('initial', 'pose')
+
+def make_path_model_step(world_inputs, motion_settings):
+    @genjax.scan_combinator(max_length=T)
+    @genjax.gen
+    def path_model_step(previous_pose, control):
+        return step_model(previous_pose, control, world_inputs, motion_settings) @ ('steps', 'pose')
+
+    return path_model_step
+
+# @gen function path_model_loop(T, robot_inputs, world_inputs, motion_settings)
+#     pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
+
+#     for t in 1:T
+#         pose = {:steps => t => :pose} ~ step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)
+#     end
+# end
+
+# prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
+# get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
+key, sub_key1, sub_key2 = jax.random.split(key, 3)
+initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, motion_settings))
+path_model_step = make_path_model_step(world_inputs, motion_settings)
+#steps = path_model_step.simulate(sub_key2, (initial_pose.get_retval(), robot_inputs['controls']))
+#steps
+#robot_inputs['controls']
+#initial_pose.get_retval()
+
+jax.tree.map(lambda v: v[0], robot_inputs['controls'])
+step_model.simulate(
+    jax.random.PRNGKey(222),
+    (
+        initial_pose.get_retval(),
+        jax.tree.map(lambda v: v[0], robot_inputs['controls']),
+        world_inputs,
+        motion_settings
+    )
+)
