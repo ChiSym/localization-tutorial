@@ -726,7 +726,7 @@ def make_path_model_step(world_inputs, motion_settings):
     @genjax.scan_combinator(max_length=T)
     @genjax.gen
     def path_model_step(previous_pose, control):
-        return step_model(previous_pose, control, world_inputs, motion_settings) @ ('steps', 'pose')
+        return step_model(previous_pose, control, world_inputs, motion_settings) @ ('steps', 'pose'), None
 
     return path_model_step
 
@@ -758,3 +758,16 @@ step_model.simulate(
         motion_settings
     )
 )
+
+steps = jax.jit(path_model_step.simulate)(
+    sub_key2,
+    (initial_pose.get_retval(), robot_inputs['controls'])
+)
+
+steps
+
+# %%
+steps.inner.get_retval()
+# %%
+world_plot + poses_to_plots(steps.inner.get_retval()[0])
+# %%
