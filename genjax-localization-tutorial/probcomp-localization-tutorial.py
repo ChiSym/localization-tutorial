@@ -148,11 +148,11 @@ class Segment(genjax.Pytree):
     def __repr__(self):
         return f"Segment({self.p1}, {self.p2})"
 # %%
+@pz.pytree_dataclass
+class Control(genjax.Pytree):
+    ds: genjax.typing.FloatArray
+    dhd: genjax.typing.FloatArray
 
-class Control:
-    def __init__(self, ds: float, dhd: float):
-        self.ds = ds
-        self.dhd = dhd
 
 def create_segments(verts, loop_around=False):
     verts_np = jnp.array(verts)
@@ -191,7 +191,7 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     center_point = jnp.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0])
 
     # Determine the total number of control steps
-    T = len(controls)
+    T = len(controls.ds)
 
     return ({'walls': walls, 'clutters': clutters, 'walls_clutters': walls_clutters,
              'bounding_box': bounding_box, 'box_size': box_size, 'center_point': center_point},
@@ -215,7 +215,12 @@ def load_world(file_name, loop_around=False):
     walls_vec = [jnp.array(vert, dtype=float) for vert in data["wall_verts"]]
     clutters_vec = [jnp.array(clutter, dtype=float) for clutter in data["clutter_vert_groups"]]
     start = Pose(jnp.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"]))
-    controls = [Control(float(control["ds"]), float(control["dhd"])) for control in data["program_controls"]]
+    controls = Control(
+        # TODO: we don't have to iterate over that array twice
+        jnp.array([control['ds'] for control in data['program_controls']]),
+        jnp.array([control['dhd'] for control in data['program_controls']])
+    )
+
 
     return make_world(walls_vec, clutters_vec, start, controls, loop_around=loop_around)
 # %%
@@ -681,7 +686,7 @@ pose_samples.get_score()
 
 # %%
 
-jax.random.split(jax.random.PRNGKey(3333), N_samples).shape
+# jax.random.split(jax.random.PRNGKey(3333), N_samples).shape
 
 ps0 = jax.tree.map(lambda v: v[0], pose_samples)
 ps0.project(jax.random.PRNGKey(2), S[()]), \
@@ -690,10 +695,10 @@ ps0.project(jax.random.PRNGKey(2), S['p'] | S['hd'])
 
 #ps0.get_choices()
 
-jax.vmap(pose_samples.project, in_axes=(0, None))(
-    jax.random.split(jax.random.PRNGKey(2), N_samples),
-    all
-)
+# jax.vmap(pose_samples.project, in_axes=(0, None))(
+#     jax.random.split(jax.random.PRNGKey(2), N_samples),
+#     all
+# )
 
 # jax.vmap(pose_samples.project, in_axes=(0, None))(
 #     jax.random.split(jax.random.PRNGKey(3333), N_samples),
@@ -702,16 +707,16 @@ jax.vmap(pose_samples.project, in_axes=(0, None))(
 # project(trace, select())
 
 # %%
-project(trace, select(:p))
+# project(trace, select(:p))
 
 # %%
-project(trace, select(:hd))
+# project(trace, select(:hd))
 
 
 
 
 # %%
-project(trace, select(:p, :hd)) == get_score(trace)
+# project(trace, select(:p, :hd)) == get_score(trace)
 
 @genjax.gen
 def path_model_start(robot_inputs, motion_settings):
