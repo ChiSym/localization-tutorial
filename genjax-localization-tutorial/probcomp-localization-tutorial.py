@@ -147,6 +147,7 @@ class Segment(genjax.Pytree):
 
     def __repr__(self):
         return f"Segment({self.p1}, {self.p2})"
+
 # %%
 @pz.pytree_dataclass
 class Control(genjax.Pytree):
@@ -334,7 +335,10 @@ def distance(p, seg):
     # else:
     #     return s
 
-
+def compute_wall_normal(wall_normal_direction):
+        normalized_wall_direction = jnp.divide(wall_normal_direction, jnp.linalg.norm(wall_normal_direction))
+        return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
+    
 def physical_step(p1, p2, hd, world_inputs):
     """
     Computes a physical step considering wall collisions and bounces.
@@ -348,25 +352,28 @@ def physical_step(p1, p2, hd, world_inputs):
     - Pose: The new pose after taking the step, considering potential wall collisions.
     """
     step_direction = p2 - p1
-    # TODO(huebert,colin): alternate constructor for Pose?
-    step_pose = Pose(p1, jnp.atan2(step_direction[0], step_direction[1]))
-    distances = [distance(step_pose, wall) for wall in world_inputs['walls']]
-    closest_wall_distance, closest_wall_index = min((dist, idx) for (idx, dist) in enumerate(distances))
+    step_pose = Pose(p1, jnp.atan2(step_direction[1], step_direction[0]))
+    
+    # this should be a vmap of distance over world_inputs['vwalls'] with step_pose held constant
+    # using in_axes
+    distances = jnp.array([distance(step_pose, wall) for wall in world_inputs['walls']])
+    
+    closest_wall_index = jnp.argmin(distances)
+    closest_wall_distance = distances[closest_wall_index]
+    closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs['vwalls'])
+    wall_normal_direction = closest_wall.dp()
+    wall_normal = compute_wall_normal(wall_normal_direction)
     step_length = jnp.linalg.norm(step_direction)
-
-    if closest_wall_distance >= step_length:
-        return Pose(p2, hd)
-    else:
-        collision_point = jnp.add(p1, jnp.multiply(closest_wall_distance, step_pose.dp()))
-        wall_normal_direction = world_inputs['walls'][closest_wall_index].dp()
-        normalized_wall_direction = jnp.divide(wall_normal_direction, jnp.linalg.norm(wall_normal_direction))
-        wall_normal = jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
-
-        if jnp.cross(step_pose.dp(), wall_normal_direction) < 0:
-            wall_normal = -wall_normal
-
-        bounce_off_point = jnp.add(collision_point, jnp.multiply(world_inputs['bounce'], wall_normal))
-        return Pose(bounce_off_point, hd)
+    collision_point = jnp.add(p1, jnp.multiply(closest_wall_distance, step_pose.dp()))
+    wall_normal = jnp.where(jnp.cross(step_pose.dp(), wall_normal_direction) < 0,
+                            -wall_normal,
+                            wall_normal)
+    bounce_off_point = jnp.add(collision_point, jnp.multiply(world_inputs['bounce'], wall_normal))
+    
+    return Pose(jnp.where(
+                closest_wall_distance >= step_length,
+                p2, 
+                bounce_off_point), hd)
 
 # %%
 def integrate_controls(robot_inputs, world_inputs):
@@ -397,7 +404,14 @@ def integrate_controls(robot_inputs, world_inputs):
 # %%
 
 # How bouncy the walls are in this world.
-world_inputs = {'walls': world['walls'], 'bounce': 0.1}
+world_inputs = {
+    'walls': world['walls'], 
+    'bounce': 0.1,
+    'vwalls': Segment(
+        jnp.array([s.p1 for s in world['walls']]),
+        jnp.array([s.p2 for s in world['walls']])
+    )
+}
 
 path_integrated = integrate_controls(robot_inputs, world_inputs)
 
@@ -432,7 +446,7 @@ def pose_arrow(p, r=0.5, **kwargs):
 
 # Plot the world with walls only
 world_plot = Plot.new(
-    [Plot.line([wall.p1, wall.p2], strokeWidth=1, stroke=Plot.constantly('walls'),) for wall in world['walls']],
+    [Plot.line([wall.p1, wall.p2], strokeWidth=1, tip=True, stroke=Plot.constantly('walls'),) for wall in world['walls']],
         {'title': "Given data",
          'width': 500,
          'height': 500,
@@ -444,6 +458,8 @@ world_plot = Plot.new(
                          'path from integrating controls': 'lightgreen',
                          'given start pose': 'darkgreen'}),
          Plot.frame(strokeWidth=4, stroke="#ddd"))
+
+#%%
 
 # Plot of the starting pose of the robot
 starting_pose_plot = pose_arrow(robot_inputs['start'], stroke=Plot.constantly('given start pose'))
@@ -498,10 +514,7 @@ def start_pose_prior(start, motion_settings):
 def step_model(start, c, world_inputs, motion_settings):
     p = genjax.mv_normal(start.p + c.ds * start.dp(), motion_settings['p_noise']**2 * jnp.eye(2)) @ "p"
     hd = genjax.normal(start.hd + c.dhd, motion_settings['hd_noise']) @ "hd"
-    #return physical_step(start.p, p, hd, world_inputs)
-    # TODO(important!) temporarily nerfing physical_step to get the scan working
-    # while Mathieu is here
-    return Pose(p, hd)
+    return physical_step(start.p, p, hd, world_inputs)
 
 # %% [markdown]
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
@@ -738,7 +751,8 @@ path_model_step = make_path_model_step(world_inputs, motion_settings)
 #robot_inputs['controls']
 #initial_pose.get_retval()
 
-jax.tree.map(lambda v: v[0], robot_inputs['controls'])
+#%%
+
 step_model.simulate(
     jax.random.PRNGKey(222),
     (
@@ -749,7 +763,9 @@ step_model.simulate(
     )
 )
 
-steps = jax.jit(path_model_step.simulate)(
+jitted = jax.jit(path_model_step.simulate)
+
+steps = jitted(
     sub_key2,
     (initial_pose.get_retval(), robot_inputs['controls'])
 )
