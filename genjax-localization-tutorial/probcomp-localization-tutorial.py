@@ -338,7 +338,8 @@ def distance(p, seg):
 def compute_wall_normal(wall_normal_direction):
         normalized_wall_direction = jnp.divide(wall_normal_direction, jnp.linalg.norm(wall_normal_direction))
         return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
-    
+
+@jax.jit    
 def physical_step(p1, p2, hd, world_inputs):
     """
     Computes a physical step considering wall collisions and bounces.
@@ -356,7 +357,7 @@ def physical_step(p1, p2, hd, world_inputs):
     
     # this should be a vmap of distance over world_inputs['vwalls'] with step_pose held constant
     # using in_axes
-    distances = jnp.array([distance(step_pose, wall) for wall in world_inputs['walls']])
+    distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs['vwalls'])
     
     closest_wall_index = jnp.argmin(distances)
     closest_wall_distance = distances[closest_wall_index]
@@ -763,17 +764,23 @@ step_model.simulate(
     )
 )
 
+#%%
 jitted = jax.jit(path_model_step.simulate)
 
+#%%
+
+key, subkey = jax.random.split(key)
+
 steps = jitted(
-    sub_key2,
+    subkey,
     (initial_pose.get_retval(), robot_inputs['controls'])
 )
 
 steps
 
-# %%
-steps.inner.get_retval()
-# %%
 world_plot + poses_to_plots(steps.inner.get_retval()[0])
 # %%
+
+# arg_tuple = initial_pose.get_retval(), robot_inputs['controls']
+
+# Plot.autoGrid([world_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0]) for key in jax.random.split(key, 10)])
