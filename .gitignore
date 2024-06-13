@@ -1,3 +1,5 @@
 imgs/
 .ipynb_checkpoints/
 .vscode/
+
+Manifest.toml
