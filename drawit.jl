@@ -483,12 +483,12 @@ function bootstrap_with_code()
     function particle_filter_bootstrap(...)
         traces = Vector{Trace}(undef, N_particles)
         log_weights = Vector{Float64}(undef, N_particles)
-        
+
         for i in 1:N_particles
             traces[i], log_weights[i] =
                 ![c1[generate]]!(model, (0, args...), constraints[1])
         end
-        
+
         for t in 1:T
             traces, log_weights =
                 ![c2[resample]]!(traces, log_weights)
@@ -525,7 +525,7 @@ function smcp3_with_code()
     function particle_filter_rejuv(...)
         traces = Vector{Trace}(undef, N_particles)
         log_weights = Vector{Float64}(undef, N_particles)
-        
+
         for i in 1:N_particles
             traces[i], log_weights[i] =
                 ![c1[generate]]!(model, (0, args...), constraints[1])

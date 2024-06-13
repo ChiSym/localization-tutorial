@@ -8,7 +8,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.12,<3.13"
+python = ">=3.11,<3.13"
 jupytext = "^1.16.1"
 genjax = {version = "0.3.1.post258.dev0+b103dee7", source = "gcp"}
 ipykernel = "^6.29.3"
@@ -22,6 +22,11 @@ genstudio = {version = "2024.06.12.1730.50", source = "gcp"}
 name = "gcp"
 url = "https://us-west1-python.pkg.dev/probcomp-caliban/probcomp/simple/"
 priority = "explicit"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+include = ["genjax-localization-tutorial"]
 
 [build-system]
 requires = ["poetry-core"]
