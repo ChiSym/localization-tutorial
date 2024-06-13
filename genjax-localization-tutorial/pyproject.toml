@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "genjax-localization-tutorial"
+version = "0.1.0"
+description = ""
+authors = ["Matthew Huebert <mhuebert@gmail.com>"]
+readme = "README.md"
+
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+jupytext = "^1.16.1"
+genjax = {version = "0.3.1.post258.dev0+b103dee7", source = "gcp"}
+ipykernel = "^6.29.3"
+matplotlib = "^3.8.3"
+anywidget = "^0.9.7"
+watchfiles = "^0.21.0"
+markdown = "^3.6"
+genstudio = {version = "2024.06.12.1730.50", source = "gcp"}
+
+[[tool.poetry.source]]
+name = "gcp"
+url = "https://us-west1-python.pkg.dev/probcomp-caliban/probcomp/simple/"
+priority = "explicit"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
