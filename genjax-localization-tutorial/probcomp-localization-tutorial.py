@@ -27,7 +27,6 @@
 from __future__ import annotations
 import json
 import genstudio.plot as Plot
-import matplotlib.pyplot as plt
 
 import functools
 import jax
@@ -38,7 +37,6 @@ from penzai import pz
 
 import os
 from math import sin, cos, pi
-from typing import Optional
 
 
 # Ensure a location for image generation.
@@ -67,32 +65,11 @@ os.makedirs("imgs", exist_ok=True)
 # %%
 # General code here
 
+
 @pz.pytree_dataclass
 class Pose(genjax.Pytree):
     p: genjax.typing.FloatArray
     hd: genjax.typing.FloatArray
-
-    # def __init__(self, p: jnp.ndarray, hd: Optional[float] = None, dp: Optional[jnp.ndarray] = None):
-    #     """
-    #     Initializes a Pose object either from a heading (hd) or a direction vector (dp).
-
-    #     Args:
-    #         p (jnp.ndarray): The position as a numpy array [x, y].
-    #         hd (float, optional): The heading in radians. Optional if dp is provided.
-    #         dp (jnp.ndarray, optional): The direction vector as a numpy array [dx, dy]. Optional if hd is provided.
-
-    #     Raises:
-    #         ValueError: If both 'hd' and 'dp' are None.
-    #     """
-    #     self.p = p
-    #     if hd is not None:
-    #         self.hd = hd % (2 * pi)  # Ensuring the heading is within 0 to 2π
-    #         self.dp = jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
-    #     elif dp is not None:
-    #         self.hd = jnp.arctan2(dp[1], dp[0])
-    #         self.dp = dp
-    #     else:
-    #         raise ValueError("Either 'hd' (heading) or 'dp' (direction vector) must be provided, not both None.")
 
     def __repr__(self):
         return f"Pose(p={self.p}, hd={self.hd})"
@@ -127,6 +104,7 @@ class Pose(genjax.Pytree):
         new_hd = self.hd + a
         return Pose(self.p, hd=new_hd)
 
+
 # Example usage:
 pose = Pose(jnp.array([1.0, 2.0]), hd=1.57)
 print(pose)
@@ -137,17 +115,8 @@ print(pose.step_along(5))
 # Rotate the pose
 print(pose.rotate(pi / 2))
 
-@pz.pytree_dataclass
-class Segment(genjax.Pytree):
-    p1: genjax.typing.FloatArray
-    p2: genjax.typing.FloatArray
 
-    def dp(self):
-        return self.p2 - self.p1
-
-    def __repr__(self):
-        return f"Segment({self.p1}, {self.p2})"
-
+# %%
 # %%
 @pz.pytree_dataclass
 class Control(genjax.Pytree):
@@ -155,12 +124,13 @@ class Control(genjax.Pytree):
     dhd: genjax.typing.FloatArray
 
 
-def create_segments(verts, loop_around=False):
-    verts_np = jnp.array(verts)
-    segs = [Segment(p1, p2) for p1, p2 in zip(verts_np[:-1], verts_np[1:])]
-    if loop_around:
-        segs.append(Segment(verts_np[-1], verts_np[0]))
-    return segs
+def create_segments(points, loop_around=False):
+    """Given an array of points of shape (N, 2), return an array of
+    pairs of points. [p_1, p_2, p_3, ...] -> [[p_1, p_2], [p_2, p_3], ...]
+    where each p_i is is [x_i, y_i]"""
+    a = jnp.stack([points, jnp.roll(points, shift=-1, axis=0)], axis=1)
+    return a if loop_around else a[:-1]
+
 
 def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     """
@@ -178,11 +148,13 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     """
     # Create segments for walls and clutters
     walls = create_segments(walls_vec, loop_around=loop_around)
-    clutters = [create_segments(clutter, loop_around=loop_around) for clutter in clutters_vec]
-    walls_clutters = walls + [item for sublist in clutters for item in sublist]
+    clutters = jax.vmap(create_segments)(clutters_vec)
+    # clutters = [create_segments(clutter, loop_around=loop_around) for clutter in clutters_vec]
 
     # Combine all points for bounding box calculation
-    all_points_np = jnp.vstack((jnp.array(walls_vec), jnp.concatenate(clutters_vec), jnp.array([start.p])))
+    all_points_np = jnp.vstack(
+        (jnp.array(walls_vec), jnp.concatenate(clutters_vec), jnp.array([start.p]))
+    )
     x_min, y_min = jnp.min(all_points_np, axis=0)
     x_max, y_max = jnp.max(all_points_np, axis=0)
 
@@ -194,10 +166,18 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     # Determine the total number of control steps
     T = len(controls.ds)
 
-    return ({'walls': walls, 'clutters': clutters, 'walls_clutters': walls_clutters,
-             'bounding_box': bounding_box, 'box_size': box_size, 'center_point': center_point},
-            {'start': start, 'controls': controls},
-            T)
+    return (
+        {
+            "walls": walls,
+            "clutters": clutters,
+            "bounding_box": bounding_box,
+            "box_size": box_size,
+            "center_point": center_point,
+        },
+        {"start": start, "controls": controls},
+        T,
+    )
+
 
 def load_world(file_name, loop_around=False):
     """
@@ -210,29 +190,32 @@ def load_world(file_name, loop_around=False):
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
-    with open(file_name, 'r') as file:
+    with open(file_name, "r") as file:
         data = json.load(file)
 
-    walls_vec = [jnp.array(vert, dtype=float) for vert in data["wall_verts"]]
-    clutters_vec = [jnp.array(clutter, dtype=float) for clutter in data["clutter_vert_groups"]]
-    start = Pose(jnp.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"]))
+    walls_vec = jnp.array(data["wall_verts"])
+    clutters_vec = jnp.array(data["clutter_vert_groups"])
+    start = Pose(
+        jnp.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"])
+    )
     controls = Control(
-        # TODO: we don't have to iterate over that array twice
-        jnp.array([control['ds'] for control in data['program_controls']]),
-        jnp.array([control['dhd'] for control in data['program_controls']])
+        jnp.array([control["ds"] for control in data["program_controls"]]),
+        jnp.array([control["dhd"] for control in data["program_controls"]]),
     )
 
-
     return make_world(walls_vec, clutters_vec, start, controls, loop_around=loop_around)
+
+
 # %%
 # Specific example code here
 
-world, robot_inputs, T = load_world("../example_20_program.json");
+world, robot_inputs, T = load_world("../example_20_program.json")
 
 # %% [markdown]
 # ### Integrate a path from a starting pose and controls
 #
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
+
 
 # %%
 def integrate_controls_unphysical(robot_inputs):
@@ -249,17 +232,17 @@ def integrate_controls_unphysical(robot_inputs):
     - list: A list of Pose instances representing the path taken by applying the controls.
     """
     # Initialize the path with the starting pose
-    path = [robot_inputs['start']]
+    path = [robot_inputs["start"]]
 
     # Iterate over each control step to compute the new pose and add it to the path
 
-    controls = robot_inputs['controls']
+    controls = robot_inputs["controls"]
     for i in range(len(controls.ds)):
         p = path[-1].p + controls.ds[i]
         hd = path[-1].hd + controls.dhd[i]
         path.append(Pose(p, hd))
 
-    for control in robot_inputs['controls']:
+    for control in robot_inputs["controls"]:
         # Compute the new position (p) by applying the distance change (ds) in the direction of dp
         # Note: dp is derived from the current heading (hd) to ensure movement in the correct direction
         p = path[-1].p + control.ds * path[-1].dp()
@@ -270,10 +253,12 @@ def integrate_controls_unphysical(robot_inputs):
 
     return path
 
+
 # %% [markdown]
 # This code has the problem that it is **unphysical**: the walls in no way constrain the robot motion.
 #
 # We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance from the point of contact in the normal direction to the wall.
+
 
 # %%
 def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
@@ -291,21 +276,15 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
     """
     det = u[0] * v[1] - u[1] * v[0]
     return jnp.where(
-        jnp.less(jnp.abs(det), PARALLEL_TOL),
+        det < PARALLEL_TOL,
         jnp.array([-jnp.inf, -jnp.inf]),
-        jnp.array([
-            (v[0] * (p[1]-q[1]) - v[1] * (p[0]-q[0])) / det,
-            (u[1] * (q[0]-p[0]) - u[0] * (q[1]-p[1])) / det
-        ])
+        jnp.array(
+            [
+                (v[0] * (p[1] - q[1]) - v[1] * (p[0] - q[0])) / det,
+                (u[1] * (q[0] - p[0]) - u[0] * (q[1] - p[1])) / det,
+            ]
+        ),
     )
-
-
-    # if abs(det) < PARALLEL_TOL:
-    #     return None, None
-    # else:
-    #     s = (v[0] * (p[1]-q[1]) - v[1] * (p[0]-q[0])) / det
-    #     t = (u[1] * (q[0]-p[0]) - u[0] * (q[1]-p[1])) / det
-    #     return s, t
 
 def distance(p, seg):
     """
@@ -318,28 +297,26 @@ def distance(p, seg):
     Returns:
     - float: The distance to the segment. Returns infinity if no valid intersection is found.
     """
-    a = solve_lines(p.p, p.dp(), seg.p1, seg.dp())
+    a = solve_lines(p.p, p.dp(), seg[0], seg[1] - seg[0])
     return jnp.where(
-        jnp.logical_and(
-            jnp.greater_equal(a[0], 0.0),
-            jnp.logical_and(
-                jnp.greater_equal(a[1], 0.0),
-                jnp.less_equal(a[1], 1.0)
-            )
-        ),
+        (a[0] >= 0.0) & (a[1] >= 0.0) & (a[1] <= 1.0),
         a[0],
-        jnp.inf
+        jnp.inf,
     )
     # if s is None or s < 0 or not (0 <= t <= 1):
     #     return jnp.inf
     # else:
     #     return s
 
-def compute_wall_normal(wall_normal_direction):
-        normalized_wall_direction = jnp.divide(wall_normal_direction, jnp.linalg.norm(wall_normal_direction))
-        return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
 
-@jax.jit    
+def compute_wall_normal(wall_normal_direction):
+    normalized_wall_direction = jnp.divide(
+        wall_normal_direction, jnp.linalg.norm(wall_normal_direction)
+    )
+    return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
+
+
+@jax.jit
 def physical_step(p1, p2, hd, world_inputs):
     """
     Computes a physical step considering wall collisions and bounces.
@@ -354,27 +331,29 @@ def physical_step(p1, p2, hd, world_inputs):
     """
     step_direction = p2 - p1
     step_pose = Pose(p1, jnp.atan2(step_direction[1], step_direction[0]))
-    
+
     # this should be a vmap of distance over world_inputs['vwalls'] with step_pose held constant
     # using in_axes
-    distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs['vwalls'])
-    
+    distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs["walls"])
+
     closest_wall_index = jnp.argmin(distances)
     closest_wall_distance = distances[closest_wall_index]
-    closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs['vwalls'])
-    wall_normal_direction = closest_wall.dp()
+    closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs["walls"])
+    wall_normal_direction = closest_wall[1] - closest_wall[0]
     wall_normal = compute_wall_normal(wall_normal_direction)
     step_length = jnp.linalg.norm(step_direction)
     collision_point = jnp.add(p1, jnp.multiply(closest_wall_distance, step_pose.dp()))
-    wall_normal = jnp.where(jnp.cross(step_pose.dp(), wall_normal_direction) < 0,
-                            -wall_normal,
-                            wall_normal)
-    bounce_off_point = jnp.add(collision_point, jnp.multiply(world_inputs['bounce'], wall_normal))
-    
-    return Pose(jnp.where(
-                closest_wall_distance >= step_length,
-                p2, 
-                bounce_off_point), hd)
+    wall_normal = jnp.where(
+        jnp.cross(step_pose.dp(), wall_normal_direction) < 0, -wall_normal, wall_normal
+    )
+    bounce_off_point = jnp.add(
+        collision_point, jnp.multiply(world_inputs["bounce"], wall_normal)
+    )
+
+    return Pose(
+        jnp.where(closest_wall_distance >= step_length, p2, bounce_off_point), hd
+    )
+
 
 # %%
 def integrate_controls(robot_inputs, world_inputs):
@@ -388,13 +367,15 @@ def integrate_controls(robot_inputs, world_inputs):
     Returns:
     - list: A list of Pose instances representing the path taken by applying the controls.
     """
-    path = [robot_inputs['start']]
+    path = [robot_inputs["start"]]
 
-    controls = robot_inputs['controls']
+    controls = robot_inputs["controls"]
     for i in range(len(controls.ds)):
         next_position = path[-1].p + controls.ds[i] * path[-1].dp()
         next_heading = path[-1].hd + controls.dhd[i]
-        path.append(physical_step(path[-1].p, next_position, next_heading, world_inputs))
+        path.append(
+            physical_step(path[-1].p, next_position, next_heading, world_inputs)
+        )
 
     # for control in robot_inputs['controls']:
     #     next_position = path[-1].p + control.ds * path[-1].dp()
@@ -402,16 +383,13 @@ def integrate_controls(robot_inputs, world_inputs):
     #     path.append(physical_step(path[-1].p, next_position, next_heading, world_inputs))
     return path
 
+
 # %%
 
 # How bouncy the walls are in this world.
 world_inputs = {
-    'walls': world['walls'], 
-    'bounce': 0.1,
-    'vwalls': Segment(
-        jnp.array([s.p1 for s in world['walls']]),
-        jnp.array([s.p2 for s in world['walls']])
-    )
+    "walls": world["walls"],
+    "bounce": 0.1,
 }
 
 path_integrated = integrate_controls(robot_inputs, world_inputs)
@@ -421,64 +399,83 @@ path_integrated = integrate_controls(robot_inputs, world_inputs)
 
 # %%
 
+
 def clutter_points(clutter):
     points = []
     for segment in clutter:
-        points.append(segment.p1)
-    points.append(clutter[-1].p2)
+        points.append(segment[0])
+    points.append(clutter[-1][1])
     return points
 
-def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi/4, **kwargs):
+
+def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi / 4, **kwargs):
     leftWingAngle = heading + wingAngle
     rightWingAngle = heading - wingAngle
 
-    leftWingEnd = [point[0] - wingLength * cos(leftWingAngle),
-                   point[1] - wingLength * sin(leftWingAngle)]
-    rightWingEnd = [point[0] - wingLength * cos(rightWingAngle),
-                    point[1] - wingLength * sin(rightWingAngle)]
+    leftWingEnd = [
+        point[0] - wingLength * cos(leftWingAngle),
+        point[1] - wingLength * sin(leftWingAngle),
+    ]
+    rightWingEnd = [
+        point[0] - wingLength * cos(rightWingAngle),
+        point[1] - wingLength * sin(rightWingAngle),
+    ]
 
     return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)
+
 
 def pose_arrow(p, r=0.5, **kwargs):
     start = p.p
     end = p.step_along(r).p
-    opts = {'strokeWidth': 2, **kwargs}
+    opts = {"strokeWidth": 2, **kwargs}
     return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)
+
 
 # Plot the world with walls only
 world_plot = Plot.new(
-    [Plot.line([wall.p1, wall.p2], strokeWidth=1, tip=True, stroke=Plot.constantly('walls'),) for wall in world['walls']],
-        {'title': "Given data",
-         'width': 500,
-         'height': 500,
-         'margin': 0,
-         'inset': 50},
-         Plot.color_legend,
-         Plot.color_map({'walls': '#000000',
-                         'clutters': 'magenta',
-                         'path from integrating controls': 'lightgreen',
-                         'given start pose': 'darkgreen'}),
-         Plot.frame(strokeWidth=4, stroke="#ddd"))
-
-#%%
+    [
+        Plot.line(wall, strokeWidth=1, tip=False, stroke=Plot.constantly("walls"))
+        for wall in world["walls"]
+    ],
+    {"title": "Given data", "width": 500, "height": 500, "margin": 0, "inset": 50},
+    Plot.color_legend,
+    Plot.color_map(
+        {
+            "walls": "#000000",
+            "clutters": "magenta",
+            "path from integrating controls": "lightgreen",
+            "given start pose": "darkgreen",
+        }
+    ),
+    Plot.frame(strokeWidth=4, stroke="#ddd"),
+)
+world_plot + controls_path_plot + starting_pose_plot + clutters_plot
+# %%
 
 # Plot of the starting pose of the robot
-starting_pose_plot = pose_arrow(robot_inputs['start'], stroke=Plot.constantly('given start pose'))
+starting_pose_plot = pose_arrow(
+    robot_inputs["start"], stroke=Plot.constantly("given start pose")
+)
 
 # Plot of the path from integrating controls
-controls_path_plot = Plot.dot([pose.p for pose in path_integrated], fill=Plot.constantly('path from integrating controls'))
+controls_path_plot = Plot.dot(
+    [pose.p for pose in path_integrated],
+    fill=Plot.constantly("path from integrating controls"),
+)
 
 # Plot of the clutters
-clutters_plot = [Plot.line(clutter_points(clutter), fill=Plot.constantly('clutters'))
-              for clutter in world['clutters']]
+clutters_plot = [
+    Plot.line(clutter_points(clutter), fill=Plot.constantly("clutters"))
+    for clutter in world["clutters"]
+]
 
 # Save the figure to a file
 # plt.savefig("imgs/given_data")
 
 # Following this initial display of the given data, we suppress the clutters until much later in the notebook.
 
-world_plot + controls_path_plot + starting_pose_plot + clutters_plot
-
+# world_plot + controls_path_plot + starting_pose_plot + clutters_plot
+world_plot
 # %%
 
 
@@ -507,15 +504,22 @@ world_plot + controls_path_plot + starting_pose_plot + clutters_plot
 # %%
 @genjax.gen
 def start_pose_prior(start, motion_settings):
-    p = genjax.mv_normal(start.p, motion_settings['p_noise']**2 * jnp.eye(2)) @ "p"
-    hd = genjax.normal(start.hd, motion_settings['hd_noise']) @ "hd"
+    p = genjax.mv_normal(start.p, motion_settings["p_noise"] ** 2 * jnp.eye(2)) @ "p"
+    hd = genjax.normal(start.hd, motion_settings["hd_noise"]) @ "hd"
     return Pose(p, hd)
+
 
 @genjax.gen
 def step_model(start, c, world_inputs, motion_settings):
-    p = genjax.mv_normal(start.p + c.ds * start.dp(), motion_settings['p_noise']**2 * jnp.eye(2)) @ "p"
-    hd = genjax.normal(start.hd + c.dhd, motion_settings['hd_noise']) @ "hd"
+    p = (
+        genjax.mv_normal(
+            start.p + c.ds * start.dp(), motion_settings["p_noise"] ** 2 * jnp.eye(2)
+        )
+        @ "p"
+    )
+    hd = genjax.normal(start.hd + c.dhd, motion_settings["hd_noise"]) @ "hd"
     return physical_step(start.p, p, hd, world_inputs)
+
 
 # %% [markdown]
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
@@ -523,17 +527,19 @@ def step_model(start, c, world_inputs, motion_settings):
 
 # %%
 # Generate points on the unit circle
-theta = jnp.linspace(0, 2*jnp.pi, 500)
+theta = jnp.linspace(0, 2 * jnp.pi, 500)
 unit_circle_xs = jnp.cos(theta)
 unit_circle_ys = jnp.sin(theta)
+
 
 # Function to create a circle with center p and radius r
 def make_circle(p, r):
     return (p[0] + r * unit_circle_xs, p[1] + r * unit_circle_ys)
 
+
 # %%
 # Set the motion settings
-motion_settings = {'p_noise': 0.5, 'hd_noise': 2*jnp.pi / 36.}
+motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 
 # Generate N_samples of starting poses from the prior
 N_samples = 50
@@ -541,31 +547,32 @@ key = jax.random.PRNGKey(314159)
 
 sub_keys = jax.random.split(key, N_samples + 1)
 key = sub_keys[0]
-#pose_samples = [start_pose_prior.simulate(k, (robot_inputs['start'], motion_settings)) for k in sub_keys]
-pose_samples = jax.vmap(start_pose_prior.simulate, in_axes=(0, None))(sub_keys[1:], (robot_inputs['start'], motion_settings))
+# pose_samples = [start_pose_prior.simulate(k, (robot_inputs['start'], motion_settings)) for k in sub_keys]
+pose_samples = jax.vmap(start_pose_prior.simulate, in_axes=(0, None))(
+    sub_keys[1:], (robot_inputs["start"], motion_settings)
+)
 
 
 poses = pose_samples.get_retval()
 poses
-def nth_pose(poses, n):
-    # TODO(colin,huebert): this is kind of (slightly) unfortunate until we JAXify
-    # the plotting services
-    return jax.tree_map(lambda v: v[n], poses)
 
-def poses_to_plots(poses):
-    return [pose_arrow(p) for p in [
-        nth_pose(poses, i) for i in range(len(poses.p))
-    ]]
 
-#poses_to_plots(poses)
-poses_plot = functools.reduce(lambda p, q: p+q, poses_to_plots(poses))
+def poses_to_plots(poses: Pose):
+    return list(map(lambda p, hd: pose_arrow(Pose(p, hd)), poses.p, poses.hd))
+
+
+poses_plot = functools.reduce(lambda p, q: p + q, poses_to_plots(poses))
 
 # Plot the world, starting pose samples, and 95% confidence region
 
 # Calculate the radius of the 95% confidence region
-confidence_circle = Plot.scaled_circle(robot_inputs['start'].p[0], 
-                       robot_inputs['start'].p[1], r=2.5 * motion_settings['p_noise'], 
-                       opacity=0.25, fill='red')
+confidence_circle = Plot.scaled_circle(
+    robot_inputs["start"].p[0],
+    robot_inputs["start"].p[1],
+    r=2.5 * motion_settings["p_noise"],
+    opacity=0.25,
+    fill="red",
+)
 
 world_plot + confidence_circle + poses_plot
 
@@ -601,10 +608,10 @@ pose_choices = pose_samples.get_choices()
 
 
 # %%
-pose_choices['hd']
+pose_choices["hd"]
 
 # %%
-pose_choices['p']
+pose_choices["p"]
 # %%
 pose_samples.get_gen_fn()
 
@@ -693,11 +700,13 @@ pose_samples.get_score()
 # jax.random.split(jax.random.PRNGKey(3333), N_samples).shape
 
 ps0 = jax.tree.map(lambda v: v[0], pose_samples)
-ps0.project(jax.random.PRNGKey(2), S[()]), \
-ps0.project(jax.random.PRNGKey(2), S['p']), \
-ps0.project(jax.random.PRNGKey(2), S['p'] | S['hd'])
+(
+    ps0.project(jax.random.PRNGKey(2), S[()]),
+    ps0.project(jax.random.PRNGKey(2), S["p"]),
+    ps0.project(jax.random.PRNGKey(2), S["p"] | S["hd"]),
+)
 
-#ps0.get_choices()
+# ps0.get_choices()
 
 # jax.vmap(pose_samples.project, in_axes=(0, None))(
 #     jax.random.split(jax.random.PRNGKey(2), N_samples),
@@ -717,70 +726,68 @@ ps0.project(jax.random.PRNGKey(2), S['p'] | S['hd'])
 # project(trace, select(:hd))
 
 
-
-
 # %%
 # project(trace, select(:p, :hd)) == get_score(trace)
 
+
 @genjax.gen
 def path_model_start(robot_inputs, motion_settings):
-    return start_pose_prior(robot_inputs['start'], motion_settings) @ ('initial', 'pose')
+    return start_pose_prior(robot_inputs["start"], motion_settings) @ (
+        "initial",
+        "pose",
+    )
+
 
 def make_path_model_step(world_inputs, motion_settings):
     @genjax.scan_combinator(max_length=T)
     @genjax.gen
     def path_model_step(previous_pose, control):
-        return step_model(previous_pose, control, world_inputs, motion_settings) @ ('steps', 'pose'), None
+        return step_model(previous_pose, control, world_inputs, motion_settings) @ (
+            "steps",
+            "pose",
+        ), None
 
     return path_model_step
 
-# @gen function path_model_loop(T, robot_inputs, world_inputs, motion_settings)
-#     pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
-
-#     for t in 1:T
-#         pose = {:steps => t => :pose} ~ step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)
-#     end
-# end
 
 # prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 # get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
+
 key, sub_key1, sub_key2 = jax.random.split(key, 3)
 initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, motion_settings))
 path_model_step = make_path_model_step(world_inputs, motion_settings)
-#steps = path_model_step.simulate(sub_key2, (initial_pose.get_retval(), robot_inputs['controls']))
-#steps
-#robot_inputs['controls']
-#initial_pose.get_retval()
 
-#%%
+# %%
 
 step_model.simulate(
     jax.random.PRNGKey(222),
     (
         initial_pose.get_retval(),
-        jax.tree.map(lambda v: v[0], robot_inputs['controls']),
+        jax.tree.map(lambda v: v[0], robot_inputs["controls"]),
         world_inputs,
-        motion_settings
-    )
+        motion_settings,
+    ),
 )
 
-#%%
+# %%
 jitted = jax.jit(path_model_step.simulate)
 
-#%%
+# %%
 
-key, subkey = jax.random.split(key)
+arg_tuple = initial_pose.get_retval(), robot_inputs["controls"]
+key, sub_key = jax.random.split(key)
 
-steps = jitted(
-    subkey,
-    (initial_pose.get_retval(), robot_inputs['controls'])
-)
-
-steps
+steps = jitted(sub_key, arg_tuple)
 
 world_plot + poses_to_plots(steps.inner.get_retval()[0])
 # %%
 
-# arg_tuple = initial_pose.get_retval(), robot_inputs['controls']
+key, sub_key = jax.random.split(key)
+#Plot.autoGrid(
+Plot.new(
+[
+    world_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0])
+    for key in jax.random.split(key, 10)
+])
 
-# Plot.autoGrid([world_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0]) for key in jax.random.split(key, 10)])
+# %%
