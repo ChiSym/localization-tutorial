@@ -71,28 +71,6 @@ class Pose(genjax.Pytree):
     p: genjax.typing.FloatArray
     hd: genjax.typing.FloatArray
 
-    # def __init__(self, p: jnp.ndarray, hd: Optional[float] = None, dp: Optional[jnp.ndarray] = None):
-    #     """
-    #     Initializes a Pose object either from a heading (hd) or a direction vector (dp).
-
-    #     Args:
-    #         p (jnp.ndarray): The position as a numpy array [x, y].
-    #         hd (float, optional): The heading in radians. Optional if dp is provided.
-    #         dp (jnp.ndarray, optional): The direction vector as a numpy array [dx, dy]. Optional if hd is provided.
-
-    #     Raises:
-    #         ValueError: If both 'hd' and 'dp' are None.
-    #     """
-    #     self.p = p
-    #     if hd is not None:
-    #         self.hd = hd % (2 * pi)  # Ensuring the heading is within 0 to 2π
-    #         self.dp = jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
-    #     elif dp is not None:
-    #         self.hd = jnp.arctan2(dp[1], dp[0])
-    #         self.dp = dp
-    #     else:
-    #         raise ValueError("Either 'hd' (heading) or 'dp' (direction vector) must be provided, not both None.")
-
     def __repr__(self):
         return f"Pose(p={self.p}, hd={self.hd})"
 
@@ -137,19 +115,7 @@ print(pose.step_along(5))
 # Rotate the pose
 print(pose.rotate(pi / 2))
 
-
-@pz.pytree_dataclass
-class Segment(genjax.Pytree):
-    p1: genjax.typing.FloatArray
-    p2: genjax.typing.FloatArray
-
-    def dp(self):
-        return self.p2 - self.p1
-
-    def __repr__(self):
-        return f"Segment({self.p1}, {self.p2})"
-
-
+# %%
 # %%
 @pz.pytree_dataclass
 class Control(genjax.Pytree):
@@ -157,15 +123,14 @@ class Control(genjax.Pytree):
     dhd: genjax.typing.FloatArray
 
 
-def create_segments(verts, loop_around=False):
-    verts_np = jnp.array(verts)
-    segs = [Segment(p1, p2) for p1, p2 in zip(verts_np[:-1], verts_np[1:])]
-    if loop_around:
-        segs.append(Segment(verts_np[-1], verts_np[0]))
-    return segs
+def create_segments(points):
+    """Given an array of points of shape (N, 2), return an array of
+    pairs of points. [p_1, p_2, p_3, ...] -> [[p_1, p_2], [p_2, p_3], ...]
+    where each p_i is is [x_i, y_i]"""
+    return jnp.stack([points, jnp.roll(points, shift=-1, axis=0)], axis=1)
 
 
-def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
+def make_world(walls_vec, clutters_vec, start, controls):
     """
     Constructs the world by creating segments for walls and clutters, calculates the bounding box, and prepares the simulation parameters.
 
@@ -174,17 +139,13 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     - clutters_vec (list of list of list of float): A list where each element is a list of 2D points representing the vertices of a clutter.
     - start (Pose): The starting pose of the robot.
     - controls (list of Control): A list of control actions for the robot.
-    - loop_around (bool, optional): Whether to connect the last and first vertices of walls and clutters. Defaults to False.
 
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
     # Create segments for walls and clutters
-    walls = create_segments(walls_vec, loop_around=loop_around)
-    clutters = [
-        create_segments(clutter, loop_around=loop_around) for clutter in clutters_vec
-    ]
-    walls_clutters = walls + [item for sublist in clutters for item in sublist]
+    walls = create_segments(walls_vec)
+    clutters = jax.vmap(create_segments)(clutters_vec)
 
     # Combine all points for bounding box calculation
     all_points_np = jnp.vstack(
@@ -205,7 +166,6 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
         {
             "walls": walls,
             "clutters": clutters,
-            "walls_clutters": walls_clutters,
             "bounding_box": bounding_box,
             "box_size": box_size,
             "center_point": center_point,
@@ -215,13 +175,12 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     )
 
 
-def load_world(file_name, loop_around=False):
+def load_world(file_name):
     """
     Loads the world configuration from a specified file and constructs the world.
 
     Args:
     - file_name (str): The name of the file containing the world configuration.
-    - loop_around (bool, optional): Whether to connect the last and first vertices of walls and clutters. Defaults to False.
 
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
@@ -229,20 +188,16 @@ def load_world(file_name, loop_around=False):
     with open(file_name, "r") as file:
         data = json.load(file)
 
-    walls_vec = [jnp.array(vert, dtype=float) for vert in data["wall_verts"]]
-    clutters_vec = [
-        jnp.array(clutter, dtype=float) for clutter in data["clutter_vert_groups"]
-    ]
+    walls_vec = jnp.array(data["wall_verts"])
+    clutters_vec = jnp.array(data["clutter_vert_groups"])
     start = Pose(
         jnp.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"])
     )
-    controls = Control(
-        # TODO: we don't have to iterate over that array twice
-        jnp.array([control["ds"] for control in data["program_controls"]]),
-        jnp.array([control["dhd"] for control in data["program_controls"]]),
-    )
 
-    return make_world(walls_vec, clutters_vec, start, controls, loop_around=loop_around)
+    cs = jnp.array([[c["ds"], c["dhd"]] for c in data["program_controls"]])
+    controls = Control(cs[:, 0], cs[:, 1])
+
+    return make_world(walls_vec, clutters_vec, start, controls)
 
 
 # %%
@@ -281,15 +236,6 @@ def integrate_controls_unphysical(robot_inputs):
         hd = path[-1].hd + controls.dhd[i]
         path.append(Pose(p, hd))
 
-    for control in robot_inputs["controls"]:
-        # Compute the new position (p) by applying the distance change (ds) in the direction of dp
-        # Note: dp is derived from the current heading (hd) to ensure movement in the correct direction
-        p = path[-1].p + control.ds * path[-1].dp()
-        # Compute the new heading (hd) by adding the heading change (dhd)
-        hd = path[-1].hd + control.dhd
-        # Create a new Pose with the updated position and heading, and add it to the path
-        path.append(Pose(p, hd))
-
     return path
 
 
@@ -315,7 +261,7 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
     """
     det = u[0] * v[1] - u[1] * v[0]
     return jnp.where(
-        jnp.less(jnp.abs(det), PARALLEL_TOL),
+        det < PARALLEL_TOL,
         jnp.array([-jnp.inf, -jnp.inf]),
         jnp.array(
             [
@@ -324,13 +270,6 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
             ]
         ),
     )
-
-    # if abs(det) < PARALLEL_TOL:
-    #     return None, None
-    # else:
-    #     s = (v[0] * (p[1]-q[1]) - v[1] * (p[0]-q[0])) / det
-    #     t = (u[1] * (q[0]-p[0]) - u[0] * (q[1]-p[1])) / det
-    #     return s, t
 
 
 def distance(p, seg):
@@ -344,19 +283,12 @@ def distance(p, seg):
     Returns:
     - float: The distance to the segment. Returns infinity if no valid intersection is found.
     """
-    a = solve_lines(p.p, p.dp(), seg.p1, seg.dp())
+    a = solve_lines(p.p, p.dp(), seg[0], seg[1] - seg[0])
     return jnp.where(
-        jnp.logical_and(
-            jnp.greater_equal(a[0], 0.0),
-            jnp.logical_and(jnp.greater_equal(a[1], 0.0), jnp.less_equal(a[1], 1.0)),
-        ),
+        (a[0] >= 0.0) & (a[1] >= 0.0) & (a[1] <= 1.0),
         a[0],
         jnp.inf,
     )
-    # if s is None or s < 0 or not (0 <= t <= 1):
-    #     return jnp.inf
-    # else:
-    #     return s
 
 
 def compute_wall_normal(wall_normal_direction):
@@ -384,12 +316,12 @@ def physical_step(p1, p2, hd, world_inputs):
 
     # this should be a vmap of distance over world_inputs['vwalls'] with step_pose held constant
     # using in_axes
-    distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs["vwalls"])
+    distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs["walls"])
 
     closest_wall_index = jnp.argmin(distances)
     closest_wall_distance = distances[closest_wall_index]
-    closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs["vwalls"])
-    wall_normal_direction = closest_wall.dp()
+    closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs["walls"])
+    wall_normal_direction = closest_wall[1] - closest_wall[0]
     wall_normal = compute_wall_normal(wall_normal_direction)
     step_length = jnp.linalg.norm(step_direction)
     collision_point = jnp.add(p1, jnp.multiply(closest_wall_distance, step_pose.dp()))
@@ -427,10 +359,6 @@ def integrate_controls(robot_inputs, world_inputs):
             physical_step(path[-1].p, next_position, next_heading, world_inputs)
         )
 
-    # for control in robot_inputs['controls']:
-    #     next_position = path[-1].p + control.ds * path[-1].dp()
-    #     next_heading = path[-1].hd + control.dhd
-    #     path.append(physical_step(path[-1].p, next_position, next_heading, world_inputs))
     return path
 
 
@@ -440,10 +368,6 @@ def integrate_controls(robot_inputs, world_inputs):
 world_inputs = {
     "walls": world["walls"],
     "bounce": 0.1,
-    "vwalls": Segment(
-        jnp.array([s.p1 for s in world["walls"]]),
-        jnp.array([s.p2 for s in world["walls"]]),
-    ),
 }
 
 path_integrated = integrate_controls(robot_inputs, world_inputs)
@@ -452,14 +376,6 @@ path_integrated = integrate_controls(robot_inputs, world_inputs)
 # ### Plot such data
 
 # %%
-
-
-def clutter_points(clutter):
-    points = []
-    for segment in clutter:
-        points.append(segment.p1)
-    points.append(clutter[-1].p2)
-    return points
 
 
 def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi / 4, **kwargs):
@@ -488,12 +404,7 @@ def pose_arrow(p, r=0.5, **kwargs):
 # Plot the world with walls only
 world_plot = Plot.new(
     [
-        Plot.line(
-            [wall.p1, wall.p2],
-            strokeWidth=1,
-            tip=True,
-            stroke=Plot.constantly("walls"),
-        )
+        Plot.line(wall, strokeWidth=1, tip=False, stroke=Plot.constantly("walls"))
         for wall in world["walls"]
     ],
     {"title": "Given data", "width": 500, "height": 500, "margin": 0, "inset": 50},
@@ -508,7 +419,7 @@ world_plot = Plot.new(
     ),
     Plot.frame(strokeWidth=4, stroke="#ddd"),
 )
-
+world_plot
 # %%
 
 # Plot of the starting pose of the robot
@@ -524,17 +435,17 @@ controls_path_plot = Plot.dot(
 
 # Plot of the clutters
 clutters_plot = [
-    Plot.line(clutter_points(clutter), fill=Plot.constantly("clutters"))
-    for clutter in world["clutters"]
+    Plot.line(c[:, 0], fill=Plot.constantly("clutters")) for c in world["clutters"]
 ]
+
+world_plot + controls_path_plot + starting_pose_plot + clutters_plot
 
 # Save the figure to a file
 # plt.savefig("imgs/given_data")
 
 # Following this initial display of the given data, we suppress the clutters until much later in the notebook.
 
-world_plot + controls_path_plot + starting_pose_plot + clutters_plot
-
+# world_plot + controls_path_plot + starting_pose_plot + clutters_plot
 # %%
 
 
@@ -615,18 +526,9 @@ pose_samples = jax.vmap(start_pose_prior.simulate, in_axes=(0, None))(
 poses = pose_samples.get_retval()
 poses
 
+def poses_to_plots(poses: Pose):
+    return list(map(lambda p, hd: pose_arrow(Pose(p, hd)), poses.p, poses.hd))
 
-def nth_pose(poses, n):
-    # TODO(colin,huebert): this is kind of (slightly) unfortunate until we JAXify
-    # the plotting services
-    return jax.tree_map(lambda v: v[n], poses)
-
-
-def poses_to_plots(poses):
-    return [pose_arrow(p) for p in [nth_pose(poses, i) for i in range(len(poses.p))]]
-
-
-# poses_to_plots(poses)
 poses_plot = functools.reduce(lambda p, q: p + q, poses_to_plots(poses))
 
 # Plot the world, starting pose samples, and 95% confidence region
@@ -815,24 +717,12 @@ def make_path_model_step(world_inputs, motion_settings):
 
     return path_model_step
 
-
-# @gen function path_model_loop(T, robot_inputs, world_inputs, motion_settings)
-#     pose = {:initial => :pose} ~ start_pose_prior(robot_inputs.start, motion_settings)
-
-#     for t in 1:T
-#         pose = {:steps => t => :pose} ~ step_model(pose, robot_inputs.controls[t], world_inputs, motion_settings)
-#     end
-# end
-
 # prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 # get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
+
 key, sub_key1, sub_key2 = jax.random.split(key, 3)
 initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, motion_settings))
 path_model_step = make_path_model_step(world_inputs, motion_settings)
-# steps = path_model_step.simulate(sub_key2, (initial_pose.get_retval(), robot_inputs['controls']))
-# steps
-# robot_inputs['controls']
-# initial_pose.get_retval()
 
 # %%
 
@@ -851,15 +741,21 @@ jitted = jax.jit(path_model_step.simulate)
 
 # %%
 
-key, subkey = jax.random.split(key)
+arg_tuple = initial_pose.get_retval(), robot_inputs["controls"]
+key, sub_key = jax.random.split(key)
 
-steps = jitted(subkey, (initial_pose.get_retval(), robot_inputs["controls"]))
-
-steps
+steps = jitted(sub_key, arg_tuple)
 
 world_plot + poses_to_plots(steps.inner.get_retval()[0])
 # %%
 
-# arg_tuple = initial_pose.get_retval(), robot_inputs['controls']
+key, sub_key = jax.random.split(key)
+# Plot.autoGrid(
+Plot.new(
+    [
+        world_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0])
+        for key in jax.random.split(key, 10)
+    ]
+)
 
-# Plot.autoGrid([world_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0]) for key in jax.random.split(key, 10)])
+# %%
