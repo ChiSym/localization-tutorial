@@ -124,15 +124,14 @@ class Control(genjax.Pytree):
     dhd: genjax.typing.FloatArray
 
 
-def create_segments(points, loop_around=False):
+def create_segments(points):
     """Given an array of points of shape (N, 2), return an array of
     pairs of points. [p_1, p_2, p_3, ...] -> [[p_1, p_2], [p_2, p_3], ...]
     where each p_i is is [x_i, y_i]"""
-    a = jnp.stack([points, jnp.roll(points, shift=-1, axis=0)], axis=1)
-    return a if loop_around else a[:-1]
+    return jnp.stack([points, jnp.roll(points, shift=-1, axis=0)], axis=1)
 
 
-def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
+def make_world(walls_vec, clutters_vec, start, controls):
     """
     Constructs the world by creating segments for walls and clutters, calculates the bounding box, and prepares the simulation parameters.
 
@@ -141,15 +140,13 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     - clutters_vec (list of list of list of float): A list where each element is a list of 2D points representing the vertices of a clutter.
     - start (Pose): The starting pose of the robot.
     - controls (list of Control): A list of control actions for the robot.
-    - loop_around (bool, optional): Whether to connect the last and first vertices of walls and clutters. Defaults to False.
 
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
     # Create segments for walls and clutters
-    walls = create_segments(walls_vec, loop_around=loop_around)
+    walls = create_segments(walls_vec)
     clutters = jax.vmap(create_segments)(clutters_vec)
-    # clutters = [create_segments(clutter, loop_around=loop_around) for clutter in clutters_vec]
 
     # Combine all points for bounding box calculation
     all_points_np = jnp.vstack(
@@ -179,13 +176,12 @@ def make_world(walls_vec, clutters_vec, start, controls, loop_around=False):
     )
 
 
-def load_world(file_name, loop_around=False):
+def load_world(file_name):
     """
     Loads the world configuration from a specified file and constructs the world.
 
     Args:
     - file_name (str): The name of the file containing the world configuration.
-    - loop_around (bool, optional): Whether to connect the last and first vertices of walls and clutters. Defaults to False.
 
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
@@ -203,7 +199,7 @@ def load_world(file_name, loop_around=False):
         jnp.array([control["dhd"] for control in data["program_controls"]]),
     )
 
-    return make_world(walls_vec, clutters_vec, start, controls, loop_around=loop_around)
+    return make_world(walls_vec, clutters_vec, start, controls)
 
 
 # %%
@@ -286,6 +282,7 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
         ),
     )
 
+
 def distance(p, seg):
     """
     Computes the distance from a pose to a segment, considering the pose's direction.
@@ -303,10 +300,6 @@ def distance(p, seg):
         a[0],
         jnp.inf,
     )
-    # if s is None or s < 0 or not (0 <= t <= 1):
-    #     return jnp.inf
-    # else:
-    #     return s
 
 
 def compute_wall_normal(wall_normal_direction):
@@ -377,10 +370,6 @@ def integrate_controls(robot_inputs, world_inputs):
             physical_step(path[-1].p, next_position, next_heading, world_inputs)
         )
 
-    # for control in robot_inputs['controls']:
-    #     next_position = path[-1].p + control.ds * path[-1].dp()
-    #     next_heading = path[-1].hd + control.dhd
-    #     path.append(physical_step(path[-1].p, next_position, next_heading, world_inputs))
     return path
 
 
@@ -398,14 +387,6 @@ path_integrated = integrate_controls(robot_inputs, world_inputs)
 # ### Plot such data
 
 # %%
-
-
-def clutter_points(clutter):
-    points = []
-    for segment in clutter:
-        points.append(segment[0])
-    points.append(clutter[-1][1])
-    return points
 
 
 def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi / 4, **kwargs):
@@ -449,7 +430,7 @@ world_plot = Plot.new(
     ),
     Plot.frame(strokeWidth=4, stroke="#ddd"),
 )
-world_plot + controls_path_plot + starting_pose_plot + clutters_plot
+world_plot
 # %%
 
 # Plot of the starting pose of the robot
@@ -465,9 +446,10 @@ controls_path_plot = Plot.dot(
 
 # Plot of the clutters
 clutters_plot = [
-    Plot.line(clutter_points(clutter), fill=Plot.constantly("clutters"))
-    for clutter in world["clutters"]
+    Plot.line(c[:,0], fill=Plot.constantly("clutters")) for c in world["clutters"]
 ]
+
+world_plot + controls_path_plot + starting_pose_plot + clutters_plot
 
 # Save the figure to a file
 # plt.savefig("imgs/given_data")
@@ -475,7 +457,6 @@ clutters_plot = [
 # Following this initial display of the given data, we suppress the clutters until much later in the notebook.
 
 # world_plot + controls_path_plot + starting_pose_plot + clutters_plot
-world_plot
 # %%
 
 
@@ -783,11 +764,12 @@ world_plot + poses_to_plots(steps.inner.get_retval()[0])
 # %%
 
 key, sub_key = jax.random.split(key)
-#Plot.autoGrid(
+# Plot.autoGrid(
 Plot.new(
-[
-    world_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0])
-    for key in jax.random.split(key, 10)
-])
+    [
+        world_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0])
+        for key in jax.random.split(key, 10)
+    ]
+)
 
 # %%
