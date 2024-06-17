@@ -14,6 +14,7 @@
 #     language: python
 #     name: python3
 # ---
+# pyright: reportUnusedExpression=false
 
 # %% [markdown]
 # # ProbComp Localization Tutorial
@@ -33,6 +34,7 @@ import jax
 import jax.numpy as jnp
 import genjax
 from genjax import SelectionBuilder as S
+from genjax.typing import FloatArray
 from penzai import pz
 
 import os
@@ -68,8 +70,8 @@ os.makedirs("imgs", exist_ok=True)
 
 @pz.pytree_dataclass
 class Pose(genjax.Pytree):
-    p: genjax.typing.FloatArray
-    hd: genjax.typing.FloatArray
+    p: FloatArray
+    hd: FloatArray
 
     def __repr__(self):
         return f"Pose(p={self.p}, hd={self.hd})"
@@ -106,7 +108,7 @@ class Pose(genjax.Pytree):
 
 
 # Example usage:
-pose = Pose(jnp.array([1.0, 2.0]), hd=1.57)
+pose = Pose(jnp.array([1.0, 2.0]), hd=jnp.array(1.57))
 print(pose)
 
 # Move the pose along its direction
@@ -115,12 +117,13 @@ print(pose.step_along(5))
 # Rotate the pose
 print(pose.rotate(pi / 2))
 
+
 # %%
 # %%
 @pz.pytree_dataclass
 class Control(genjax.Pytree):
-    ds: genjax.typing.FloatArray
-    dhd: genjax.typing.FloatArray
+    ds: FloatArray
+    dhd: FloatArray
 
 
 def create_segments(points):
@@ -191,7 +194,8 @@ def load_world(file_name):
     walls_vec = jnp.array(data["wall_verts"])
     clutters_vec = jnp.array(data["clutter_vert_groups"])
     start = Pose(
-        jnp.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"])
+        jnp.array(data["start_pose"]["p"], dtype=float),
+        jnp.array(data["start_pose"]["hd"], dtype=float),
     )
 
     cs = jnp.array([[c["ds"], c["dhd"]] for c in data["program_controls"]])
@@ -299,7 +303,7 @@ def compute_wall_normal(wall_normal_direction):
 
 
 @jax.jit
-def physical_step(p1, p2, hd, world_inputs):
+def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     """
     Computes a physical step considering wall collisions and bounces.
 
@@ -391,20 +395,20 @@ def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi / 4, **kwargs):
         point[1] - wingLength * sin(rightWingAngle),
     ]
 
-    return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)
+    return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def pose_arrow(p, r=0.5, **kwargs):
     start = p.p
     end = p.step_along(r).p
     opts = {"strokeWidth": 2, **kwargs}
-    return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)
+    return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 # Plot the world with walls only
 world_plot = Plot.new(
     [
-        Plot.line(wall, strokeWidth=1, tip=False, stroke=Plot.constantly("walls"))
+        Plot.line(wall, strokeWidth=1, tip=False, stroke=Plot.constantly("walls"))  # pyright: ignore[reportAttributeAccessIssue]
         for wall in world["walls"]
     ],
     {"title": "Given data", "width": 500, "height": 500, "margin": 0, "inset": 50},
@@ -435,7 +439,8 @@ controls_path_plot = Plot.dot(
 
 # Plot of the clutters
 clutters_plot = [
-    Plot.line(c[:, 0], fill=Plot.constantly("clutters")) for c in world["clutters"]
+    Plot.line(c[:, 0], fill=Plot.constantly("clutters"))  # pyright: ignore[reportAttributeAccessIssue]
+    for c in world["clutters"]
 ]
 
 world_plot + controls_path_plot + starting_pose_plot + clutters_plot
@@ -526,8 +531,10 @@ pose_samples = jax.vmap(start_pose_prior.simulate, in_axes=(0, None))(
 poses = pose_samples.get_retval()
 poses
 
+
 def poses_to_plots(poses: Pose):
     return list(map(lambda p, hd: pose_arrow(Pose(p, hd)), poses.p, poses.hd))
+
 
 poses_plot = functools.reduce(lambda p, q: p + q, poses_to_plots(poses))
 
@@ -716,6 +723,7 @@ def make_path_model_step(world_inputs, motion_settings):
         ), None
 
     return path_model_step
+
 
 # prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 # get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
