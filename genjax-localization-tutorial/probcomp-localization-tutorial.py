@@ -194,10 +194,9 @@ def load_world(file_name):
     start = Pose(
         jnp.array(data["start_pose"]["p"], dtype=float), float(data["start_pose"]["hd"])
     )
-    controls = Control(
-        jnp.array([control["ds"] for control in data["program_controls"]]),
-        jnp.array([control["dhd"] for control in data["program_controls"]]),
-    )
+
+    cs = jnp.array([[c["ds"], c["dhd"]] for c in data["program_controls"]])
+    controls = Control(cs[:, 0], cs[:, 1])
 
     return make_world(walls_vec, clutters_vec, start, controls)
 
@@ -236,15 +235,6 @@ def integrate_controls_unphysical(robot_inputs):
     for i in range(len(controls.ds)):
         p = path[-1].p + controls.ds[i]
         hd = path[-1].hd + controls.dhd[i]
-        path.append(Pose(p, hd))
-
-    for control in robot_inputs["controls"]:
-        # Compute the new position (p) by applying the distance change (ds) in the direction of dp
-        # Note: dp is derived from the current heading (hd) to ensure movement in the correct direction
-        p = path[-1].p + control.ds * path[-1].dp()
-        # Compute the new heading (hd) by adding the heading change (dhd)
-        hd = path[-1].hd + control.dhd
-        # Create a new Pose with the updated position and heading, and add it to the path
         path.append(Pose(p, hd))
 
     return path
@@ -446,7 +436,7 @@ controls_path_plot = Plot.dot(
 
 # Plot of the clutters
 clutters_plot = [
-    Plot.line(c[:,0], fill=Plot.constantly("clutters")) for c in world["clutters"]
+    Plot.line(c[:, 0], fill=Plot.constantly("clutters")) for c in world["clutters"]
 ]
 
 world_plot + controls_path_plot + starting_pose_plot + clutters_plot
