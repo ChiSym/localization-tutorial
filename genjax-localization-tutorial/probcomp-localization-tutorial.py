@@ -395,35 +395,43 @@ def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi / 4, **kwargs):
         point[1] - wingLength * sin(rightWingAngle),
     ]
 
-    return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)  # pyright: ignore[reportAttributeAccessIssue]
+    return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)
 
 
 def pose_arrow(p, r=0.5, **kwargs):
     start = p.p
     end = p.step_along(r).p
-    opts = {"strokeWidth": 2, **kwargs}
-    return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)  # pyright: ignore[reportAttributeAccessIssue]
+    opts = {"strokeWidth": 1.25, **kwargs}
+    return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)
 
 
-# Plot the world with walls only
-world_plot = Plot.new(
+walls_plot = Plot.new(
     [
-        Plot.line(wall, strokeWidth=1, tip=False, stroke=Plot.constantly("walls"))  # pyright: ignore[reportAttributeAccessIssue]
+        Plot.line(
+            [wall[0], wall[1]],
+            strokeWidth=1,
+            stroke=Plot.constantly("walls"),
+        )
         for wall in world["walls"]
     ],
-    {"title": "Given data", "width": 500, "height": 500, "margin": 0, "inset": 50},
-    Plot.color_legend,
+    {"margin": 0, "inset": 50},
     Plot.color_map(
         {
-            "walls": "#000000",
+            "walls": "#ccc",
             "clutters": "magenta",
             "path from integrating controls": "lightgreen",
             "given start pose": "darkgreen",
         }
     ),
+)
+# Plot the world with walls only
+world_plot = Plot.new(
+    walls_plot,
+    {"title": "Given data", "width": 500, "height": 500, "inset": 50},
+    Plot.color_legend,
     Plot.frame(strokeWidth=4, stroke="#ddd"),
 )
-world_plot
+
 # %%
 
 # Plot of the starting pose of the robot
@@ -439,8 +447,7 @@ controls_path_plot = Plot.dot(
 
 # Plot of the clutters
 clutters_plot = [
-    Plot.line(c[:, 0], fill=Plot.constantly("clutters"))  # pyright: ignore[reportAttributeAccessIssue]
-    for c in world["clutters"]
+    Plot.line(c[:, 0], fill=Plot.constantly("clutters")) for c in world["clutters"]
 ]
 
 world_plot + controls_path_plot + starting_pose_plot + clutters_plot
@@ -756,13 +763,13 @@ steps = jitted(sub_key, arg_tuple)
 
 world_plot + poses_to_plots(steps.inner.get_retval()[0])
 # %%
+key, subkey = jax.random.split(key)
+arg_tuple = initial_pose.get_retval(), robot_inputs["controls"]
 
-key, sub_key = jax.random.split(key)
-# Plot.autoGrid(
-Plot.new(
+Plot.autoGrid(
     [
-        world_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0])
-        for key in jax.random.split(key, 10)
+        walls_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0])
+        for key in jax.random.split(key, 24)
     ]
 )
 
