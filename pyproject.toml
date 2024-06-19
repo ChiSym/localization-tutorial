@@ -16,7 +16,7 @@ matplotlib = "^3.8.3"
 anywidget = "^0.9.7"
 watchfiles = "^0.21.0"
 markdown = "^3.6"
-genstudio = {version = "2024.06.12.1730.50", source = "gcp"}
+genstudio = {version = "2024.06.19.1045.53", source = "gcp"}
 
 [[tool.poetry.source]]
 name = "gcp"
