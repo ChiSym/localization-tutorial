@@ -259,7 +259,7 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
     - PARALLEL_TOL: Tolerance for determining if lines are parallel.
 
     Returns:
-    - s, t: Parameters for the line equations at the intersection point. 
+    - s, t: Parameters for the line equations at the intersection point.
             Returns [-inf, -inf] if lines are parallel.
     """
     det = u[0] * v[1] - u[1] * v[0]
@@ -298,6 +298,7 @@ def compute_wall_normal(wall_direction):
     normalized_wall_direction = wall_direction / jnp.linalg.norm(wall_direction)
     return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
 
+
 @jax.jit
 def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     """
@@ -328,7 +329,7 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     wall_direction = closest_wall[1] - closest_wall[0]
     wall_normal = compute_wall_normal(wall_direction)
     collision_point = p1 + closest_wall_distance * step_pose.dp()
-    
+
     # Ensure wall_normal points away from the robot's direction
     wall_normal = jnp.where(
         jnp.dot(step_pose.dp(), wall_normal) > 0, -wall_normal, wall_normal
@@ -338,7 +339,9 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     bounce_off_point = collision_point + world_inputs["bounce"] * wall_normal
 
     # Determine final position based on whether a collision occurred
-    final_position = jnp.where(closest_wall_distance >= step_length, p2, bounce_off_point)
+    final_position = jnp.where(
+        closest_wall_distance >= step_length, p2, bounce_off_point
+    )
 
     return Pose(final_position, hd)
 
@@ -383,42 +386,48 @@ path_integrated = integrate_controls(robot_inputs, world_inputs)
 
 # %%
 
+
 def arrow_plot(start, end, wing_angle, wing_length, constants={}, **mark_options):
     mark_options = {"strokeWidth": 1.25, **mark_options}
-    
+
     dx, dy = end[0] - start[0], end[1] - start[1]
     angle = atan2(dy, dx)
-    
+
     left_wing_angle = angle + wing_angle
     right_wing_angle = angle - wing_angle
 
     left_wing_end = {
         "x": end[0] - wing_length * cos(left_wing_angle),
         "y": end[1] - wing_length * sin(left_wing_angle),
-        **constants
+        **constants,
     }
     right_wing_end = {
         "x": end[0] - wing_length * cos(right_wing_angle),
         "y": end[1] - wing_length * sin(right_wing_angle),
-        **constants
+        **constants,
     }
-    
-    return Plot.line([
-        {**constants, "x": start[0], "y": start[1]},
-        {**constants, "x": end[0], "y": end[1]},
-        left_wing_end,
-        {**constants, "x": end[0], "y": end[1]},
-        right_wing_end
-    ], {'x': 'x', 'y': 'y', **mark_options})
+
+    return Plot.line(
+        [
+            {**constants, "x": start[0], "y": start[1]},
+            {**constants, "x": end[0], "y": end[1]},
+            left_wing_end,
+            {**constants, "x": end[0], "y": end[1]},
+            right_wing_end,
+        ],
+        {"x": "x", "y": "y", **mark_options},
+    )
+
 
 def pose_arrow(p, r=0.5, constants={}, **opts):
     end = p.p
     start = p.step_along(-r).p
     wing_angle = pi / 4
     wing_length = 0.4
-    
+
     return arrow_plot(start, end, wing_angle, wing_length, constants, **opts)
-    
+
+
 walls_plot = Plot.new(
     [
         Plot.line(
@@ -449,7 +458,10 @@ world_plot = Plot.new(
 
 # Plot of the starting pose of the robot
 starting_pose_plot = pose_arrow(
-    robot_inputs["start"], stroke=Plot.constantly("given start pose"), constants={"frame":0})
+    robot_inputs["start"],
+    stroke=Plot.constantly("given start pose"),
+    constants={"frame": 0},
+)
 
 # Plot of the path from integrating controls
 controls_path_plot = Plot.dot(
@@ -550,17 +562,19 @@ pose_samples = jax.vmap(start_pose_prior.simulate, in_axes=(0, None))(
 poses = pose_samples.get_retval()
 poses
 
+
 def poses_to_plots(poses: Pose, constants={}, **plot_opts):
-    return list(map(
-        lambda i, p, hd: pose_arrow(
-            Pose(p, hd),
-            constants={"step": i, **constants},
-            **plot_opts
-        ),
-        range(len(poses.p)),
-        poses.p,
-        poses.hd
-    ))
+    return list(
+        map(
+            lambda i, p, hd: pose_arrow(
+                Pose(p, hd), constants={"step": i, **constants}, **plot_opts
+            ),
+            range(len(poses.p)),
+            poses.p,
+            poses.hd,
+        )
+    )
+
 
 poses_plot = functools.reduce(lambda p, q: p + q, poses_to_plots(poses))
 
@@ -773,11 +787,16 @@ step_model.simulate(
 # %%
 
 path_model_step_simulate = jax.jit(path_model_step.simulate)
+
+
 def generate_path(key):
     key, start_key = jax.random.split(key)
     initial_pose = path_model_start.simulate(start_key, (robot_inputs, motion_settings))
     key, step_key = jax.random.split(key)
-    return path_model_step_simulate(step_key, (initial_pose.get_retval(), robot_inputs["controls"])).inner.get_retval()[0]
+    return path_model_step_simulate(
+        step_key, (initial_pose.get_retval(), robot_inputs["controls"])
+    ).inner.get_retval()[0]
+
 
 N_samples = 12
 key, *sample_keys = jax.random.split(key, N_samples + 1)
@@ -790,52 +809,63 @@ Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
 # N_steps = len(robot_inputs["controls"].ds) - 1
 # (
 #     world_plot
-#     + [poses_to_plots(path, 
-#                       constants={'frame': i}, 
+#     + [poses_to_plots(path,
+#                       constants={'frame': i},
 #                       filter=Plot.js("({frame, step}) => frame === $state.frame && step <= $state.step")) for i, path in enumerate(sample_paths)]
 #     | Plot.Slider("frame", label="Frame", range=[0, N_samples - 1], fps=2)
 #     | Plot.Slider("step", label="Step", range=[0, N_steps], init=N_steps)
 # )
 
-#%%
+# %%
 # Animation showing a single path with confidence circles
+
 
 def animate_path_with_confidence(path, motion_settings):
     N_steps = len(path.p)
-    
- 
-    
+
     # Combine all elements
     animation = (
         walls_plot
         # Prior poses in black
-        + [pose_arrow(Pose(p, hd), stroke="black", constants={"step": i}, 
-                    filter=Plot.js("d => d.step <= $state.step"))
-         for i, (p, hd) in enumerate(zip(path.p, path.hd))]
-        
+        + [
+            pose_arrow(
+                Pose(p, hd),
+                stroke="black",
+                constants={"step": i},
+                filter=Plot.js("d => d.step <= $state.step"),
+            )
+            for i, (p, hd) in enumerate(zip(path.p, path.hd))
+        ]
         # 95% confidence circles for next poses
-        + [Plot.scaled_circle(p[0], p[1], r=2.5 * motion_settings["p_noise"],
-                            opacity=0.25, fill="red", 
-                            filter=Plot.js(f"d => {i} === $state.step"))
-         for i, p in enumerate(path.p[:-1])]
-        
+        + [
+            Plot.scaled_circle(
+                p[0],
+                p[1],
+                r=2.5 * motion_settings["p_noise"],
+                opacity=0.25,
+                fill="red",
+                filter=Plot.js(f"d => {i} === $state.step"),
+            )
+            for i, p in enumerate(path.p[:-1])
+        ]
         # Next poses in red
-        + [pose_arrow(Pose(p, hd), stroke="red", constants={"step": i-1}, 
-                    filter=Plot.js("d => d.step === $state.step"))
-         for i, (p, hd) in enumerate(zip(path.p[1:], path.hd[1:]), 1)]
-        | Plot.Slider("step", label="Step", range=[0, N_steps-1], fps=2)
+        + [
+            pose_arrow(
+                Pose(p, hd),
+                stroke="red",
+                constants={"step": i - 1},
+                filter=Plot.js("d => d.step === $state.step"),
+            )
+            for i, (p, hd) in enumerate(zip(path.p[1:], path.hd[1:]), 1)
+        ]
+        | Plot.Slider("step", label="Step", range=[0, N_steps - 1], fps=2)
     )
-    
+
     return animation
+
 
 # Generate a single path
 key, sample_key = jax.random.split(key)
 animate_path_with_confidence(generate_path(sample_key), motion_settings)
 
 # %%
-
-
-
-
-
-
