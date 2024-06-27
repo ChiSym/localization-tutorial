@@ -19,7 +19,7 @@
 # %% [markdown]
 # # ProbComp Localization Tutorial
 #
-# This notebook aims to give an introduction to probabilistic computation (ProbComp).  This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probablistic programming language (PPL).  The programmer can thus encode their probabilistic intuition for solving a problem into an algorithm.  Back-end language work automates the routine but error-prone derivations.
+# This notebook provides an introduction to probabilistic computation (ProbComp). This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probabilistic programming language (PPL). The programmer can encode their probabilistic intuition for solving a problem into an algorithm. Back-end language work automates the routine but error-prone derivations.
 #
 # Dependencies are specified in pyproject.toml.
 # %%
@@ -47,13 +47,13 @@ os.makedirs("imgs", exist_ok=True)
 # %% [markdown]
 # ## The "real world"
 #
-# We assume given
-# * a map of a space, together with
-# * some clutters that sometimes unexpectedly exist in that space.
+# We assume given:
+# * A map of a space, together with
+# * Some clutters that sometimes unexpectedly exist in that space.
 #
-# We also assume given a description of a robot's behavior via
-# * an estimated initial pose (= position + heading), and
-# * a program of controls (= advance distance, followed by rotate heading).
+# We also assume given a description of a robot's behavior via:
+# * An estimated initial pose (position + heading), and
+# * A program of controls (advance distance, followed by rotate heading).
 #
 # *In addition to the uncertainty in the initial pose, we are uncertain about the true execution of the motion of the robot.*
 #
@@ -119,7 +119,6 @@ print(pose.rotate(pi / 2))
 
 
 # %%
-# %%
 @pz.pytree_dataclass
 class Control(genjax.Pytree):
     ds: FloatArray
@@ -127,9 +126,11 @@ class Control(genjax.Pytree):
 
 
 def create_segments(points):
-    """Given an array of points of shape (N, 2), return an array of
+    """
+    Given an array of points of shape (N, 2), return an array of
     pairs of points. [p_1, p_2, p_3, ...] -> [[p_1, p_2], [p_2, p_3], ...]
-    where each p_i is is [x_i, y_i]"""
+    where each p_i is [x_i, y_i]
+    """
     return jnp.stack([points, jnp.roll(points, shift=-1, axis=0)], axis=1)
 
 
@@ -141,7 +142,7 @@ def make_world(walls_vec, clutters_vec, start, controls):
     - walls_vec (list of list of float): A list of 2D points representing the vertices of walls.
     - clutters_vec (list of list of list of float): A list where each element is a list of 2D points representing the vertices of a clutter.
     - start (Pose): The starting pose of the robot.
-    - controls (list of Control): A list of control actions for the robot.
+    - controls (list of Control): Control actions for the robot.
 
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
@@ -151,11 +152,11 @@ def make_world(walls_vec, clutters_vec, start, controls):
     clutters = jax.vmap(create_segments)(clutters_vec)
 
     # Combine all points for bounding box calculation
-    all_points_np = jnp.vstack(
+    all_points = jnp.vstack(
         (jnp.array(walls_vec), jnp.concatenate(clutters_vec), jnp.array([start.p]))
     )
-    x_min, y_min = jnp.min(all_points_np, axis=0)
-    x_max, y_max = jnp.max(all_points_np, axis=0)
+    x_min, y_min = jnp.min(all_points, axis=0)
+    x_max, y_max = jnp.max(all_points, axis=0)
 
     # Calculate bounding box, box size, and center point
     bounding_box = (x_min, x_max, y_min, y_max)
@@ -212,7 +213,7 @@ world, robot_inputs, T = load_world("../example_20_program.json")
 # %% [markdown]
 # ### Integrate a path from a starting pose and controls
 #
-# If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
+# If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path. Naïvely, this results in the following.
 
 
 # %%
@@ -233,10 +234,9 @@ def integrate_controls_unphysical(robot_inputs):
     path = [robot_inputs["start"]]
 
     # Iterate over each control step to compute the new pose and add it to the path
-
     controls = robot_inputs["controls"]
     for i in range(len(controls.ds)):
-        p = path[-1].p + controls.ds[i]
+        p = path[-1].p + controls.ds[i] * path[-1].dp()
         hd = path[-1].hd + controls.dhd[i]
         path.append(Pose(p, hd))
 
@@ -260,12 +260,12 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
     - PARALLEL_TOL: Tolerance for determining if lines are parallel.
 
     Returns:
-    - s, t: Parameters for the line equations at the intersection point. None if lines are parallel.
-    TODO: update commentary
+    - s, t: Parameters for the line equations at the intersection point. 
+            Returns [-inf, -inf] if lines are parallel.
     """
     det = u[0] * v[1] - u[1] * v[0]
     return jnp.where(
-        det < PARALLEL_TOL,
+        jnp.abs(det) < PARALLEL_TOL,
         jnp.array([-jnp.inf, -jnp.inf]),
         jnp.array(
             [
@@ -295,10 +295,8 @@ def distance(p, seg):
     )
 
 
-def compute_wall_normal(wall_normal_direction):
-    normalized_wall_direction = jnp.divide(
-        wall_normal_direction, jnp.linalg.norm(wall_normal_direction)
-    )
+def compute_wall_normal(wall_direction):
+    normalized_wall_direction = wall_direction / jnp.linalg.norm(wall_direction)
     return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
 
 
@@ -316,25 +314,21 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     - Pose: The new pose after taking the step, considering potential wall collisions.
     """
     step_direction = p2 - p1
-    step_pose = Pose(p1, jnp.atan2(step_direction[1], step_direction[0]))
+    step_pose = Pose(p1, jnp.arctan2(step_direction[1], step_direction[0]))
 
-    # this should be a vmap of distance over world_inputs['vwalls'] with step_pose held constant
-    # using in_axes
     distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs["walls"])
 
     closest_wall_index = jnp.argmin(distances)
     closest_wall_distance = distances[closest_wall_index]
     closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs["walls"])
-    wall_normal_direction = closest_wall[1] - closest_wall[0]
-    wall_normal = compute_wall_normal(wall_normal_direction)
+    wall_direction = closest_wall[1] - closest_wall[0]
+    wall_normal = compute_wall_normal(wall_direction)
     step_length = jnp.linalg.norm(step_direction)
-    collision_point = jnp.add(p1, jnp.multiply(closest_wall_distance, step_pose.dp()))
+    collision_point = p1 + closest_wall_distance * step_pose.dp()
     wall_normal = jnp.where(
-        jnp.cross(step_pose.dp(), wall_normal_direction) < 0, -wall_normal, wall_normal
+        jnp.cross(step_pose.dp(), wall_direction) < 0, -wall_normal, wall_normal
     )
-    bounce_off_point = jnp.add(
-        collision_point, jnp.multiply(world_inputs["bounce"], wall_normal)
-    )
+    bounce_off_point = collision_point + world_inputs["bounce"] * wall_normal
 
     return Pose(
         jnp.where(closest_wall_distance >= step_length, p2, bounce_off_point), hd
@@ -774,3 +768,4 @@ Plot.autoGrid(
 )
 
 # %%
+
