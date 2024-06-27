@@ -755,14 +755,14 @@ def make_path_model_step(world_inputs, motion_settings):
 # prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 # get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
 
-key, sub_key1, sub_key2 = jax.random.split(key, 3)
-initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, motion_settings))
-path_model_step = make_path_model_step(world_inputs, motion_settings)
 
 # %%
 
+key, sub_key1, sub_key2 = jax.random.split(key, 3)
+initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, motion_settings))
+path_model_step = make_path_model_step(world_inputs, motion_settings)
 step_model.simulate(
-    jax.random.PRNGKey(222),
+    sub_key2,
     (
         initial_pose.get_retval(),
         jax.tree.map(lambda v: v[0], robot_inputs["controls"]),
@@ -774,13 +774,15 @@ step_model.simulate(
 # %%
 
 path_model_step_simulate = jax.jit(path_model_step.simulate)
-
-def generate_path(subkey):
-    return path_model_step_simulate(subkey, (initial_pose.get_retval(), robot_inputs["controls"])).inner.get_retval()[0]
+def generate_path(key):
+    key, start_key = jax.random.split(key)
+    initial_pose = path_model_start.simulate(start_key, (robot_inputs, motion_settings))
+    key, step_key = jax.random.split(key)
+    return path_model_step_simulate(step_key, (initial_pose.get_retval(), robot_inputs["controls"])).inner.get_retval()[0]
 
 N_samples = 12
-key, *subkeys = jax.random.split(key, N_samples + 1)
-sample_paths = [generate_path(subkey) for subkey in subkeys]
+key, *sample_keys = jax.random.split(key, N_samples + 1)
+sample_paths = [generate_path(sample_key) for sample_key in sample_keys]
 
 Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
 
@@ -798,3 +800,4 @@ Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
 
 
 # %%
+
