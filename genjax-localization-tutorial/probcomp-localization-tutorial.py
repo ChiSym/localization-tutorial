@@ -298,7 +298,6 @@ def compute_wall_normal(wall_direction):
     normalized_wall_direction = wall_direction / jnp.linalg.norm(wall_direction)
     return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
 
-
 @jax.jit
 def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     """
@@ -312,26 +311,36 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     Returns:
     - Pose: The new pose after taking the step, considering potential wall collisions.
     """
+    # Calculate step direction and length
     step_direction = p2 - p1
+    step_length = jnp.linalg.norm(step_direction)
     step_pose = Pose(p1, jnp.arctan2(step_direction[1], step_direction[0]))
 
+    # Calculate distances to all walls
     distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs["walls"])
 
+    # Find the closest wall
     closest_wall_index = jnp.argmin(distances)
     closest_wall_distance = distances[closest_wall_index]
     closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs["walls"])
+
+    # Calculate wall normal and collision point
     wall_direction = closest_wall[1] - closest_wall[0]
     wall_normal = compute_wall_normal(wall_direction)
-    step_length = jnp.linalg.norm(step_direction)
     collision_point = p1 + closest_wall_distance * step_pose.dp()
+    
+    # Ensure wall_normal points away from the robot's direction
     wall_normal = jnp.where(
-        jnp.cross(step_pose.dp(), wall_direction) < 0, -wall_normal, wall_normal
+        jnp.dot(step_pose.dp(), wall_normal) > 0, -wall_normal, wall_normal
     )
+
+    # Calculate bounce off point
     bounce_off_point = collision_point + world_inputs["bounce"] * wall_normal
 
-    return Pose(
-        jnp.where(closest_wall_distance >= step_length, p2, bounce_off_point), hd
-    )
+    # Determine final position based on whether a collision occurred
+    final_position = jnp.where(closest_wall_distance >= step_length, p2, bounce_off_point)
+
+    return Pose(final_position, hd)
 
 
 # %%
