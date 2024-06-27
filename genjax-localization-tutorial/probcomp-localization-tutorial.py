@@ -38,8 +38,7 @@ from genjax.typing import FloatArray
 from penzai import pz
 
 import os
-from math import sin, cos, pi
-
+from math import sin, cos, pi, atan2
 
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
@@ -375,30 +374,42 @@ path_integrated = integrate_controls(robot_inputs, world_inputs)
 
 # %%
 
+def arrow_plot(start, end, wing_angle, wing_length, constants={}, **mark_options):
+    mark_options = {"strokeWidth": 1.25, **mark_options}
+    
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    angle = atan2(dy, dx)
+    
+    left_wing_angle = angle + wing_angle
+    right_wing_angle = angle - wing_angle
 
-def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi / 4, **kwargs):
-    leftWingAngle = heading + wingAngle
-    rightWingAngle = heading - wingAngle
+    left_wing_end = {
+        "x": end[0] - wing_length * cos(left_wing_angle),
+        "y": end[1] - wing_length * sin(left_wing_angle),
+        **constants
+    }
+    right_wing_end = {
+        "x": end[0] - wing_length * cos(right_wing_angle),
+        "y": end[1] - wing_length * sin(right_wing_angle),
+        **constants
+    }
+    
+    return Plot.line([
+        {**constants, "x": start[0], "y": start[1]},
+        {**constants, "x": end[0], "y": end[1]},
+        left_wing_end,
+        {**constants, "x": end[0], "y": end[1]},
+        right_wing_end
+    ], {'x': 'x', 'y': 'y', **mark_options})
 
-    leftWingEnd = [
-        point[0] - wingLength * cos(leftWingAngle),
-        point[1] - wingLength * sin(leftWingAngle),
-    ]
-    rightWingEnd = [
-        point[0] - wingLength * cos(rightWingAngle),
-        point[1] - wingLength * sin(rightWingAngle),
-    ]
-
-    return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)
-
-
-def pose_arrow(p, r=0.5, **kwargs):
+def pose_arrow(p, r=0.5, constants={}, **opts):
     start = p.p
     end = p.step_along(r).p
-    opts = {"strokeWidth": 1.25, **kwargs}
-    return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)
-
-
+    wing_angle = pi / 4
+    wing_length = 0.4
+    
+    return arrow_plot(start, end, wing_angle, wing_length, constants, **opts)
+    
 walls_plot = Plot.new(
     [
         Plot.line(
@@ -422,7 +433,7 @@ walls_plot = Plot.new(
 world_plot = Plot.new(
     walls_plot,
     {"title": "Given data", "width": 500, "height": 500, "inset": 50},
-    Plot.color_legend,
+    Plot.color_legend(),
     Plot.frame(strokeWidth=4, stroke="#ddd"),
 )
 
@@ -430,8 +441,7 @@ world_plot = Plot.new(
 
 # Plot of the starting pose of the robot
 starting_pose_plot = pose_arrow(
-    robot_inputs["start"], stroke=Plot.constantly("given start pose")
-)
+    robot_inputs["start"], stroke=Plot.constantly("given start pose"), constants={"frame":0})
 
 # Plot of the path from integrating controls
 controls_path_plot = Plot.dot(
@@ -532,10 +542,17 @@ pose_samples = jax.vmap(start_pose_prior.simulate, in_axes=(0, None))(
 poses = pose_samples.get_retval()
 poses
 
-
-def poses_to_plots(poses: Pose):
-    return list(map(lambda p, hd: pose_arrow(Pose(p, hd)), poses.p, poses.hd))
-
+def poses_to_plots(poses: Pose, constants={}, **plot_opts):
+    return list(map(
+        lambda i, p, hd: pose_arrow(
+            Pose(p, hd),
+            constants={"step": i, **constants},
+            **plot_opts
+        ),
+        range(len(poses.p)),
+        poses.p,
+        poses.hd
+    ))
 
 poses_plot = functools.reduce(lambda p, q: p + q, poses_to_plots(poses))
 
@@ -746,26 +763,29 @@ step_model.simulate(
 )
 
 # %%
-jitted = jax.jit(path_model_step.simulate)
+
+path_model_step_simulate = jax.jit(path_model_step.simulate)
+
+def generate_path(subkey):
+    return path_model_step_simulate(subkey, (initial_pose.get_retval(), robot_inputs["controls"])).inner.get_retval()[0]
+
+N_samples = 12
+key, *subkeys = jax.random.split(key, N_samples + 1)
+sample_paths = [generate_path(subkey) for subkey in subkeys]
+
+Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
+
+# Leaving this in as an a reference for animation;
+# Julia animated this, but a grid seems easier to eyeball here.
+# N_steps = len(robot_inputs["controls"].ds) - 1
+# (
+#     world_plot
+#     + [poses_to_plots(path, 
+#                       constants={'frame': i}, 
+#                       filter=Plot.js("({frame, step}) => frame === $state.frame && step <= $state.step")) for i, path in enumerate(sample_paths)]
+#     | Plot.Slider("frame", label="Frame", range=[0, N_samples - 1], fps=2)
+#     | Plot.Slider("step", label="Step", range=[0, N_steps], init=N_steps)
+# )
+
 
 # %%
-
-arg_tuple = initial_pose.get_retval(), robot_inputs["controls"]
-key, sub_key = jax.random.split(key)
-
-steps = jitted(sub_key, arg_tuple)
-
-world_plot + poses_to_plots(steps.inner.get_retval()[0])
-# %%
-key, subkey = jax.random.split(key)
-arg_tuple = initial_pose.get_retval(), robot_inputs["controls"]
-
-Plot.autoGrid(
-    [
-        walls_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0])
-        for key in jax.random.split(key, 24)
-    ]
-)
-
-# %%
-

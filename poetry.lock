@@ -561,13 +561,13 @@ reference = "gcp"
 
 [[package]]
 name = "genstudio"
-version = "2024.6.27.1056"
+version = "2024.6.27.1141"
 description = ""
 optional = false
 python-versions = ">=3.10,<3.13"
 files = [
-    {file = "genstudio-2024.6.27.1056-py3-none-any.whl", hash = "sha256:af8fb673031d13674ee4415d4fa3ae961b1f2ad9d259f093b40989cfdfc94d75"},
-    {file = "genstudio-2024.6.27.1056.tar.gz", hash = "sha256:9e5786b604a55c43c0eba059619b7c9e90514e5ad2170368de64e7132f8ad425"},
+    {file = "genstudio-2024.6.27.1141-py3-none-any.whl", hash = "sha256:30ef9d2422aa7ea5f5aaf58d9edb3c49772ef2174d095dcfcaaffc4435664005"},
+    {file = "genstudio-2024.6.27.1141.tar.gz", hash = "sha256:2b24e7f4d1a0b2f204a14d65368f0b7f88f34c130aa961a4fb53f67dcf04ea6c"},
 ]
 
 [package.dependencies]
@@ -2286,4 +2286,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "87435a11be026b481546bb57b0af08ab896f8c28662b0136ca5bee720326bbf0"
+content-hash = "4133d81d95166ee525c97e7674eb41cae5a344dcf22cfc70d3a6f5ada8dc1759"
