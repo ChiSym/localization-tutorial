@@ -412,8 +412,8 @@ def arrow_plot(start, end, wing_angle, wing_length, constants={}, **mark_options
     ], {'x': 'x', 'y': 'y', **mark_options})
 
 def pose_arrow(p, r=0.5, constants={}, **opts):
-    start = p.p
-    end = p.step_along(r).p
+    end = p.p
+    start = p.step_along(-r).p
     wing_angle = pi / 4
     wing_length = 0.4
     
@@ -428,7 +428,7 @@ walls_plot = Plot.new(
         )
         for wall in world["walls"]
     ],
-    {"margin": 0, "inset": 50},
+    {"margin": 0, "inset": 50, "width": 500, "height": 500},
     Plot.color_map(
         {
             "walls": "#ccc",
@@ -441,7 +441,6 @@ walls_plot = Plot.new(
 # Plot the world with walls only
 world_plot = Plot.new(
     walls_plot,
-    {"title": "Given data", "width": 500, "height": 500, "inset": 50},
     Plot.color_legend(),
     Plot.frame(strokeWidth=4, stroke="#ddd"),
 )
@@ -798,6 +797,45 @@ Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
 #     | Plot.Slider("step", label="Step", range=[0, N_steps], init=N_steps)
 # )
 
+#%%
+# Animation showing a single path with confidence circles
+
+def animate_path_with_confidence(path, motion_settings):
+    N_steps = len(path.p)
+    
+ 
+    
+    # Combine all elements
+    animation = (
+        walls_plot
+        # Prior poses in black
+        + [pose_arrow(Pose(p, hd), stroke="black", constants={"step": i}, 
+                    filter=Plot.js("d => d.step <= $state.step"))
+         for i, (p, hd) in enumerate(zip(path.p, path.hd))]
+        
+        # 95% confidence circles for next poses
+        + [Plot.scaled_circle(p[0], p[1], r=2.5 * motion_settings["p_noise"],
+                            opacity=0.25, fill="red", 
+                            filter=Plot.js(f"d => {i} === $state.step"))
+         for i, p in enumerate(path.p[:-1])]
+        
+        # Next poses in red
+        + [pose_arrow(Pose(p, hd), stroke="red", constants={"step": i-1}, 
+                    filter=Plot.js("d => d.step === $state.step"))
+         for i, (p, hd) in enumerate(zip(path.p[1:], path.hd[1:]), 1)]
+        | Plot.Slider("step", label="Step", range=[0, N_steps-1], fps=2)
+    )
+    
+    return animation
+
+# Generate a single path
+key, sample_key = jax.random.split(key)
+animate_path_with_confidence(generate_path(sample_key), motion_settings)
 
 # %%
+
+
+
+
+
 
