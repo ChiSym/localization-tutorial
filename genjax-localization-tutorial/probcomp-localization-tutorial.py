@@ -822,20 +822,30 @@ Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
 
 def animate_path_with_confidence(path, motion_settings):
     frames = [
-        (walls_plot
-         # Prior poses in black
-         + [pose_arrow(Pose(p, hd)) for p, hd in zip(path.p[:step+1], path.hd[:step+1])]
-         # 95% confidence circle for next pose
-         + [Plot.scaled_circle(path.p[step][0], path.p[step][1],
-                               r=2.5 * motion_settings["p_noise"],
-                               opacity=0.25, fill="red")]
-         # Next pose in red
-         + [pose_arrow(Pose(path.p[step+1], path.hd[step+1]), stroke="red")]
-         + {"axis": None}
+        (
+            walls_plot
+            # Prior poses in black
+            + [
+                pose_arrow(Pose(p, hd))
+                for p, hd in zip(path.p[: step + 1], path.hd[: step + 1])
+            ]
+            # 95% confidence circle for next pose
+            + [
+                Plot.scaled_circle(
+                    path.p[step][0],
+                    path.p[step][1],
+                    r=2.5 * motion_settings["p_noise"],
+                    opacity=0.25,
+                    fill="red",
+                )
+            ]
+            # Next pose in red
+            + [pose_arrow(Pose(path.p[step + 1], path.hd[step + 1]), stroke="red")]
+            + {"axis": None}
         )
         for step in range(len(path.p) - 1)
     ]
-    
+
     return Plot.Frames(frames, fps=2)
 
 
