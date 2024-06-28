@@ -821,47 +821,22 @@ Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
 
 
 def animate_path_with_confidence(path, motion_settings):
-    N_steps = len(path.p)
-
-    # Combine all elements
-    animation = (
-        walls_plot
-        # Prior poses in black
-        + [
-            pose_arrow(
-                Pose(p, hd),
-                stroke="black",
-                constants={"step": i},
-                filter=Plot.js("d => d.step <= $state.step"),
-            )
-            for i, (p, hd) in enumerate(zip(path.p, path.hd))
-        ]
-        # 95% confidence circles for next poses
-        + [
-            Plot.scaled_circle(
-                p[0],
-                p[1],
-                r=2.5 * motion_settings["p_noise"],
-                opacity=0.25,
-                fill="red",
-                filter=Plot.js(f"d => {i} === $state.step"),
-            )
-            for i, p in enumerate(path.p[:-1])
-        ]
-        # Next poses in red
-        + [
-            pose_arrow(
-                Pose(p, hd),
-                stroke="red",
-                constants={"step": i - 1},
-                filter=Plot.js("d => d.step === $state.step"),
-            )
-            for i, (p, hd) in enumerate(zip(path.p[1:], path.hd[1:]), 1)
-        ]
-        | Plot.Slider("step", label="Step", range=[0, N_steps - 1], fps=2)
-    )
-
-    return animation
+    frames = [
+        (walls_plot
+         # Prior poses in black
+         + [pose_arrow(Pose(p, hd)) for p, hd in zip(path.p[:step+1], path.hd[:step+1])]
+         # 95% confidence circle for next pose
+         + [Plot.scaled_circle(path.p[step][0], path.p[step][1],
+                               r=2.5 * motion_settings["p_noise"],
+                               opacity=0.25, fill="red")]
+         # Next pose in red
+         + [pose_arrow(Pose(path.p[step+1], path.hd[step+1]), stroke="red")]
+         + {"axis": None}
+        )
+        for step in range(len(path.p) - 1)
+    ]
+    
+    return Plot.Frames(frames, fps=2)
 
 
 # Generate a single path
