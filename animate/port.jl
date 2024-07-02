@@ -3,6 +3,7 @@ using JSON: parsefile
 # GLMakie.activate!(inline=true)
 using WGLMakie
 WGLMakie.activate!(inline=true)
+using Bonito
 using Gen
 using StaticArrays
 using Printf
@@ -111,9 +112,13 @@ path_integrated = integrate_controls(robot_init, robot_inputs, world_inputs)
 # %% [markdown]
 # Following this initial display of the given data, we *suppress the clutters* until much later in the notebook.
 
-begin
+pose_prior_fig = let
     f = Figure()
-    mapvisual = Axis(f[1,1], aspect=DataAspect(), title="Start Pose Prior")
+    ax = Axis(f[1,1], aspect=DataAspect(), title="Start Pose Prior")
+    deregister_interaction!(ax, :rectanglezoom)
+    deregister_interaction!(ax, :dragpan)
+    deregister_interaction!(ax, :scrollzoom)
+    deregister_interaction!(ax, :limitreset)
     worldmap!(f[1,1], world)
     gridbottom = GridLayout(f[2,1])
     sl_steps = Makie.Slider(gridbottom[1,2], range=1:20)
@@ -153,7 +158,7 @@ end
 end
 
 # Map visualization
-let
+one_step_fig = let
     motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
 
     N_samples = 50
@@ -162,13 +167,19 @@ let
     std_devs_radius = 2.5 * motion_settings.p_noise
     f = Figure()
     ax = Axis(f[1,1], aspect=DataAspect(), title="Start Pose Prior")
+    deregister_interaction!(ax, :rectanglezoom)
+    deregister_interaction!(ax, :dragpan)
+    deregister_interaction!(ax, :scrollzoom)
+    deregister_interaction!(ax, :limitreset)
 
     worldmap!(f[1,1], world)
 
     # Sliders for motion settings
     gridbottom = GridLayout(f[2,1])
-    p_noise_slider = Makie.Slider(gridbottom[1,3], range=range(0.01, 1.0, 100))
-    hd_noise_slider = Makie.Slider(gridbottom[2,3], range=range(0.01, 1.0, 100))
+    upper = gridbottom[1,1]
+    bottom = gridbottom[2,1]
+    p_noise_slider = Makie.Slider(upper[1,2], range=range(0.01, 1.0, 100))
+    hd_noise_slider = Makie.Slider(upper[2,2], range=range(0.01, 1.0, 100))
     motion_settings = lift(p_noise_slider.value, hd_noise_slider.value) do p_noise, hd_noise
         (p_noise = p_noise, hd_noise=hd_noise)
     end
@@ -177,8 +188,8 @@ let
         [start_pose_prior(robot_init, motion_settings) for _ in 1:20]
     end
     # Sliders for samples
-    reset_n_particles_btn = Makie.Button(gridbottom[3,1], label="Resample")
-    n_particle_slider = Makie.Slider(gridbottom[3,3], range=1:20, startvalue=5)
+    reset_n_particles_btn = Makie.Button(bottom[1,1], label="Resample")
+    n_particle_slider = Makie.Slider(bottom[1,3], range=1:20, startvalue=5)
     n_particles_obs = n_particle_slider.value
 
     on(reset_n_particles_btn.clicks) do n
@@ -192,9 +203,9 @@ let
     hd_noise_tex = lift(hd_noise->"σ_hd = $(hd_noise[])", hd_noise_slider.value)
     n_particle_tex = lift(N->"# of samples $(N[])", n_particles_obs)
 
-    Label(gridbottom[1,2], p_noise_tex)
-    Label(gridbottom[2,2], hd_noise_tex)
-    Label(gridbottom[3,2], n_particle_tex)
+    Label(upper[1,1], p_noise_tex)
+    Label(upper[2,1], hd_noise_tex)
+    Label(bottom[1,2], n_particle_tex)
     displayed_path = lift((N,path)->path[1:N], n_particles_obs, pose_samples) 
     arrows!(f[1,1], displayed_path)
     # Figure out how to get the correct units
@@ -211,6 +222,10 @@ let
     # Map Visualization
     f = Figure()
     ax = Axis(f[1,1], aspect=DataAspect(), title="Motion step model (samples)")
+    deregister_interaction!(ax, :rectanglezoom)
+    deregister_interaction!(ax, :dragpan)
+    deregister_interaction!(ax, :scrollzoom)
+    deregister_interaction!(ax, :limitreset)
     worldmap!(f[1,1], world)
 
     # Sliders
@@ -306,41 +321,18 @@ function noisy_sensor(pose, walls, sensor_settings)
     return [trace[j => :distance] for j in 1:sensor_settings.sensor_count]
 end
 
-# function Makie.convert_arguments(::Type{<:Makie.AbstractPlot}, pose::Pose, sensor_settings::SensorSettings, readings::AbstractVector{Float64})
-#     start = Point2f(position(pose))
-#     projections = Point2f.([step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)])
-#     println(projections)
-#     println("Pose + sensor_settings")
-#     x = fill(start, length(projections))
-#     println("X: ", x)
-#     println("Y: ", projections)
-#     return (x, projections)
-# end
-
-# function plot_sensors!(pose, color, readings, label, sensor_settings)
-#     plot!([position(pose)[1]], [position(pose)[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
-#     projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
-#     plot!(first.(projections), last.(projections);
-#             color=:blue, label=label, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
-#     plot!([Segment(position(pose), pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
-# end
-
-# function frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false)
-#     the_plot = plot_world(world, title; show_clutters=show_clutters)
-#     plot!(poses; color=poses_color, label=poses_label)
-#     plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
-#     return the_plot
-# end;
-#
-
-begin
+sensor_fig = let
     f = Figure()
     ax = Axis(f[1,1], aspect=DataAspect(), title="Motion step model (samples)")
+    deregister_interaction!(ax, :rectanglezoom)
+    deregister_interaction!(ax, :dragpan)
+    deregister_interaction!(ax, :scrollzoom)
+    deregister_interaction!(ax, :limitreset)
     worldmap!(ax, world)
 
     bottom = GridLayout(f[2,1])
 
-    sensor_noise_slider = Makie.Slider(bottom[1,2], range=0:0.1:3.0, startvalue=0.1)
+    sensor_noise_slider = Makie.Slider(bottom[1,2], range=range(0,0.5,101), startvalue=0.1)
     sensor_count_slider = Makie.Slider(bottom[2,2], range=1:20, startvalue=10)
 
     # Slider Text
@@ -354,15 +346,34 @@ begin
         (fov = 2π*(2/3), sensor_count = N, box_size = world.box_size, s_noise=s_noise)
     end
 
-    readings = Makie.lift(sensor_settings) do sensor_settings
-        sensor_settings = (fov = 2π*(2/3), sensor_count = N, box_size = world.box_size, s_noise=s_noise)
-        noisy_sensor(robot_init, world.walls, sensor_settings)
+    robot_pose = Observable(robot_init)
+    readings = Makie.lift(robot_pose, sensor_settings) do pose, sensor_settings
+        noisy_sensor(pose, world.walls, sensor_settings)
     end
 
-    sensormap!(ax, robot_init, sensor_settings, readings)
-    arrows!(ax, robot_init; arrowsize=5, lengthscale=0.5)
+    sensormap!(ax, robot_pose, sensor_settings, readings)
+    arrows!(ax, robot_pose; arrowsize=5, lengthscale=0.5)
+    register_interaction!(ax, :set_pose) do event::MouseEvent, axis
+        if event.type === MouseEventTypes.leftclick
+            old_pose = robot_pose[]
+            new_pose = Pose(event.data, angle(old_pose))
+            robot_pose[] = new_pose
+            notify(robot_pose)
+        end
+    end
     f
 end
+
+server = Server("localhost", 8080)
+app = App() do
+    Bonito.Grid(
+        Card(pose_prior_fig, padding="0px", margin="0px"),
+        Card(one_step_fig, padding="0px", margin="0px"),
+        Card(sensor_fig, padding="0px", margin="0px"),
+    )
+    # return DOM.div(DOM.h1("hello world"), js"""console.log('hello world')""")
+end
+route!(server, "/"=>app)
 
 
 # ### Full model
@@ -370,79 +381,135 @@ end
 # We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
 
 # %%
-prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
-get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
 
-@gen (static) function full_model_initial(robot_init, walls, full_settings)
+@gen (static) function robot_initialization_prior(robot_init, walls, full_settings)
     pose ~ start_pose_prior(robot_init, full_settings.motion_settings)
-    {:sensor} ~ sensor_model(pose, walls, full_settings.sensor_settings)
+    sensor ~ sensor_model(pose, walls, full_settings.sensor_settings)
     return pose
 end
 
-@gen (static) function full_model_kernel(t, state, robot_inputs, world_inputs, full_settings)
+@gen (static) function dynamics_kernel(t, state, robot_inputs, world_inputs, full_settings)
     pose ~ step_model(state, robot_inputs[t], world_inputs, full_settings.motion_settings)
-    {:sensor} ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
+    sensor ~ sensor_model(pose, world_inputs.walls, full_settings.sensor_settings)
     return pose
 end
-full_model_chain = Unfold(full_model_kernel)
+dynamics_unfold = Unfold(dynamics_kernel)
 
 @gen (static) function full_model(T, robot_init, robot_inputs, world_inputs, full_settings)
-    initial ~ full_model_initial(robot_init, world_inputs.walls, full_settings)
-    steps ~ full_model_chain(T, initial, robot_inputs, world_inputs, full_settings)
+    initial ~ robot_initialization_prior(robot_init, world_inputs.walls, full_settings)
+    steps ~ dynamics_unfold(T, initial, robot_inputs, world_inputs, full_settings)
 end
 
 
 
-motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
-sensor_settings = (fov = 2π*(2/3), sensor_count = 41, box_size = world.box_size, s_noise=0.10)
-robot_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
-full_model_args = (T, robot_init, robot_inputs, world_inputs, robot_settings)
+# selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t, :sensor => j) for t in 1:3, j in 1:5)...)
+# get_selected(get_choices(trace), selection)
 
-trace = simulate(full_model, full_model_args);
-selection = select((prefix_address(t, :pose) for t in 1:3)..., (prefix_address(t, :sensor => j) for t in 1:3, j in 1:5)...)
-get_selected(get_choices(trace), selection)
+prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 
-# %% [markdown]
-# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}(\ldots)$ and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
-# $$\begin{align*}
-# P_\text{full}(z_{0:T}, o_{0:T})
-# &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
-# &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
-#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
-# \end{align*}$$
-#
-# By this point, visualization is essential.
-
-# %%
+get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)]
 function get_sensors(trace)
-    display(trace)
-    [[trace[prefix_address(t, :sensor => j => :distance)]
-      for j in 1:get_args(trace)[5].sensor_settings.sensor_count]
-     for t in 1:(get_args(trace)[1]+1)];
+    T = get_args(trace)[1]
+    settings = get_args(trace)[5]
+    [[trace[prefix_address(t, :sensor => j => :distance)] 
+            for j in 1:settings.sensor_settings.sensor_count ]
+     for t in 1:(T+1)]
 end
 
-function frames_from_full_trace(world, title, trace; show_clutters=false)
-    T = get_args(trace)[1]
-    robot_init = get_args(trace)[2]
-    robot_inputs = get_args(trace)[3]
-    poses = get_path(trace)
-    noiseless_steps = [position(robot_init), [step_along_pose(pose, c.ds) for (pose, c) in zip(poses, robot_inputs)]...]
-    settings = get_args(trace)[5]
-    std_devs_radius = 2.5 * settings.motion_settings.p_noise
-    sensor_readings = get_sensors(trace)
-    plots = Vector{Plots.Plot}(undef, 2*(T+1))
-    for t in 1:(T+1)
-        frame_plot = plot_world(world, title; show_clutters=show_clutters)
-        plot!(poses[1:t-1]; color=:black, label="past poses")
-        plot!(make_circle(noiseless_steps[t], std_devs_radius);
-              color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
-        plot!(Pose(trace[prefix_address(t, :pose => :p)], angle(poses[t])); color=:red, label="sampled next step")
-        plots[2*t-1] = frame_plot
-        plots[2*t] = frame_from_sensors(
-            world, title,
-            poses[1:t], :black, nothing,
-            poses[t], sensor_readings[t], "sampled sensors",
-            settings.sensor_settings; show_clutters=show_clutters)
+
+let
+
+
+    f = Figure() 
+    ax = Axis(f[1,1], aspect=DataAspect(), title="Motion step model (samples)")
+    deregister_interaction!(ax, :rectanglezoom)
+    deregister_interaction!(ax, :dragpan)
+    deregister_interaction!(ax, :scrollzoom)
+    deregister_interaction!(ax, :limitreset)
+    worldmap!(ax, world)
+
+    # Sliders
+    gridbottom = GridLayout(f[2,1])
+    # upper = gridbottom[1,1]
+    # bottom = gridbottom[2,1]
+
+    p_noise_slider = Makie.Slider(gridbottom[1,2], range=range(0.01, 1.0, 100), startvalue=0.5)
+    hd_noise_slider = Makie.Slider(gridbottom[2,2], range=range(0.01, 1.0, 100), startvalue=2π / 360)
+    sensor_noise_slider = Makie.Slider(gridbottom[3,2], range=range(0.01, 1.0, 100), startvalue=0.5)
+    sensor_count_slider = Makie.Slider(gridbottom[4,2], range=1:20, startvalue=4)
+    # n_particle_slider = Makie.Slider(bottom[2,3], range=1:20, startvalue=4)
+    # reset_n_particles_btn = Makie.Button(bottom[2,1], label="Resample")
+
+    # Slider Text
+    p_noise_tex = Makie.lift(p_noise->@sprintf("σ_p = %.3f", p_noise[]), p_noise_slider.value)
+    hd_noise_tex = Makie.lift(hd_noise->@sprintf("σ_hd = %.3f", hd_noise[]), hd_noise_slider.value)
+    sensor_noise_tex = Makie.lift(ds->@sprintf("σ_sensor = %.3f", ds[]), sensor_noise_slider.value)
+    sensor_count_tex = Makie.lift(N->"sensors = $(N[])", sensor_count_slider.value)
+    # n_particle_tex = Makie.lift(N->"samples = $(N[])", n_particle_slider.value)
+
+    Label(gridbottom[1,1], p_noise_tex)
+    Label(gridbottom[2,1], hd_noise_tex)
+    Label(gridbottom[3,1], sensor_noise_tex)
+    Label(gridbottom[4,1], sensor_count_tex)
+    # Label(bottom[2,2], n_particle_tex)
+    
+    # Robot's current position
+    robot_pose = Observable(robot_init)
+    arrows!(robot_pose)
+    register_interaction!(ax, :set_pose) do event::MouseEvent, axis
+        if event.type === MouseEventTypes.leftclick
+            old_pose = robot_pose[]
+            new_pose = Pose(event.data, angle(old_pose))
+            robot_pose[] = new_pose
+        end
     end
-    return plots
-end;
+    
+    robot_settings = lift(
+        p_noise_slider.value, 
+        hd_noise_slider.value, 
+        sensor_noise_slider.value, 
+        sensor_count_slider.value) do p_noise, hd_noise, sensor_noise, sensor_count
+            
+        motion_settings = (p_noise = p_noise, hd_noise = 2π / 360)
+        sensor_settings = (fov = 2π*(2/3), sensor_count = sensor_count, box_size = world.box_size, s_noise=sensor_noise)
+        robot_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
+        return robot_settings
+    end
+    
+    trajectory_trace = lift(robot_pose) do pose
+        motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
+        sensor_settings = (fov = 2π*(2/3), sensor_count = 41, box_size = world.box_size, s_noise=0.10)
+        robot_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
+        model_args = (T, robot_init, robot_inputs, world_inputs, robot_settings)
+        trace = simulate(full_model, model_args);
+    end
+
+    f
+end
+
+# function frames_from_full_trace(world, title, trace; show_clutters=false)
+#     T = get_args(trace)[1]
+#     robot_init = get_args(trace)[2]
+#     robot_inputs = get_args(trace)[3]
+#     poses = get_path(trace)
+#     noiseless_steps = [position(robot_init), [step_along_pose(pose, c.ds) for (pose, c) in zip(poses, robot_inputs)]...]
+#     settings = get_args(trace)[5]
+#     std_devs_radius = 2.5 * settings.motion_settings.p_noise
+#     sensor_readings = get_sensors(trace)
+#     plots = Vector{Plots.Plot}(undef, 2*(T+1))
+#     for t in 1:(T+1)
+#         frame_plot = plot_world(world, title; show_clutters=show_clutters)
+#         plot!(poses[1:t-1]; color=:black, label="past poses")
+#         plot!(make_circle(noiseless_steps[t], std_devs_radius);
+#               color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
+#         plot!(Pose(trace[prefix_address(t, :pose => :p)], angle(poses[t])); color=:red, label="sampled next step")
+#         plots[2*t-1] = frame_plot
+#         plots[2*t] = frame_from_sensors(
+#             world, title,
+#             poses[1:t], :black, nothing,
+#             poses[t], sensor_readings[t], "sampled sensors",
+#             settings.sensor_settings; show_clutters=show_clutters)
+#     end
+#     return plots
+# end;
+

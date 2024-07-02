@@ -47,15 +47,14 @@ function Makie.plot!(sm::SensorMap{<:Tuple{Pose, SensorSettings, Vector{Float64}
     sensor_settings = sm[2]
     readings = sm[3]
 
-    start = Point2f(position(pose[]))
     segments = Observable(NTuple{2, Point2f}[])
     
     function update_plot(readings)
+        start = Point2f(position(pose[]))
         projections = Point2f.([step_along_pose(rotate_pose(pose[], sensor_angle(sensor_settings[], j)), s) for (j, s) in enumerate(readings)])
         segments[] = [(start, proj) for proj in projections]
     end
     Makie.Observables.onany(update_plot, readings)
-    # segments = Observable()
     update_plot(readings[])
     Makie.linesegments!(sm, segments, color=sm.color[])
     sm

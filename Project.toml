@@ -1,4 +1,5 @@
 [deps]
+Bonito = "824d6782-a2ef-11e9-3a09-e5662e0c26f8"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 GLFW_jll = "0656b61e-2033-5cc2-a64a-77c0f6c09b89"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
@@ -6,6 +7,7 @@ Gen = "ea4f424c-a589-11e8-07c0-fd5c91b9da4a"
 GenParticleFilters = "56b76ac4-72ef-411e-b419-6d312ed86a6f"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"
 
 [compat]
