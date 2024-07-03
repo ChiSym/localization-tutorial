@@ -464,29 +464,76 @@ let
         end
     end
     
-    robot_settings = lift(
-        p_noise_slider.value, 
-        hd_noise_slider.value, 
-        sensor_noise_slider.value, 
-        sensor_count_slider.value) do p_noise, hd_noise, sensor_noise, sensor_count
-            
-        motion_settings = (p_noise = p_noise, hd_noise = 2π / 360)
-        sensor_settings = (fov = 2π*(2/3), sensor_count = sensor_count, box_size = world.box_size, s_noise=sensor_noise)
-        robot_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
-        return robot_settings
+    motion_settings = lift(p_noise_slider.value, hd_noise_slider.value) do p_noise, hd_noise
+        (p_noise = p_noise, hd_noise = hd_noise)
     end
     
-    trajectory_trace = lift(robot_pose) do pose
-        motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
-        sensor_settings = (fov = 2π*(2/3), sensor_count = 41, box_size = world.box_size, s_noise=0.10)
-        robot_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
-        model_args = (T, robot_init, robot_inputs, world_inputs, robot_settings)
-        trace = simulate(full_model, model_args);
+    sensor_settings = lift( sensor_noise_slider.value, sensor_count_slider.value) do sensor_noise, sensor_count
+        sensor_settings = (fov = 2π*(2/3), sensor_count = sensor_count, box_size = world.box_size, s_noise=sensor_noise)
     end
+
+    
+    trajectory_trace = lift(robot_pose) do robot_pose
+        robot_settings = (motion_settings=motion_settings[], sensor_settings=sensor_settings[])
+        model_args = (T, robot_pose, robot_inputs, world_inputs, robot_settings)
+        trace = simulate(full_model, model_args)  
+        return trace
+    end
+
+    # TODO
+    # If motion settings change, change the path
+    # If sensor settings change, change the sensors
+    on(sensor_settings) do sensor_settings
+        # generate
+    end
+    
+    on(motion_settings) do motion_settings
+        robot_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings[])
+        model_args = (T, robot_pose[], robot_inputs, world_inputs, robot_settings)
+        sensor_chm = sensor_choicemap(trajectory_trace[])
+        new_trace,  = generate(full_model, model_args, sensor_chm)
+        trajectory_trace[] = new_trace
+    end
+   
+    path = lift(trajectory_trace) do trace
+        get_path(trace)
+    end
+
+    arrows!(ax, path, color=:red)
+
 
     f
 end
 
+function path_choicemap(trace)
+    args = get_args(trace)
+    T = args[1]
+    # get_args(trace)[2]
+end
+
+function sensor_choicemap(trace)
+    sensor_chm = choicemap()
+    chm = get_choices(trace)
+    set_submap!(sensor_chm, :initial=>:sensor, get_submap(chm, :initial=>:sensor))
+
+    # sensor_chm[:initial] = get_submap(chm, :initial=>:sensor)
+    for (key, sub_chm) in get_submaps_shallow(get_submap(chm, :steps))
+        s_chm = get_submap(sub_chm, :sensor)
+        set_submap!(sensor_chm, :steps=>key=>:sensor, s_chm)
+    end
+    sensor_chm
+end
+
+new_chm = sensor_choicemap(trace)
+sensor_settings = (fov = 4.1887902047863905, sensor_count = 2, box_size = 18.86, s_noise = 0.1)
+full_settings = (motion_settings=motion_settings, sensor_settings=sensor_settings)
+model_args = (2, robot_init, robot_inputs, world_inputs, full_settings)
+trace = simulate(full_model, model_args)
+chm = get_choices(trace)
+
+# new_model_args = (2, robot_init, robot_inputs, world_inputs, full_settings)
+# changes = Tuple(UnknownChange() for i in 1:length(new_model_args))
+# update(trace, n)
 # function frames_from_full_trace(world, title, trace; show_clutters=false)
 #     T = get_args(trace)[1]
 #     robot_init = get_args(trace)[2]
