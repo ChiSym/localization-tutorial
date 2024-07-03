@@ -1073,7 +1073,15 @@ def animate_path_with_sensor(path, motion_settings):
                 pose_arrow(Pose(p, hd))
                 for p, hd in zip(path.p[: step + 1], path.hd[: step + 1])
             ]
-            + plot_sensors(Pose(path.p[step + 1], path.hd[step + 1]), '#f00', ideal_sensor(Pose(path.p[step+1], path.hd[step+1]), world['walls'], sensor_settings))
+            + plot_sensors(
+                Pose(path.p[step + 1], path.hd[step + 1]),
+                "#f00",
+                ideal_sensor(
+                    Pose(path.p[step + 1], path.hd[step + 1]),
+                    world["walls"],
+                    sensor_settings,
+                ),
+            )
             # Next pose in red
             + [pose_arrow(Pose(path.p[step + 1], path.hd[step + 1]), stroke="red")]
             + {"axis": None}
