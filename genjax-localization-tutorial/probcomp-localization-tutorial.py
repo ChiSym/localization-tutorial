@@ -34,6 +34,7 @@ import jax
 import jax.numpy as jnp
 import genjax
 from genjax import SelectionBuilder as S
+from genjax import ChoiceMapBuilder as C
 from genjax.typing import FloatArray
 from penzai import pz
 
@@ -789,20 +790,30 @@ step_model.simulate(
 path_model_step_simulate = jax.jit(path_model_step.simulate)
 
 
-def generate_path(key):
+def generate_path_trace(key):
     key, start_key = jax.random.split(key)
     initial_pose = path_model_start.simulate(start_key, (robot_inputs, motion_settings))
     key, step_key = jax.random.split(key)
     return path_model_step_simulate(
         step_key, (initial_pose.get_retval(), robot_inputs["controls"])
-    ).inner.get_retval()[0]
+    )
+
+
+def generate_path(key):
+    return generate_path_trace(key).inner.get_retval()[0]
+
+
+def nth(t: genjax.Pytree, n: int):
+    return jax.tree.map(lambda v: v[n], t)
 
 
 N_samples = 12
-key, *sample_keys = jax.random.split(key, N_samples + 1)
-sample_paths = [generate_path(sample_key) for sample_key in sample_keys]
+key, sub_key = jax.random.split(key)
+sample_paths_v = jax.vmap(generate_path)(jax.random.split(sub_key, N_samples))
 
-Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
+Plot.Grid(
+    [walls_plot + poses_to_plots(nth(sample_paths_v, n)) for n in range(N_samples)]
+)
 
 # Leaving this in as an a reference for animation;
 # Julia animated this, but a grid seems easier to eyeball here.
@@ -852,5 +863,228 @@ def animate_path_with_confidence(path, motion_settings):
 # Generate a single path
 key, sample_key = jax.random.split(key)
 animate_path_with_confidence(generate_path(sample_key), motion_settings)
+
+# %% [markdown]
+# ### Modfying traces
+#
+# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic
+# execution histories.  Namely, `Gen.update` takes as inputs a trace, together with modifications
+# to its arguments and primitive choice values, and returns an accordingly modified trace.
+# It also returns (the log of) the ratio of the updated trace's density to the original trace's
+# density, together with a precise record of the resulting modifications that played out.
+
+# %% [markdown]
+# One could, for instance, consider just the placement of the first pose, and replace its stochastic
+# choice of heading with a specific value.
+
+# %%
+
+key, sub_key = jax.random.split(key)
+trace = start_pose_prior.simulate(sub_key, (robot_inputs["start"], motion_settings))
+key, sub_key = jax.random.split(key)
+rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
+    sub_key, C["hd"].set(jnp.pi / 2.0)
+)
+
+Plot.new(
+    world_plot
+    + pose_arrow(trace.get_retval(), stroke="green")
+    + pose_arrow(rotated_trace.get_retval(), stroke="red"),
+    Plot.color_map(
+        {"walls": "#ccc", "some pose": "green", "with heading modified": "red"}
+    ),
+)
+
+# %% [markdown]
+# The original trace was typical under the pose prior model, whereas the modified one is
+# rather less likely.  This is the log of how much unlikelier:
+
+# %%
+rotated_trace_weight_diff
+
+# %% [markdown]
+# It is worth carefully thinking through a tricker instance of this.  Suppose instead,
+# within the full path, we replaced the $t = 0$ step's stochastic choice of heading
+# with some specific value.
+
+# %%
+key, sub_key = jax.random.split(key)
+trace = generate_path_trace(sub_key)
+key, sub_key = jax.random.split(key)
+
+# This doesn't work (See GEN-339)
+try:
+    rotated_first_step, rotated_first_step_weight_diff = trace.update(
+        sub_key, C[0, "steps", "pose", "hd"].set(jnp.pi / 2.0)
+    )
+except AttributeError as ae:
+    ae
+
+# trace.get_choices()[0, 'steps', 'pose', 'hd']
+# trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
+# rotated_first_step, rotated_first_step_weight_diff, _, _ =
+#     update(trace,
+#            (T, robot_inputs, world_inputs, motion_settings), (NoChange(), NoChange(), NoChange(), NoChange()),
+#            choicemap((:steps => 1 => :pose => :hd, π/2.)))
+# the_plot = plot_world(world, "Modifying another heading")
+# plot!(get_path(trace); color=:green, label="some path")
+# plot!(get_path(rotated_first_step); color=:red, label="with heading at first step modified")
+# savefig("imgs/modify_trace_1")
+# the_plot
+
+# %% [markdown]
+# Another capability of `Gen.update` is to modify the *arguments* to the generative function
+# used to produce the trace.  In our example, we might have on hand a very long list of
+# controls, and we wish to explore the space of paths incrementally in the timestep:
+
+# %%
+
+# TODO(colin): Seek approval for the following modification of the notebook:
+# I propose we skip this demonstration for the following reasons.
+# It is un-JAX-like to use a for loop like this. There are probably
+# better examples of wanting to change an argument than this. Further,
+# this seems to step around the `scan` structure of our path generation,
+# and overall looks a bit like an anti-pattern from the JAX point of view.
+# The tests that are done in the loop don't reveal much about the
+# statistics of the situation, so I think getting this to work is more
+# trouble than it's worth.
+#
+# Furthermore, I think it is much more valuable to understand using
+# choicemaps to adjust random choices in Gen than it is to fiddle with
+# parameters.
+
+# change_only_T = (UnknownChange(), NoChange(), NoChange(), NoChange())
+
+# trace = simulate(path_model_loop, (0, robot_inputs, world_inputs, motion_settings))
+# for t in 1:T
+#     trace, _, _, _ = update(trace, (t, robot_inputs, world_inputs, motion_settings), change_only_T, choicemap())
+#     # ...
+#     # Do something with the trace of the partial path up to time t.
+#     # ...
+#     @assert has_value(get_choices(trace), :steps => t => :pose => :p)
+#     @assert !has_value(get_choices(trace), :steps => (t+1) => :pose => :p)
+# end
+
+# println("Success");
+
+# TODO(colin): discuss the following with the team.
+#
+# The next part of the notebook covers using the Unfold combinator in Julia
+# to achieve high performance. But we have already done that by using scan
+# in GenJAX, so I am skipping this section of the tutorial as contributing
+# nothing new. We may, however, go back to earlier parts of the tutorial to
+# explain how our choices of data structure were chosen to allow JAX to work
+# at highest performance.
+#
+# We return to the Julia notebook at the point where sensors are introduced.
+
+# %% [markdown]
+# ### Ideal sensors
+#
+# We now, additionally, assume the robot is equipped with sensors that cast
+# rays upon the environment at certain angles relative to the given pose,
+# and return the distance to a hit.
+#
+# We first describe the ideal case, where the sensors return the true
+# distances to the walls.
+
+# %%
+
+sensor_settings = {
+    "fov": 2 * jnp.pi * (2 / 3),
+    "num_angles": 41,
+    "box_size": world["box_size"],
+}
+
+
+def sensor_distance(pose, walls, box_size):
+    distances = jax.vmap(distance, in_axes=(None, 0))(pose, walls)
+    d = jnp.min(distances)
+    # Capping to a finite value avoids issues below.
+    return jnp.where(jnp.isinf(d), 2.0 * box_size, d)
+
+
+# This represents a "fan" of sensor angles, with given field of vision, centered at angle 0.
+sensor_angles = sensor_settings["fov"] * jnp.array(
+    [
+        (j - (sensor_settings["num_angles"] - 1) / 2.0)
+        / (sensor_settings["num_angles"] - 1)
+        for j in range(sensor_settings["num_angles"])
+    ]
+)
+
+
+def ideal_sensor(pose: Pose, walls, sensor_settings):
+    def reading(angle):
+        return sensor_distance(pose.rotate(angle), walls, sensor_settings["box_size"])
+
+    return jax.vmap(reading)(sensor_angles)
+
+
+# demo (this just prints an array):
+# ideal_sensor(initial_pose.get_retval(), world_inputs['walls'], sensor_settings)
+
+# %%
+# Plot sensor data.
+
+
+def plot_sensors(pose: Pose, color, readings):
+    projections = [
+        pose.rotate(sensor_angles[j]).step_along(s) for j, s in enumerate(readings)
+    ]
+    return (
+        [Plot.line([pose.p, p.p], stroke=Plot.constantly("#ddd")) for p in projections]
+        + [Plot.dot([pose.p for pose in projections], fill=color)]
+        + [Plot.dot([pose.p], fill="#0f0")]
+    )
+
+
+# def frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false):
+# the_plot = plot_world(world, title; show_clutters=show_clutters)
+# plot!(poses; color=poses_color, label=poses_label)
+# plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
+# return the_plot
+# end;
+
+# ideal_sensor(initial_pose.get_retval(), world['walls'], sensor_settings)
+Plot.new(
+    walls_plot
+    + plot_sensors(
+        initial_pose.get_retval(),
+        "#f00",
+        ideal_sensor(initial_pose.get_retval(), world["walls"], sensor_settings),
+    )
+)
+
+
+# %%
+sensor_settings = {
+    "fov": 2 * jnp.pi * (2 / 3),
+    "num_angles": 41,
+    "box_size": world["box_size"],
+}
+
+def animate_path_with_sensor(path, motion_settings):
+    frames = [
+        (
+            walls_plot
+            # Prior poses in black
+            + [
+                pose_arrow(Pose(p, hd))
+                for p, hd in zip(path.p[: step + 1], path.hd[: step + 1])
+            ]
+            + plot_sensors(Pose(path.p[step + 1], path.hd[step + 1]), '#f00', ideal_sensor(Pose(path.p[step+1], path.hd[step+1]), world['walls'], sensor_settings))
+            # Next pose in red
+            + [pose_arrow(Pose(path.p[step + 1], path.hd[step + 1]), stroke="red")]
+            + {"axis": None}
+        )
+        for step in range(len(path.p) - 1)
+    ]
+
+    return Plot.Frames(frames, fps=2)
+
+key, sample_key = jax.random.split(key)
+animate_path_with_sensor(generate_path(sample_key), motion_settings)
+
 
 # %%
