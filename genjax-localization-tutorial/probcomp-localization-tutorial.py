@@ -35,7 +35,7 @@ import jax.numpy as jnp
 import genjax
 from genjax import SelectionBuilder as S
 from genjax import ChoiceMapBuilder as C
-from genjax.typing import FloatArray
+from genjax.typing import FloatArray, PRNGKey
 from penzai import pz
 
 import os
@@ -790,7 +790,7 @@ step_model.simulate(
 path_model_step_simulate = jax.jit(path_model_step.simulate)
 
 
-def generate_path_trace(key):
+def generate_path_trace(key: PRNGKey) -> genjax.Trace:
     key, start_key = jax.random.split(key)
     initial_pose = path_model_start.simulate(start_key, (robot_inputs, motion_settings))
     key, step_key = jax.random.split(key)
@@ -798,12 +798,16 @@ def generate_path_trace(key):
         step_key, (initial_pose.get_retval(), robot_inputs["controls"])
     )
 
+def path_from_trace(tr: genjax.Trace) -> Pose:
+    # TODO(colin): can we use one of @sritchie's new combinators to avoid
+    # using `inner` to get at the trace steps?
+    return tr.inner.get_retval()[0]
 
-def generate_path(key):
-    return generate_path_trace(key).inner.get_retval()[0]
+def generate_path(key: PRNGKey) -> Pose:
+    return path_from_trace(generate_path_trace(key))
 
 
-def nth(t: genjax.Pytree, n: int):
+def nth(t, n: int):
     return jax.tree.map(lambda v: v[n], t)
 
 
@@ -914,7 +918,7 @@ key, sub_key = jax.random.split(key)
 
 # This doesn't work (See GEN-339)
 try:
-    rotated_first_step, rotated_first_step_weight_diff = trace.update(
+    rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
         sub_key, C[0, "steps", "pose", "hd"].set(jnp.pi / 2.0)
     )
 except AttributeError as ae:
@@ -1015,9 +1019,11 @@ def make_sensor_angles(sensor_settings):
 sensor_angles = make_sensor_angles(sensor_settings)
 
 
-def ideal_sensor(pose: Pose, walls, sensor_settings):
+def ideal_sensor(pose: Pose):
+    walls = world['walls']
+    box_size = sensor_settings['box_size']
     def reading(angle):
-        return sensor_distance(pose.rotate(angle), walls, sensor_settings["box_size"])
+        return sensor_distance(pose.rotate(angle), walls, box_size)
 
     return jax.vmap(reading)(sensor_angles)
 
@@ -1026,8 +1032,8 @@ def ideal_sensor(pose: Pose, walls, sensor_settings):
 # Plot sensor data.
 
 
-def plot_sensors(pose: Pose):
-    readings = ideal_sensor(pose, world["walls"], sensor_settings)
+def plot_sensors(pose: Pose, sensor):
+    readings = sensor(pose)
     projections = [
         pose.rotate(sensor_angles[j]).step_along(s) for j, s in enumerate(readings)
     ]
@@ -1038,32 +1044,126 @@ def plot_sensors(pose: Pose):
     )
 
 
-walls_plot + plot_sensors(initial_pose.get_retval())
+walls_plot + plot_sensors(initial_pose.get_retval(), ideal_sensor)
 # %%
 
 
-def animate_path_with_sensor(path, motion_settings):
+def animate_path_with_sensor(trace: genjax.Trace, sensor):
+    path = path_from_trace(trace)
+    # how should sensor work? If we have POSE, we can do ideal_sensor on it; if
+    # we have TRACE, we should harvest the readings. since we have path from trace,
+    # we can make it so it works from a trace. Let's try that.
+
     frames = [
         (
             walls_plot
             # Prior poses in black
             + [
                 pose_arrow(Pose(p, hd))
-                for p, hd in zip(path.p[: step + 1], path.hd[: step + 1])
+                for p, hd in zip(path.p[: step], path.hd[: step])
             ]
-            + plot_sensors(Pose(path.p[step + 1], path.hd[step + 1]))
+            + plot_sensors(Pose(path.p[step], path.hd[step]), sensor)
             # Next pose in red
-            + [pose_arrow(Pose(path.p[step + 1], path.hd[step + 1]), stroke="red")]
+            + [pose_arrow(Pose(path.p[step], path.hd[step]), stroke="red")]
             + {"axis": None}
         )
-        for step in range(len(path.p) - 1)
+        for step in range(1, len(path.p))
     ]
 
     return Plot.Frames(frames, fps=2)
 
 
 key, sample_key = jax.random.split(key)
-animate_path_with_sensor(generate_path(sample_key), motion_settings)
+animate_path_with_sensor(generate_path_trace(sample_key), ideal_sensor)
+
+# %% [markdown]
+# ### Noisy sensors
+#
+# We assume that the sensor readings are themselves uncertain, say, the distances only knowable
+# up to some noise.  We model this as follows.
+
+# %%
+@genjax.gen
+def sensor_model(pose, angle):
+    sensor_pose = pose.rotate(angle)
+    return genjax.normal(sensor_distance(sensor_pose, world['walls'], sensor_settings['box_size']), sensor_settings['s_noise']) @ 'distance'
+
+sensor_model_v = sensor_model.vmap(in_axes=(None, 0))
+
+def noisy_sensor(pose):
+    trace = sensor_model_v.simulate(key, (pose, sensor_angles))
+    return trace
+
+# # %% [markdown]
+# The trace contains many choices corresponding to directions of sensor reading from the input pose.
+# TODO(colin): The original notebook contains the following comment:
+# To reduce notebook clutter, here we just show a subset of 5 of them:
+# But I don't think we need to worry about this with penzai. We aren't relying on
+# print statments to condense this data.
+
+# %%
+sensor_settings['s_noise'] = 0.10
+
+key, sub_key = jax.random.split(key)
+trace = sensor_model_v.simulate(sub_key, (robot_inputs['start'], sensor_angles))
+# get_selected(get_choices(trace), select((1:5)...))
+trace
+
+# %% [markdown]
+# The mathematical picture is as follows.  Given the parameters of a pose $y$, walls $w$,
+# and settings $\nu$, one gets a distribution $\text{sensor}(y, w, \nu)$ over the traces
+# of `sensor_model`, and when $z$ is a motion model trace we set
+# $\text{sensor}(z, w, \nu) := \text{sensor}(\text{retval}(z), w, \nu)$.
+# Its samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{(J)})$, where
+# $J := \nu_\text{num\_angles}$, each $o^{(j)}$ independently following a certain normal
+# distribution (depending, notably, on the distance from the pose to the nearest wall).
+# Thus the density of $o$ factors into a product of the form
+# $$
+# P_\text{sensor}(o) = \prod\nolimits_{j=1}^J P_\text{normal}(o^{(j)})
+# $$
+# where we begin a habit of omitting the parameters to distributions that are implied by the code.
+#
+# Visualizing the traces of the model is probably more useful for orientation, so we do this now.
+
+# %%
+readings = trace.get_choices()[...,'distance']
+readings
+
+# function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
+#     readings = [trace[j => :distance] for j in 1:sensor_settings.num_angles]
+#     return frame_from_sensors(world, title, poses, poses_color, poses_label, pose,
+#                              readings, "trace sensors", get_args(trace)[3];
+#                              show_clutters=show_clutters)
+# end;
+
+key, sub_key = jax.random.split(key)
+trace = generate_path_trace(sub_key)
+path = path_from_trace(trace)
+animate_path_with_sensor(generate_path_trace(sub_key), ideal_sensor)
+
+# *** WHERE WE LEFT OFF ***
+# We want to send a function to animate_path_with_sensor that would get the readings
+# from the trace. ideal_sensor currently takes a pose argument which makes that
+# inconvenient. Maybe we should send traces not paths to animate path with sensor,
+# have it extract the path and sensor information from path with a function we supply,
+# basically a lambda like readings above, otherwise tr -> pose -> ideal_sensor.
 
 
+# %%
+ani = Animation()
+for pose in path_integrated
+    trace = simulate(sensor_model, (pose, world.walls, sensor_settings))
+    frame_plot = frame_from_sensors_trace(
+        world, "Sensor model (samples)",
+        path_integrated, :green2, "some path",
+        pose, trace)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/sensor_1.gif", fps=1)
+
+
+
+
+# %%
+sensor_angles
 # %%
