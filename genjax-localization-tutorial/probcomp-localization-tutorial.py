@@ -1005,13 +1005,14 @@ def sensor_distance(pose, walls, box_size):
 
 
 # This represents a "fan" of sensor angles, with given field of vision, centered at angle 0.
-sensor_angles = sensor_settings["fov"] * jnp.array(
-    [
-        (j - (sensor_settings["num_angles"] - 1) / 2.0)
-        / (sensor_settings["num_angles"] - 1)
-        for j in range(sensor_settings["num_angles"])
-    ]
-)
+
+
+def make_sensor_angles(sensor_settings):
+    na = sensor_settings["num_angles"]
+    return sensor_settings["fov"] * (jnp.arange(na) - jnp.floor(na / 2)) / (na - 1)
+
+
+sensor_angles = make_sensor_angles(sensor_settings)
 
 
 def ideal_sensor(pose: Pose, walls, sensor_settings):
@@ -1021,48 +1022,25 @@ def ideal_sensor(pose: Pose, walls, sensor_settings):
     return jax.vmap(reading)(sensor_angles)
 
 
-# demo (this just prints an array):
-# ideal_sensor(initial_pose.get_retval(), world_inputs['walls'], sensor_settings)
-
 # %%
 # Plot sensor data.
 
 
-def plot_sensors(pose: Pose, color, readings):
+def plot_sensors(pose: Pose):
+    readings = ideal_sensor(pose, world["walls"], sensor_settings)
     projections = [
         pose.rotate(sensor_angles[j]).step_along(s) for j, s in enumerate(readings)
     ]
     return (
         [Plot.line([pose.p, p.p], stroke=Plot.constantly("#ddd")) for p in projections]
-        + [Plot.dot([pose.p for pose in projections], fill=color)]
+        + [Plot.dot([pose.p for pose in projections], fill="#f80")]
         + [Plot.dot([pose.p], fill="#0f0")]
     )
 
 
-# def frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false):
-# the_plot = plot_world(world, title; show_clutters=show_clutters)
-# plot!(poses; color=poses_color, label=poses_label)
-# plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
-# return the_plot
-# end;
-
-# ideal_sensor(initial_pose.get_retval(), world['walls'], sensor_settings)
-Plot.new(
-    walls_plot
-    + plot_sensors(
-        initial_pose.get_retval(),
-        "#f00",
-        ideal_sensor(initial_pose.get_retval(), world["walls"], sensor_settings),
-    )
-)
-
-
+walls_plot + plot_sensors(initial_pose.get_retval())
 # %%
-sensor_settings = {
-    "fov": 2 * jnp.pi * (2 / 3),
-    "num_angles": 41,
-    "box_size": world["box_size"],
-}
+
 
 def animate_path_with_sensor(path, motion_settings):
     frames = [
@@ -1073,15 +1051,7 @@ def animate_path_with_sensor(path, motion_settings):
                 pose_arrow(Pose(p, hd))
                 for p, hd in zip(path.p[: step + 1], path.hd[: step + 1])
             ]
-            + plot_sensors(
-                Pose(path.p[step + 1], path.hd[step + 1]),
-                "#f00",
-                ideal_sensor(
-                    Pose(path.p[step + 1], path.hd[step + 1]),
-                    world["walls"],
-                    sensor_settings,
-                ),
-            )
+            + plot_sensors(Pose(path.p[step + 1], path.hd[step + 1]))
             # Next pose in red
             + [pose_arrow(Pose(path.p[step + 1], path.hd[step + 1]), stroke="red")]
             + {"axis": None}
@@ -1090,6 +1060,7 @@ def animate_path_with_sensor(path, motion_settings):
     ]
 
     return Plot.Frames(frames, fps=2)
+
 
 key, sample_key = jax.random.split(key)
 animate_path_with_sensor(generate_path(sample_key), motion_settings)
