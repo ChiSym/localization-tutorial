@@ -755,7 +755,7 @@ def path_model_start(robot_inputs, motion_settings):
 
 
 def make_path_model_step(world_inputs, motion_settings):
-    @genjax.scan_combinator(max_length=T)
+    @genjax.scan(n=T)
     @genjax.gen
     def path_model_step(previous_pose, control):
         return step_model(previous_pose, control, world_inputs, motion_settings) @ (
@@ -1180,9 +1180,7 @@ def make_full_model(motion_settings):
     @genjax.gen
     def full_model():
         initial = full_model_initial(motion_settings) @ "initial"
-        full_model_kernel.scan(max_length=T)(
-            initial, robot_inputs["controls"]
-        ) @ "steps"
+        full_model_kernel.scan(n=T)(initial, robot_inputs["controls"]) @ "steps"
 
     return full_model
 
@@ -1318,4 +1316,43 @@ animate_full_trace(trace_low_deviation)
 # TODO: next task is to create a side-by-side animation of the low and high deviation paths.
 
 animate_full_trace(trace_high_deviation)
+# %% [markdown]
+# Since we imagine these data as having been recorded from the real world, keep only their extracted data, *discarding* the traces that produced them.
+
+# %%
+# These are are what we hope to recover...
+path_low_deviation = get_path(trace_low_deviation)
+path_high_deviation = get_path(trace_high_deviation)
+
+# ...using these data.
+observations_low_deviation = get_sensors(trace_low_deviation)
+observations_high_deviation = get_sensors(trace_high_deviation)
+
+# Encode sensor readings into choice map.
+
+def constraint_from_sensors(readings):
+    angle_indices = jnp.arange(len(sensor_angles))
+    return jax.vmap(
+        lambda ix, v: C[
+            "steps", ix, "sensor", angle_indices, "distance"
+        ].set(v)
+    )(jnp.arange(T), readings[1:]) #+ C['initial', 'sensor', angle_indices, 'distance'].set(readings[0])
+
+constraints_low_deviation = constraint_from_sensors(observations_low_deviation)
+constraints_high_deviation = constraint_from_sensors(observations_high_deviation)
+
+
+# constraint_from_sensors(t, readings) =
+#     choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
+
+# constraints_low_deviation = [constraint_from_sensors(o...) for o in enumerate(observations_low_deviation)]
+# constraints_high_deviation = [constraint_from_sensors(o...) for o in enumerate(observations_high_deviation)]
+# merged_constraints_low_deviation = merge(constraints_low_deviation...)
+# merged_constraints_high_deviation = merge(constraints_high_deviation...);
+
+# %%
+key, sub_key = jax.random.split(key)
+#constraints_low_deviation
+# Doesn't work: also victim of GEN-339
+#trace_low_deviation.update(sub_key, constraints_low_deviation)
 # %%
