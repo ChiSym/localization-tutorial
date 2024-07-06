@@ -19,7 +19,7 @@
 # %% [markdown]
 # # ProbComp Localization Tutorial
 #
-# This notebook aims to give an introduction to probabilistic computation (ProbComp).  This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probablistic programming language (PPL).  The programmer can thus encode their probabilistic intuition for solving a problem into an algorithm.  Back-end language work automates the routine but error-prone derivations.
+# This notebook provides an introduction to probabilistic computation (ProbComp). This term refers to a way of expressing probabilistic constructs in a computational paradigm, made precise by a probabilistic programming language (PPL). The programmer can encode their probabilistic intuition for solving a problem into an algorithm. Back-end language work automates the routine but error-prone derivations.
 #
 # Dependencies are specified in pyproject.toml.
 # %%
@@ -38,8 +38,7 @@ from genjax.typing import FloatArray
 from penzai import pz
 
 import os
-from math import sin, cos, pi
-
+from math import sin, cos, pi, atan2
 
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
@@ -52,8 +51,8 @@ os.makedirs("imgs", exist_ok=True)
 # * some clutters that sometimes unexpectedly exist in that space.
 #
 # We also assume given a description of a robot's behavior via
-# * an estimated initial pose (= position + heading), and
-# * a program of controls (= advance distance, followed by rotate heading).
+# * an estimated initial pose (position + heading), and
+# * a program of controls (advance distance, followed by rotate heading).
 #
 # *In addition to the uncertainty in the initial pose, we are uncertain about the true execution of the motion of the robot.*
 #
@@ -119,7 +118,6 @@ print(pose.rotate(pi / 2))
 
 
 # %%
-# %%
 @pz.pytree_dataclass
 class Control(genjax.Pytree):
     ds: FloatArray
@@ -127,9 +125,11 @@ class Control(genjax.Pytree):
 
 
 def create_segments(points):
-    """Given an array of points of shape (N, 2), return an array of
+    """
+    Given an array of points of shape (N, 2), return an array of
     pairs of points. [p_1, p_2, p_3, ...] -> [[p_1, p_2], [p_2, p_3], ...]
-    where each p_i is is [x_i, y_i]"""
+    where each p_i is [x_i, y_i]
+    """
     return jnp.stack([points, jnp.roll(points, shift=-1, axis=0)], axis=1)
 
 
@@ -141,7 +141,7 @@ def make_world(walls_vec, clutters_vec, start, controls):
     - walls_vec (list of list of float): A list of 2D points representing the vertices of walls.
     - clutters_vec (list of list of list of float): A list where each element is a list of 2D points representing the vertices of a clutter.
     - start (Pose): The starting pose of the robot.
-    - controls (list of Control): A list of control actions for the robot.
+    - controls (list of Control): Control actions for the robot.
 
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
@@ -151,11 +151,11 @@ def make_world(walls_vec, clutters_vec, start, controls):
     clutters = jax.vmap(create_segments)(clutters_vec)
 
     # Combine all points for bounding box calculation
-    all_points_np = jnp.vstack(
+    all_points = jnp.vstack(
         (jnp.array(walls_vec), jnp.concatenate(clutters_vec), jnp.array([start.p]))
     )
-    x_min, y_min = jnp.min(all_points_np, axis=0)
-    x_max, y_max = jnp.max(all_points_np, axis=0)
+    x_min, y_min = jnp.min(all_points, axis=0)
+    x_max, y_max = jnp.max(all_points, axis=0)
 
     # Calculate bounding box, box size, and center point
     bounding_box = (x_min, x_max, y_min, y_max)
@@ -212,7 +212,7 @@ world, robot_inputs, T = load_world("../example_20_program.json")
 # %% [markdown]
 # ### Integrate a path from a starting pose and controls
 #
-# If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
+# If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path. Naïvely, this results in the following.
 
 
 # %%
@@ -233,10 +233,9 @@ def integrate_controls_unphysical(robot_inputs):
     path = [robot_inputs["start"]]
 
     # Iterate over each control step to compute the new pose and add it to the path
-
     controls = robot_inputs["controls"]
     for i in range(len(controls.ds)):
-        p = path[-1].p + controls.ds[i]
+        p = path[-1].p + controls.ds[i] * path[-1].dp()
         hd = path[-1].hd + controls.dhd[i]
         path.append(Pose(p, hd))
 
@@ -260,12 +259,12 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
     - PARALLEL_TOL: Tolerance for determining if lines are parallel.
 
     Returns:
-    - s, t: Parameters for the line equations at the intersection point. None if lines are parallel.
-    TODO: update commentary
+    - s, t: Parameters for the line equations at the intersection point.
+            Returns [-inf, -inf] if lines are parallel.
     """
     det = u[0] * v[1] - u[1] * v[0]
     return jnp.where(
-        det < PARALLEL_TOL,
+        jnp.abs(det) < PARALLEL_TOL,
         jnp.array([-jnp.inf, -jnp.inf]),
         jnp.array(
             [
@@ -295,10 +294,8 @@ def distance(p, seg):
     )
 
 
-def compute_wall_normal(wall_normal_direction):
-    normalized_wall_direction = jnp.divide(
-        wall_normal_direction, jnp.linalg.norm(wall_normal_direction)
-    )
+def compute_wall_normal(wall_direction):
+    normalized_wall_direction = wall_direction / jnp.linalg.norm(wall_direction)
     return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
 
 
@@ -315,30 +312,38 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     Returns:
     - Pose: The new pose after taking the step, considering potential wall collisions.
     """
+    # Calculate step direction and length
     step_direction = p2 - p1
-    step_pose = Pose(p1, jnp.atan2(step_direction[1], step_direction[0]))
+    step_length = jnp.linalg.norm(step_direction)
+    step_pose = Pose(p1, jnp.arctan2(step_direction[1], step_direction[0]))
 
-    # this should be a vmap of distance over world_inputs['vwalls'] with step_pose held constant
-    # using in_axes
+    # Calculate distances to all walls
     distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs["walls"])
 
+    # Find the closest wall
     closest_wall_index = jnp.argmin(distances)
     closest_wall_distance = distances[closest_wall_index]
     closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs["walls"])
-    wall_normal_direction = closest_wall[1] - closest_wall[0]
-    wall_normal = compute_wall_normal(wall_normal_direction)
-    step_length = jnp.linalg.norm(step_direction)
-    collision_point = jnp.add(p1, jnp.multiply(closest_wall_distance, step_pose.dp()))
+
+    # Calculate wall normal and collision point
+    wall_direction = closest_wall[1] - closest_wall[0]
+    wall_normal = compute_wall_normal(wall_direction)
+    collision_point = p1 + closest_wall_distance * step_pose.dp()
+
+    # Ensure wall_normal points away from the robot's direction
     wall_normal = jnp.where(
-        jnp.cross(step_pose.dp(), wall_normal_direction) < 0, -wall_normal, wall_normal
-    )
-    bounce_off_point = jnp.add(
-        collision_point, jnp.multiply(world_inputs["bounce"], wall_normal)
+        jnp.dot(step_pose.dp(), wall_normal) > 0, -wall_normal, wall_normal
     )
 
-    return Pose(
-        jnp.where(closest_wall_distance >= step_length, p2, bounce_off_point), hd
+    # Calculate bounce off point
+    bounce_off_point = collision_point + world_inputs["bounce"] * wall_normal
+
+    # Determine final position based on whether a collision occurred
+    final_position = jnp.where(
+        closest_wall_distance >= step_length, p2, bounce_off_point
     )
+
+    return Pose(final_position, hd)
 
 
 # %%
@@ -382,27 +387,45 @@ path_integrated = integrate_controls(robot_inputs, world_inputs)
 # %%
 
 
-def arrowhead_line(point, heading, wingLength=0.4, wingAngle=pi / 4, **kwargs):
-    leftWingAngle = heading + wingAngle
-    rightWingAngle = heading - wingAngle
+def arrow_plot(start, end, wing_angle, wing_length, constants={}, **mark_options):
+    mark_options = {"strokeWidth": 1.25, **mark_options}
 
-    leftWingEnd = [
-        point[0] - wingLength * cos(leftWingAngle),
-        point[1] - wingLength * sin(leftWingAngle),
-    ]
-    rightWingEnd = [
-        point[0] - wingLength * cos(rightWingAngle),
-        point[1] - wingLength * sin(rightWingAngle),
-    ]
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    angle = atan2(dy, dx)
 
-    return Plot.line([leftWingEnd, point, rightWingEnd], **kwargs)
+    left_wing_angle = angle + wing_angle
+    right_wing_angle = angle - wing_angle
+
+    left_wing_end = {
+        "x": end[0] - wing_length * cos(left_wing_angle),
+        "y": end[1] - wing_length * sin(left_wing_angle),
+        **constants,
+    }
+    right_wing_end = {
+        "x": end[0] - wing_length * cos(right_wing_angle),
+        "y": end[1] - wing_length * sin(right_wing_angle),
+        **constants,
+    }
+
+    return Plot.line(
+        [
+            {**constants, "x": start[0], "y": start[1]},
+            {**constants, "x": end[0], "y": end[1]},
+            left_wing_end,
+            {**constants, "x": end[0], "y": end[1]},
+            right_wing_end,
+        ],
+        {"x": "x", "y": "y", **mark_options},
+    )
 
 
-def pose_arrow(p, r=0.5, **kwargs):
-    start = p.p
-    end = p.step_along(r).p
-    opts = {"strokeWidth": 1.25, **kwargs}
-    return Plot.line([start, end], **opts) + arrowhead_line(end, p.hd, **opts)
+def pose_arrow(p, r=0.5, constants={}, **opts):
+    end = p.p
+    start = p.step_along(-r).p
+    wing_angle = pi / 4
+    wing_length = 0.4
+
+    return arrow_plot(start, end, wing_angle, wing_length, constants, **opts)
 
 
 walls_plot = Plot.new(
@@ -414,7 +437,7 @@ walls_plot = Plot.new(
         )
         for wall in world["walls"]
     ],
-    {"margin": 0, "inset": 50},
+    {"margin": 0, "inset": 50, "width": 500, "height": 500},
     Plot.color_map(
         {
             "walls": "#ccc",
@@ -427,8 +450,7 @@ walls_plot = Plot.new(
 # Plot the world with walls only
 world_plot = Plot.new(
     walls_plot,
-    {"title": "Given data", "width": 500, "height": 500, "inset": 50},
-    Plot.color_legend,
+    Plot.color_legend(),
     Plot.frame(strokeWidth=4, stroke="#ddd"),
 )
 
@@ -436,7 +458,9 @@ world_plot = Plot.new(
 
 # Plot of the starting pose of the robot
 starting_pose_plot = pose_arrow(
-    robot_inputs["start"], stroke=Plot.constantly("given start pose")
+    robot_inputs["start"],
+    stroke=Plot.constantly("given start pose"),
+    constants={"frame": 0},
 )
 
 # Plot of the path from integrating controls
@@ -539,8 +563,17 @@ poses = pose_samples.get_retval()
 poses
 
 
-def poses_to_plots(poses: Pose):
-    return list(map(lambda p, hd: pose_arrow(Pose(p, hd)), poses.p, poses.hd))
+def poses_to_plots(poses: Pose, constants={}, **plot_opts):
+    return list(
+        map(
+            lambda i, p, hd: pose_arrow(
+                Pose(p, hd), constants={"step": i, **constants}, **plot_opts
+            ),
+            range(len(poses.p)),
+            poses.p,
+            poses.hd,
+        )
+    )
 
 
 poses_plot = functools.reduce(lambda p, q: p + q, poses_to_plots(poses))
@@ -735,14 +768,14 @@ def make_path_model_step(world_inputs, motion_settings):
 # prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
 # get_path(trace) = [trace[prefix_address(t, :pose)] for t in 1:(get_args(trace)[1]+1)];
 
-key, sub_key1, sub_key2 = jax.random.split(key, 3)
-initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, motion_settings))
-path_model_step = make_path_model_step(world_inputs, motion_settings)
 
 # %%
 
+key, sub_key1, sub_key2 = jax.random.split(key, 3)
+initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, motion_settings))
+path_model_step = make_path_model_step(world_inputs, motion_settings)
 step_model.simulate(
-    jax.random.PRNGKey(222),
+    sub_key2,
     (
         initial_pose.get_retval(),
         jax.tree.map(lambda v: v[0], robot_inputs["controls"]),
@@ -752,25 +785,72 @@ step_model.simulate(
 )
 
 # %%
-jitted = jax.jit(path_model_step.simulate)
+
+path_model_step_simulate = jax.jit(path_model_step.simulate)
+
+
+def generate_path(key):
+    key, start_key = jax.random.split(key)
+    initial_pose = path_model_start.simulate(start_key, (robot_inputs, motion_settings))
+    key, step_key = jax.random.split(key)
+    return path_model_step_simulate(
+        step_key, (initial_pose.get_retval(), robot_inputs["controls"])
+    ).inner.get_retval()[0]
+
+
+N_samples = 12
+key, *sample_keys = jax.random.split(key, N_samples + 1)
+sample_paths = [generate_path(sample_key) for sample_key in sample_keys]
+
+Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths])
+
+# Leaving this in as an a reference for animation;
+# Julia animated this, but a grid seems easier to eyeball here.
+# N_steps = len(robot_inputs["controls"].ds) - 1
+# (
+#     world_plot
+#     + [poses_to_plots(path,
+#                       constants={'frame': i},
+#                       filter=Plot.js("({frame, step}) => frame === $state.frame && step <= $state.step")) for i, path in enumerate(sample_paths)]
+#     | Plot.Slider("frame", label="Frame", range=[0, N_samples - 1], fps=2)
+#     | Plot.Slider("step", label="Step", range=[0, N_steps], init=N_steps)
+# )
 
 # %%
+# Animation showing a single path with confidence circles
 
-arg_tuple = initial_pose.get_retval(), robot_inputs["controls"]
-key, sub_key = jax.random.split(key)
 
-steps = jitted(sub_key, arg_tuple)
-
-world_plot + poses_to_plots(steps.inner.get_retval()[0])
-# %%
-key, subkey = jax.random.split(key)
-arg_tuple = initial_pose.get_retval(), robot_inputs["controls"]
-
-Plot.autoGrid(
-    [
-        walls_plot + poses_to_plots(jitted(key, arg_tuple).inner.get_retval()[0])
-        for key in jax.random.split(key, 24)
+def animate_path_with_confidence(path, motion_settings):
+    frames = [
+        (
+            walls_plot
+            # Prior poses in black
+            + [
+                pose_arrow(Pose(p, hd))
+                for p, hd in zip(path.p[: step + 1], path.hd[: step + 1])
+            ]
+            # 95% confidence circle for next pose
+            + [
+                Plot.scaled_circle(
+                    path.p[step][0],
+                    path.p[step][1],
+                    r=2.5 * motion_settings["p_noise"],
+                    opacity=0.25,
+                    fill="red",
+                )
+            ]
+            # Next pose in red
+            + [pose_arrow(Pose(path.p[step + 1], path.hd[step + 1]), stroke="red")]
+            + {"axis": None}
+        )
+        for step in range(len(path.p) - 1)
     ]
-)
+
+    return Plot.Frames(frames, fps=2)
+
+
+# Generate a single path
+key, sample_key = jax.random.split(key)
+animate_path_with_confidence(generate_path(sample_key), motion_settings)
 
 # %%
