@@ -46,13 +46,13 @@ os.makedirs("imgs", exist_ok=True)
 # %% [markdown]
 # ## The "real world"
 #
-# We assume given:
-# * A map of a space, together with
-# * Some clutters that sometimes unexpectedly exist in that space.
+# We assume given
+# * a map of a space, together with
+# * some clutters that sometimes unexpectedly exist in that space.
 #
-# We also assume given a description of a robot's behavior via:
-# * An estimated initial pose (position + heading), and
-# * A program of controls (advance distance, followed by rotate heading).
+# We also assume given a description of a robot's behavior via
+# * an estimated initial pose (position + heading), and
+# * a program of controls (advance distance, followed by rotate heading).
 #
 # *In addition to the uncertainty in the initial pose, we are uncertain about the true execution of the motion of the robot.*
 #
