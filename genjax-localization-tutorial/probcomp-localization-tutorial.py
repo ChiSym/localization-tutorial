@@ -1330,13 +1330,15 @@ observations_high_deviation = get_sensors(trace_high_deviation)
 
 # Encode sensor readings into choice map.
 
+
 def constraint_from_sensors(readings):
     angle_indices = jnp.arange(len(sensor_angles))
     return jax.vmap(
-        lambda ix, v: C[
-            "steps", ix, "sensor", angle_indices, "distance"
-        ].set(v)
-    )(jnp.arange(T), readings[1:]) #+ C['initial', 'sensor', angle_indices, 'distance'].set(readings[0])
+        lambda ix, v: C["steps", ix, "sensor", angle_indices, "distance"].set(v)
+    )(
+        jnp.arange(T), readings[1:]
+    )  # + C['initial', 'sensor', angle_indices, 'distance'].set(readings[0])
+
 
 constraints_low_deviation = constraint_from_sensors(observations_low_deviation)
 constraints_high_deviation = constraint_from_sensors(observations_high_deviation)
@@ -1352,7 +1354,7 @@ constraints_high_deviation = constraint_from_sensors(observations_high_deviation
 
 # %%
 key, sub_key = jax.random.split(key)
-#constraints_low_deviation
+# constraints_low_deviation
 # Doesn't work: also victim of GEN-339
-#trace_low_deviation.update(sub_key, constraints_low_deviation)
+# trace_low_deviation.update(sub_key, constraints_low_deviation)
 # %%
