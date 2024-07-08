@@ -439,6 +439,7 @@ walls_plot = Plot.new(
         for wall in world["walls"]
     ],
     {"margin": 0, "inset": 50, "width": 500, "height": 500},
+    Plot.domain([0, 20]),
     Plot.color_map(
         {
             "walls": "#ccc",
