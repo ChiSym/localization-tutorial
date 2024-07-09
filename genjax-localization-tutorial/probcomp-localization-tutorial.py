@@ -163,6 +163,9 @@ def make_world(walls_vec, clutters_vec, start, controls):
     box_size = max(x_max - x_min, y_max - y_min)
     center_point = jnp.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0])
 
+    # How bouncy the walls are in this world.
+    bounce = 0.1
+
     # Determine the total number of control steps
     T = len(controls.ds)
 
@@ -173,6 +176,7 @@ def make_world(walls_vec, clutters_vec, start, controls):
             "bounding_box": bounding_box,
             "box_size": box_size,
             "center_point": center_point,
+            "bounce": bounce,
         },
         {"start": start, "controls": controls},
         T,
@@ -295,20 +299,19 @@ def distance(p, seg):
     )
 
 
-def compute_wall_normal(wall_direction):
+def compute_wall_normal(wall_direction) -> FloatArray:
     normalized_wall_direction = wall_direction / jnp.linalg.norm(wall_direction)
     return jnp.array([-normalized_wall_direction[1], normalized_wall_direction[0]])
 
 
 @jax.jit
-def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
+def physical_step(p1: FloatArray, p2: FloatArray, hd):
     """
     Computes a physical step considering wall collisions and bounces.
 
     Args:
     - p1, p2: Start and end points of the step.
     - hd: Heading direction.
-    - world_inputs: dict containing world configuration, including walls and bounce distance.
 
     Returns:
     - Pose: The new pose after taking the step, considering potential wall collisions.
@@ -319,12 +322,12 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     step_pose = Pose(p1, jnp.arctan2(step_direction[1], step_direction[0]))
 
     # Calculate distances to all walls
-    distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world_inputs["walls"])
+    distances = jax.vmap(distance, in_axes=(None, 0))(step_pose, world["walls"])
 
     # Find the closest wall
     closest_wall_index = jnp.argmin(distances)
     closest_wall_distance = distances[closest_wall_index]
-    closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world_inputs["walls"])
+    closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world["walls"])
 
     # Calculate wall normal and collision point
     wall_direction = closest_wall[1] - closest_wall[0]
@@ -337,7 +340,7 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
     )
 
     # Calculate bounce off point
-    bounce_off_point = collision_point + world_inputs["bounce"] * wall_normal
+    bounce_off_point = collision_point + world["bounce"] * wall_normal
 
     # Determine final position based on whether a collision occurred
     final_position = jnp.where(
@@ -348,7 +351,7 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd, world_inputs):
 
 
 # %%
-def integrate_controls(robot_inputs, world_inputs):
+def integrate_controls(robot_inputs):
     """
     Integrates controls to generate a path, taking into account physical interactions with walls.
 
@@ -366,7 +369,7 @@ def integrate_controls(robot_inputs, world_inputs):
         next_position = path[-1].p + controls.ds[i] * path[-1].dp()
         next_heading = path[-1].hd + controls.dhd[i]
         path.append(
-            physical_step(path[-1].p, next_position, next_heading, world_inputs)
+            physical_step(path[-1].p, next_position, next_heading)
         )
 
     return path
@@ -374,13 +377,7 @@ def integrate_controls(robot_inputs, world_inputs):
 
 # %%
 
-# How bouncy the walls are in this world.
-world_inputs = {
-    "walls": world["walls"],
-    "bounce": 0.1,
-}
-
-path_integrated = integrate_controls(robot_inputs, world_inputs)
+path_integrated = integrate_controls(robot_inputs)
 
 # %% [markdown]
 # ### Plot such data
@@ -518,7 +515,7 @@ def start_pose_prior(start, motion_settings):
 
 
 @genjax.gen
-def step_model(start, c, world_inputs, motion_settings):
+def step_model(start, c, motion_settings):
     p = (
         genjax.mv_normal(
             start.p + c.ds * start.dp(), motion_settings["p_noise"] ** 2 * jnp.eye(2)
@@ -526,7 +523,7 @@ def step_model(start, c, world_inputs, motion_settings):
         @ "p"
     )
     hd = genjax.normal(start.hd + c.dhd, motion_settings["hd_noise"]) @ "hd"
-    return physical_step(start.p, p, hd, world_inputs)
+    return physical_step(start.p, p, hd)
 
 
 # %% [markdown]
@@ -755,11 +752,11 @@ def path_model_start(robot_inputs, motion_settings):
     )
 
 
-def make_path_model_step(world_inputs, motion_settings):
+def make_path_model_step(motion_settings):
     @genjax.scan(n=T)
     @genjax.gen
     def path_model_step(previous_pose, control):
-        return step_model(previous_pose, control, world_inputs, motion_settings) @ (
+        return step_model(previous_pose, control, motion_settings) @ (
             "steps",
             "pose",
         ), None
@@ -775,13 +772,12 @@ def make_path_model_step(world_inputs, motion_settings):
 
 key, sub_key1, sub_key2 = jax.random.split(key, 3)
 initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, motion_settings))
-path_model_step = make_path_model_step(world_inputs, motion_settings)
+path_model_step = make_path_model_step(motion_settings)
 step_model.simulate(
     sub_key2,
     (
         initial_pose.get_retval(),
         jax.tree.map(lambda v: v[0], robot_inputs["controls"]),
-        world_inputs,
         motion_settings,
     ),
 )
@@ -1174,7 +1170,7 @@ def make_full_model(motion_settings):
 
     @genjax.gen
     def full_model_kernel(state, control):
-        pose = step_model(state, control, world_inputs, motion_settings) @ "pose"
+        pose = step_model(state, control, motion_settings) @ "pose"
         _ = sensor_model(pose, sensor_angles) @ "sensor"
         return pose, None
 
@@ -1357,5 +1353,5 @@ constraints_high_deviation = constraint_from_sensors(observations_high_deviation
 key, sub_key = jax.random.split(key)
 # constraints_low_deviation
 # Doesn't work: also victim of GEN-339
-# trace_low_deviation.update(sub_key, constraints_low_deviation)
+trace_low_deviation.update(sub_key, constraints_low_deviation)
 # %%
