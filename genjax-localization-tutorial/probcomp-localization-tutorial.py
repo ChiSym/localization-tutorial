@@ -340,7 +340,7 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd):
     )
 
     # Calculate bounce off point
-    bounce_off_point = collision_point + world["bounce"] * wall_normal
+    bounce_off_point: FloatArray = collision_point + world["bounce"] * wall_normal
 
     # Determine final position based on whether a collision occurred
     final_position = jnp.where(
@@ -368,9 +368,7 @@ def integrate_controls(robot_inputs):
     for i in range(len(controls.ds)):
         next_position = path[-1].p + controls.ds[i] * path[-1].dp()
         next_heading = path[-1].hd + controls.dhd[i]
-        path.append(
-            physical_step(path[-1].p, next_position, next_heading)
-        )
+        path.append(physical_step(path[-1].p, next_position, next_heading))
 
     return path
 
@@ -753,15 +751,14 @@ def path_model_start(robot_inputs, motion_settings):
 
 
 def make_path_model_step(motion_settings):
-    @genjax.scan(n=T)
     @genjax.gen
     def path_model_step(previous_pose, control):
         return step_model(previous_pose, control, motion_settings) @ (
             "steps",
             "pose",
-        ), None
+        )
 
-    return path_model_step
+    return path_model_step.accumulate()
 
 
 # prefix_address(t, rest) = (t == 1) ? (:initial => rest) : (:steps => (t-1) => rest)
@@ -797,9 +794,7 @@ def generate_path_trace(key: PRNGKey) -> genjax.Trace:
 
 
 def path_from_trace(tr: genjax.Trace) -> Pose:
-    # TODO(colin): can we use one of @sritchie's new combinators to avoid
-    # using `inner` to get at the trace steps?
-    return tr.inner.get_retval()[0]
+    return tr.get_retval()
 
 
 def generate_path(key: PRNGKey) -> Pose:
@@ -810,6 +805,9 @@ def nth(t, n: int):
     return jax.tree.map(lambda v: v[n], t)
 
 
+# %%
+generate_path_trace(key)
+# %%
 N_samples = 12
 key, sub_key = jax.random.split(key)
 sample_paths_v = jax.vmap(generate_path)(jax.random.split(sub_key, N_samples))
@@ -839,10 +837,7 @@ def animate_path_with_confidence(path, motion_settings):
         (
             walls_plot
             # Prior poses in black
-            + [
-                pose_arrow(Pose(p, hd))
-                for p, hd in zip(path.p[: step + 1], path.hd[: step + 1])
-            ]
+            + [pose_arrow(Pose(p, hd)) for p, hd in zip(path.p[:step], path.hd[:step])]
             # 95% confidence circle for next pose
             + [
                 Plot.scaled_circle(
@@ -854,10 +849,10 @@ def animate_path_with_confidence(path, motion_settings):
                 )
             ]
             # Next pose in red
-            + [pose_arrow(Pose(path.p[step + 1], path.hd[step + 1]), stroke="red")]
+            + [pose_arrow(Pose(path.p[step], path.hd[step]), stroke="red")]
             + {"axis": None}
         )
-        for step in range(len(path.p) - 1)
+        for step in range(len(path.p))
     ]
 
     return Plot.Frames(frames, fps=2)
@@ -877,7 +872,7 @@ animate_path_with_confidence(generate_path(sample_key), motion_settings)
 # density, together with a precise record of the resulting modifications that played out.
 
 # %% [markdown]
-# One could, for instance, consider just the placement of the first pose, and replace its stochastic
+# One could, for instance, consider just the placement of the first step, and replace its stochastic
 # choice of heading with a specific value.
 
 # %%
@@ -906,7 +901,7 @@ Plot.new(
 rotated_trace_weight_diff
 
 # %% [markdown]
-# It is worth carefully thinking through a tricker instance of this.  Suppose instead,
+# It is worth carefully thinking through a trickier instance of this.  Suppose instead,
 # within the full path, we replaced the $t = 0$ step's stochastic choice of heading
 # with some specific value.
 
@@ -915,13 +910,31 @@ key, sub_key = jax.random.split(key)
 trace = generate_path_trace(sub_key)
 key, sub_key = jax.random.split(key)
 
-# This doesn't work (See GEN-339)
-try:
-    rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
-        sub_key, C[0, "steps", "pose", "hd"].set(jnp.pi / 2.0)
-    )
-except AttributeError as ae:
-    ae
+rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
+    sub_key, C[0, "steps", "pose", "hd"].set(jnp.pi / 2.0)
+)
+
+original_path = path_from_trace(trace)
+rotated_first_step_path = path_from_trace(rotated_first_step)
+# %%
+Plot.new(
+    world_plot
+    + [
+        pose_arrow(Pose(p, hd), stroke="red")
+        for p, hd in zip(rotated_first_step_path.p, rotated_first_step_path.hd)
+    ]
+    + [
+        pose_arrow(Pose(p, hd), stroke="green")
+        for p, hd in zip(original_path.p, original_path.hd)
+    ],
+    Plot.color_map(
+        {
+            "walls": "#ccc",
+            "some pose": "green",
+            "with heading at first step modified": "red",
+        }
+    ),
+)
 
 # trace.get_choices()[0, 'steps', 'pose', 'hd']
 # trace = simulate(path_model_loop, (T, robot_inputs, world_inputs, motion_settings))
@@ -1165,9 +1178,6 @@ def make_full_model(motion_settings):
     # a state and an input; without the scope done here, we would have
     # to carry the motion_settings as a constant component of the state.
 
-    # TODO(colin): when upgraded to genjax 0.5.0 switch to accumulate
-    # combinator
-
     @genjax.gen
     def full_model_kernel(state, control):
         pose = step_model(state, control, motion_settings) @ "pose"
@@ -1196,25 +1206,12 @@ ch = tr.get_choices()
 
 
 def get_path(trace):
-    """Gets the path for a trace, by stacking together the initial pose
-    and the pose for each subsequent step."""
     ch = trace.get_choices()
-    return Pose(
-        jnp.vstack((ch["initial", "pose", "p"], ch["steps", ..., "pose", "p"])),
-        jnp.hstack((ch["initial", "pose", "hd"], ch["steps", ..., "pose", "hd"])),
-    )
+    return Pose(ch["steps", ..., "pose", "p"], ch["steps", ..., "pose", "hd"])
 
 
 def get_sensors(trace):
-    """Gets sensor readings from a trace, by stacking together the initial readings
-    and the readings for each subsequent step."""
-    ch = trace.get_choices()
-    return jnp.vstack(
-        (
-            ch["initial", "sensor", ..., "distance"],
-            ch["steps", ..., "sensor", ..., "distance"],
-        )
-    )
+    return trace.get_choices()["steps", ..., "sensor", ..., "distance"]
 
 
 get_path(tr)
@@ -1238,12 +1235,8 @@ def animate_full_trace(trace):
     readings = get_sensors(trace)
     motion_settings = trace.get_subtrace(("initial",)).get_args()[0]
 
-    # There are T steps and T-1 control inputs. To make vmap work, we snip
-    # off the last pose using a tree map so that the input arrays will be
-    # the same length (the final step doesn't have a control input associated
-    # with it).
     noiseless_steps = jax.vmap(lambda pose, c: pose.p + c.ds * pose.dp())(
-        jax.tree.map(lambda v: v[:-1], path), robot_inputs["controls"]
+        path, robot_inputs["controls"]
     )
 
     std_devs_radius = 2.5 * motion_settings["p_noise"]
@@ -1333,7 +1326,7 @@ def constraint_from_sensors(readings):
     return jax.vmap(
         lambda ix, v: C["steps", ix, "sensor", angle_indices, "distance"].set(v)
     )(
-        jnp.arange(T), readings[1:]
+        jnp.arange(T), readings
     )  # + C['initial', 'sensor', angle_indices, 'distance'].set(readings[0])
 
 
@@ -1352,6 +1345,5 @@ constraints_high_deviation = constraint_from_sensors(observations_high_deviation
 # %%
 key, sub_key = jax.random.split(key)
 # constraints_low_deviation
-# Doesn't work: also victim of GEN-339
 trace_low_deviation.update(sub_key, constraints_low_deviation)
 # %%
