@@ -1403,7 +1403,9 @@ high_dev_model_importance = jax.jit(high_deviation_model.importance)
 # %%
 N_importance_samples = 1
 key, sub_key = jax.random.split(key)
-samples = jax.vmap(high_dev_model_importance, in_axes=(0, None, None))(jax.random.split(sub_key, N_importance_samples), constraints_high_deviation, ())
+samples = jax.vmap(high_dev_model_importance, in_axes=(0, None, None))(
+    jax.random.split(sub_key, N_importance_samples), constraints_high_deviation, ()
+)
 # %%
 amax = jnp.argmax(samples[0].get_score())
 animate_full_trace(nth(samples[0], amax))
