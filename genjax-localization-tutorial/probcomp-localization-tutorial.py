@@ -30,6 +30,7 @@ import json
 import genstudio.plot as Plot
 
 import functools
+import itertools
 import jax
 import jax.numpy as jnp
 import genjax
@@ -179,7 +180,9 @@ def make_world(walls_vec, clutters_vec, start, controls):
     # Calculate bounding box, box size, and center point
     bounding_box = (x_min, x_max, y_min, y_max)
     box_size = max(x_max - x_min, y_max - y_min)
-    center_point = jnp.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0])
+    center_point = Pose(
+        jnp.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0]), jnp.array(0.0)
+    )
 
     # How bouncy the walls are in this world.
     bounce = 0.1
@@ -1295,15 +1298,13 @@ motion_settings_low_deviation = {
     "p_noise": 0.05,
     "hd_noise": (1 / 10.0) * 2 * jnp.pi / 360,
 }
-key, sub_key = jax.random.split(key)
-trace_low_deviation = make_full_model(motion_settings_low_deviation).simulate(
-    sub_key, ()
-)
+key, k_low, k_high = jax.random.split(key, 3)
+low_deviation_model = make_full_model(motion_settings_low_deviation)
+trace_low_deviation = low_deviation_model.simulate(k_low, ())
 
 motion_settings_high_deviation = {"p_noise": 0.25, "hd_noise": 2 * jnp.pi / 360}
-trace_high_deviation = make_full_model(motion_settings_high_deviation).simulate(
-    sub_key, ()
-)
+high_deviation_model = make_full_model(motion_settings_high_deviation)
+trace_high_deviation = high_deviation_model.simulate(k_high, ())
 
 animate_full_trace(trace_low_deviation)
 # frames_low = frames_from_full_trace(world, "Low motion deviation", trace_low_deviation)
@@ -1348,17 +1349,64 @@ def constraint_from_sensors(readings):
 constraints_low_deviation = constraint_from_sensors(observations_low_deviation)
 constraints_high_deviation = constraint_from_sensors(observations_high_deviation)
 
-
-# constraint_from_sensors(t, readings) =
-#     choicemap(( (prefix_address(t, :sensor => j => :distance), reading) for (j, reading) in enumerate(readings) )...)
-
-# constraints_low_deviation = [constraint_from_sensors(o...) for o in enumerate(observations_low_deviation)]
-# constraints_high_deviation = [constraint_from_sensors(o...) for o in enumerate(observations_high_deviation)]
-# merged_constraints_low_deviation = merge(constraints_low_deviation...)
-# merged_constraints_high_deviation = merge(constraints_high_deviation...);
+# %% [markdown]
+# We summarize the information available to the robot to determine its location. On the one hand,
+# one has to produce a guess of the start pose plus some controls, which one might integrate to
+# produce an idealized guess of path. On the other hand, one has the sensor data.
 
 # %%
+world_plot + plot_sensors(world["center_point"], observations_low_deviation[0])
+
+
+# %%
+def animate_bare_sensors(path, plot_base=[]):
+    def frame(pose, readings1, readings2):
+        def plt(readings):
+            return Plot.new(
+                plot_base + plot_sensors(pose, readings),
+                Plot.domain([0, 20]),
+                {"width": 400, "height": 400},
+            )
+
+        return plt(readings1) & plt(readings2)
+
+    frames = [
+        frame(*scene)
+        for scene in zip(path, observations_low_deviation, observations_high_deviation)
+    ]
+    return Plot.Frames(frames, fps=2)
+
+
+animate_bare_sensors(itertools.repeat(world["center_point"]))
+# %% [markdown]
+# ## Inference
+# ### Why we need inference: in a picture
+#
+# The path obtained by integrating the controls serves as a proposal for the true path,
+# but it is unsatisfactory, especially in the high motion deviation case.
+# The picture gives an intuitive sense of the fit:
+
+# %%
+
+animate_bare_sensors(path_integrated, walls_plot)
+
+# %% [markdown]
+
+# At this point in the Julia notebook, Jay appeaals to a BlackBox inference
+# technique which uses a Gen.jl library for particle filtering. The scoping
+# for MathCamp suggests that we try importance sampling and stop there. Might
+# as well give it a try?
+
+low_dev_model_importance = jax.jit(low_deviation_model.importance)
+high_dev_model_importance = jax.jit(high_deviation_model.importance)
+
+# %%
+N_importance_samples = 1
 key, sub_key = jax.random.split(key)
-# constraints_low_deviation
-trace_low_deviation.update(sub_key, constraints_low_deviation)
+samples = jax.vmap(high_dev_model_importance, in_axes=(0, None, None))(jax.random.split(sub_key, N_importance_samples), constraints_high_deviation, ())
+# %%
+amax = jnp.argmax(samples[0].get_score())
+animate_full_trace(nth(samples[0], amax))
+# %%
+animate_full_trace(trace_low_deviation)
 # %%
