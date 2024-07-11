@@ -73,9 +73,10 @@ def indexable(cls):
     A decorator that adds support for bracket indexing/slicing to a class.
     This allows for numpy/jax style indexing on Pytree-like objects.
     """
+
     def __getitem__(self, idx):
         return jax.tree.map(lambda v: v[idx], self)
-    
+
     cls.__getitem__ = __getitem__
     return cls
 
@@ -105,10 +106,10 @@ class Pose(genjax.Pytree):
         dp = self.dp()
         new_p = self.p + s * dp
         return Pose(new_p, hd=self.hd)
-    
+
     def apply_control(self, control):
         return Pose(self.p + control.ds * self.dp(), self.hd + control.dhd)
-    
+
     def rotate(self, a: float) -> Pose:
         """
         Rotates the pose by angle 'a' (in radians) and returns a new Pose.
@@ -848,25 +849,25 @@ Plot.Grid(
 # %%
 # Animation showing a single path with confidence circles
 
+
 # %%
 def animate_path_with_confidence(path: Pose, motion_settings):
-    
     frames = []
     for step in range(len(path.p)):
-        
         # prior poses in black
         frame = walls_plot + [pose_arrow(path[i]) for i in range(step + 1)]
-        
+
         # if we have a next pose...
         if step < len(path.p) - 1:
-            
             # 95% confidence circle (with noiseless movement from prior pose)
             x, y = path[step].apply_control(robot_inputs["controls"][step]).p
-            frame += Plot.scaled_circle(x, y, opacity=0.25, fill="red", r=2.5 * motion_settings["p_noise"])
-            
+            frame += Plot.scaled_circle(
+                x, y, opacity=0.25, fill="red", r=2.5 * motion_settings["p_noise"]
+            )
+
             # sampled next pose in red
-            frame += [pose_arrow(path[step+1], stroke="red")]
-        
+            frame += [pose_arrow(path[step + 1], stroke="red")]
+
         frames.append(frame)
 
     return Plot.Frames(frames, fps=2)
