@@ -68,6 +68,19 @@ os.makedirs("imgs", exist_ok=True)
 # General code here
 
 
+def indexable(cls):
+    """
+    A decorator that adds support for bracket indexing/slicing to a class.
+    This allows for numpy/jax style indexing on Pytree-like objects.
+    """
+    def __getitem__(self, idx):
+        return jax.tree.map(lambda v: v[idx], self)
+    
+    cls.__getitem__ = __getitem__
+    return cls
+
+
+@indexable
 @pz.pytree_dataclass
 class Pose(genjax.Pytree):
     p: FloatArray
@@ -92,7 +105,10 @@ class Pose(genjax.Pytree):
         dp = self.dp()
         new_p = self.p + s * dp
         return Pose(new_p, hd=self.hd)
-
+    
+    def apply_control(self, control):
+        return Pose(self.p + control.ds * self.dp(), self.hd + control.dhd)
+    
     def rotate(self, a: float) -> Pose:
         """
         Rotates the pose by angle 'a' (in radians) and returns a new Pose.
@@ -119,6 +135,7 @@ print(pose.rotate(pi / 2))
 
 
 # %%
+@indexable
 @pz.pytree_dataclass
 class Control(genjax.Pytree):
     ds: FloatArray
@@ -433,7 +450,7 @@ walls_plot = Plot.new(
         )
         for wall in world["walls"]
     ],
-    {"margin": 0, "inset": 50, "width": 500, "height": 500},
+    {"margin": 0, "inset": 50, "width": 500, "height": 500, "axis": None},
     Plot.domain([0, 20]),
     Plot.color_map(
         {
@@ -831,29 +848,26 @@ Plot.Grid(
 # %%
 # Animation showing a single path with confidence circles
 
-
-def animate_path_with_confidence(path, motion_settings):
-    frames = [
-        (
-            walls_plot
-            # Prior poses in black
-            + [pose_arrow(Pose(p, hd)) for p, hd in zip(path.p[:step], path.hd[:step])]
-            # 95% confidence circle for next pose
-            + [
-                Plot.scaled_circle(
-                    path.p[step][0],
-                    path.p[step][1],
-                    r=2.5 * motion_settings["p_noise"],
-                    opacity=0.25,
-                    fill="red",
-                )
-            ]
-            # Next pose in red
-            + [pose_arrow(Pose(path.p[step], path.hd[step]), stroke="red")]
-            + {"axis": None}
-        )
-        for step in range(len(path.p))
-    ]
+# %%
+def animate_path_with_confidence(path: Pose, motion_settings):
+    
+    frames = []
+    for step in range(len(path.p)):
+        
+        # prior poses in black
+        frame = walls_plot + [pose_arrow(path[i]) for i in range(step + 1)]
+        
+        # if we have a next pose...
+        if step < len(path.p) - 1:
+            
+            # 95% confidence circle (with noiseless movement from prior pose)
+            x, y = path[step].apply_control(robot_inputs["controls"][step]).p
+            frame += Plot.scaled_circle(x, y, opacity=0.25, fill="red", r=2.5 * motion_settings["p_noise"])
+            
+            # sampled next pose in red
+            frame += [pose_arrow(path[step+1], stroke="red")]
+        
+        frames.append(frame)
 
     return Plot.Frames(frames, fps=2)
 
