@@ -860,16 +860,19 @@ def animate_path_with_confidence(path: Pose, motion_settings):
     frames = [
         # prior poses in black
         (walls_plot + [pose_arrow(path[i]) for i in range(step + 1)])
-        
         # confidence circle
-        + [Plot.scaled_circle(*path[step].apply_control(robot_inputs["controls"][step]).p, 
-                              opacity=0.25, 
-                              fill="red", 
-                              r=2.5 * motion_settings["p_noise"]),
-           # next pose
-           pose_arrow(path[step+1], stroke="red")] 
-        if step < len(path.p) - 1 else None
-        
+        + [
+            Plot.scaled_circle(
+                *path[step].apply_control(robot_inputs["controls"][step]).p,
+                opacity=0.25,
+                fill="red",
+                r=2.5 * motion_settings["p_noise"],
+            ),
+            # next pose
+            pose_arrow(path[step + 1], stroke="red"),
+        ]
+        if step < len(path.p) - 1
+        else None
         for step in range(len(path.p))
     ]
 
