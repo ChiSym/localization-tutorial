@@ -29,7 +29,6 @@ from __future__ import annotations
 import json
 import genstudio.plot as Plot
 
-import functools
 import itertools
 import jax
 import jax.numpy as jnp
