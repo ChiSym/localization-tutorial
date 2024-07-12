@@ -67,8 +67,10 @@ os.makedirs("imgs", exist_ok=True)
 # %%
 # General code here
 
+
 def nth(x, idx):
     return jax.tree_util.tree_map(lambda v: v[idx], x)
+
 
 def indexable(cls):
     """
@@ -285,6 +287,7 @@ world, robot_inputs, T = load_world("../example_20_program.json")
 
 noop_control = Control(jnp.array([0.0]), jnp.array([0.0]))
 
+
 # %%
 def integrate_controls_unphysical(robot_inputs):
     """
@@ -432,7 +435,7 @@ def integrate_controls_physical(robot_inputs):
             new_pose,
         ),
         robot_inputs["start"],
-        noop_control+ robot_inputs["controls"],
+        noop_control + robot_inputs["controls"],
     )[1]
 
 
@@ -442,6 +445,7 @@ path_integrated = integrate_controls_physical(robot_inputs)
 
 # %% [markdown]
 # ### Plot such data
+
 
 def arrow_plot(start, end, wing_angle, wing_length, constants={}, **mark_options):
     mark_options = {"strokeWidth": 1.25, **mark_options}
@@ -484,7 +488,6 @@ def pose_arrow(p, r=0.5, constants={}, **opts):
     return arrow_plot(start, end, wing_angle, wing_length, constants, **opts)
 
 
-
 walls_plot = Plot.new(
     [
         Plot.line(
@@ -495,13 +498,11 @@ walls_plot = Plot.new(
         for wall in world["walls"]
     ],
     {"margin": 0, "inset": 50, "width": 500, "axis": None, "aspectRatio": 1},
-    Plot.domain([0, 20])
+    Plot.domain([0, 20]),
 )
 # Plot the world with walls only
 world_plot = Plot.new(
-    walls_plot,
-    Plot.frame(strokeWidth=4, stroke="#ddd"),
-    Plot.color_legend()
+    walls_plot, Plot.frame(strokeWidth=4, stroke="#ddd"), Plot.color_legend()
 )
 
 # %%
@@ -520,16 +521,12 @@ controls_path_plot = Plot.dot(
 ) + Plot.color_map({"path from integrating controls": "lightgreen"})
 
 # Plot of the clutters
-clutters_plot = [
-    Plot.line(c[:, 0], fill=Plot.constantly("clutters")) for c in world["clutters"]
-], Plot.color_map({"clutters": "magenta"})
-
-(
-    world_plot 
-    + controls_path_plot
-    + starting_pose_plot
-    + clutters_plot
+clutters_plot = (
+    [Plot.line(c[:, 0], fill=Plot.constantly("clutters")) for c in world["clutters"]],
+    Plot.color_map({"clutters": "magenta"}),
 )
+
+(world_plot + controls_path_plot + starting_pose_plot + clutters_plot)
 
 # %%
 # Save the figure to a file
@@ -630,6 +627,7 @@ poses_plot = poses_to_plots(poses)
 
 # Plot the world, starting pose samples, and 95% confidence region
 
+
 # Calculate the radius of the 95% confidence region
 def confidence_circle(pose: Pose, motion_settings: dict):
     # TODO
@@ -640,8 +638,9 @@ def confidence_circle(pose: Pose, motion_settings: dict):
         r=2.5 * motion_settings["p_noise"],
     ) + Plot.color_map({"confidence region": "rgba(255,0,0,0.25)"})
 
+
 (
-    world_plot 
+    world_plot
     + confidence_circle(robot_inputs["start"], default_motion_settings)
     + poses_plot
 )
@@ -826,7 +825,9 @@ def make_path_model_step(motion_settings):
 # %%
 
 key, sub_key1, sub_key2 = jax.random.split(key, 3)
-initial_pose = path_model_start.simulate(sub_key1, (robot_inputs, default_motion_settings))
+initial_pose = path_model_start.simulate(
+    sub_key1, (robot_inputs, default_motion_settings)
+)
 path_model_step = make_path_model_step(default_motion_settings)
 step_model.simulate(
     sub_key2,
@@ -844,7 +845,9 @@ path_model_step_simulate = jax.jit(path_model_step.simulate)
 
 def generate_path_trace(key: PRNGKey) -> genjax.Trace:
     key, start_key = jax.random.split(key)
-    initial_pose = path_model_start.simulate(start_key, (robot_inputs, default_motion_settings))
+    initial_pose = path_model_start.simulate(
+        start_key, (robot_inputs, default_motion_settings)
+    )
     key, step_key = jax.random.split(key)
     return path_model_step_simulate(
         step_key, (initial_pose.get_retval(), robot_inputs["controls"])
@@ -858,6 +861,7 @@ def path_from_trace(tr: genjax.Trace) -> Pose:
 def generate_path(key: PRNGKey) -> Pose:
     return path_from_trace(generate_path_trace(key))
 
+
 # %%
 generate_path_trace(key)
 # %%
@@ -865,32 +869,47 @@ N_samples = 12
 key, sub_key = jax.random.split(key)
 sample_paths_v = jax.vmap(generate_path)(jax.random.split(sub_key, N_samples))
 
-Plot.Grid(
-    [walls_plot + poses_to_plots(path) for path in sample_paths_v]
-)
+Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths_v])
 
 # %%
 
 # %%
 # Animation showing a single path with confidence circles
 
+
 def plot_path_with_confidence(path: Pose, step: int, motion_settings: dict):
     plot = world_plot + [pose_arrow(path[i]) for i in range(step + 1)]
     if step < len(path) - 1:
-        plot += [confidence_circle(path[step].apply_control(robot_inputs["controls"][step]), motion_settings),
-                 pose_arrow(path[step + 1], stroke=Plot.constantly("next pose")),
-                 Plot.color_map({"next pose": "red"})]
+        plot += [
+            confidence_circle(
+                path[step].apply_control(robot_inputs["controls"][step]),
+                motion_settings,
+            ),
+            pose_arrow(path[step + 1], stroke=Plot.constantly("next pose")),
+            Plot.color_map({"next pose": "red"}),
+        ]
     return plot
 
+
 def animate_path_with_confidence(path: Pose, motion_settings: dict):
-    frames = [plot_path_with_confidence(path, step, motion_settings) for step in range(len(path.p))]
+    frames = [
+        plot_path_with_confidence(path, step, motion_settings)
+        for step in range(len(path.p))
+    ]
 
     return Plot.Frames(frames, fps=2)
+
 
 # Generate a single path
 key, sample_key = jax.random.split(key)
 path = generate_path(sample_key)
-Plot.Frames([plot_path_with_confidence(path, step, default_motion_settings) for step in range(len(path))], fps=2)
+Plot.Frames(
+    [
+        plot_path_with_confidence(path, step, default_motion_settings)
+        for step in range(len(path))
+    ],
+    fps=2,
+)
 
 # %% [markdown]
 # ### Modfying traces
@@ -908,7 +927,9 @@ Plot.Frames([plot_path_with_confidence(path, step, default_motion_settings) for 
 # %%
 
 key, sub_key = jax.random.split(key)
-trace = start_pose_prior.simulate(sub_key, (robot_inputs["start"], default_motion_settings))
+trace = start_pose_prior.simulate(
+    sub_key, (robot_inputs["start"], default_motion_settings)
+)
 key, sub_key = jax.random.split(key)
 rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
     sub_key, C["hd"].set(jnp.pi / 2.0)
@@ -917,9 +938,10 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
 Plot.new(
     world_plot
     + pose_arrow(trace.get_retval(), stroke=Plot.constantly("some pose"))
-    + pose_arrow(rotated_trace.get_retval(), stroke=Plot.constantly("with heading modified"))
-    + Plot.color_map({"some pose": "green", 
-                      "with heading modified": "red"})
+    + pose_arrow(
+        rotated_trace.get_retval(), stroke=Plot.constantly("with heading modified")
+    )
+    + Plot.color_map({"some pose": "green", "with heading modified": "red"})
 )
 
 # %% [markdown]
@@ -946,10 +968,15 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
 # %%
 Plot.new(
     world_plot
-    + [pose_arrow(pose, stroke=Plot.constantly("with heading modified")) for pose in path_from_trace(rotated_first_step)]
-    + [pose_arrow(pose, stroke=Plot.constantly("some path")) for pose in path_from_trace(trace)]
-) + Plot.color_map({"some path": "green",
-                    "with heading modified": "red"})
+    + [
+        pose_arrow(pose, stroke=Plot.constantly("with heading modified"))
+        for pose in path_from_trace(rotated_first_step)
+    ]
+    + [
+        pose_arrow(pose, stroke=Plot.constantly("some path"))
+        for pose in path_from_trace(trace)
+    ]
+) + Plot.color_map({"some path": "green", "with heading modified": "red"})
 
 # %%
 # trace.get_choices()[0, 'steps', 'pose', 'hd']
@@ -1066,17 +1093,27 @@ def plot_sensors(pose: Pose, readings):
         pose.rotate(angle).step_along(s) for angle, s in zip(sensor_angles, readings)
     ]
     return (
-        [Plot.line([pose.p, p.p], stroke=Plot.constantly("sensor rays")) for p in projections],
-        [Plot.dot([pose.p for pose in projections], r=2.75, fill=Plot.constantly("sensor readings"))],
-        Plot.color_map({
-            "sensor rays": "rgba(0,0,0,0.1)",
-            "sensor readings": "#f80"
-        }),
+        [
+            Plot.line([pose.p, p.p], stroke=Plot.constantly("sensor rays"))
+            for p in projections
+        ],
+        [
+            Plot.dot(
+                [pose.p for pose in projections],
+                r=2.75,
+                fill=Plot.constantly("sensor readings"),
+            )
+        ],
+        Plot.color_map({"sensor rays": "rgba(0,0,0,0.1)", "sensor readings": "#f80"}),
     )
 
-world_plot + plot_sensors(initial_pose.get_retval(), ideal_sensor(initial_pose.get_retval()))
+
+world_plot + plot_sensors(
+    initial_pose.get_retval(), ideal_sensor(initial_pose.get_retval())
+)
 
 # %%
+
 
 def animate_path_with_sensor(path, readings):
     frames = [
@@ -1244,13 +1281,16 @@ get_path(tr)
 
 # %%
 
+
 def animate_full_trace(trace, motion_settings):
     path = get_path(trace)
     readings = get_sensors(trace)
 
-    frames = [plot_path_with_confidence(path, step, motion_settings) 
-              + plot_sensors(pose, readings[step])
-              for step, pose in enumerate(path)]
+    frames = [
+        plot_path_with_confidence(path, step, motion_settings)
+        + plot_sensors(pose, readings[step])
+        for step, pose in enumerate(path)
+    ]
 
     return Plot.Frames(frames, fps=2)
 
@@ -1334,7 +1374,7 @@ def animate_bare_sensors(path, plot_base=[]):
     def frame(pose, readings1, readings2):
         def plt(readings):
             return Plot.new(
-                plot_base, 
+                plot_base,
                 plot_sensors(pose, readings),
                 Plot.domain([0, 20]),
                 {"width": 400, "height": 400},
@@ -1378,8 +1418,6 @@ key, sub_key = jax.random.split(key)
 samples = jax.vmap(high_dev_model_importance, in_axes=(0, None, None))(
     jax.random.split(sub_key, N_importance_samples), constraints_high_deviation, ()
 )
-
-
 
 
 amax = jnp.argmax(samples[0].get_score())
