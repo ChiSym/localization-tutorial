@@ -74,15 +74,54 @@ def indexable(cls):
     A decorator that adds support for bracket indexing/slicing to a class.
     This allows for numpy/jax style indexing on Pytree-like objects.
     """
-
+    
     def __getitem__(self, idx):
-        return jax.tree.map(lambda v: v[idx], self)
+        return jax.tree_util.tree_map(lambda v: v[idx], self)
 
     cls.__getitem__ = __getitem__
     return cls
 
+def iterable(cls):
+    """
+    A decorator that adds sequence-like operations to a class.
+    This provides `len` and `__iter__` methods for Pytree-like objects.
 
-@indexable
+    Note: The `__len__` method assumes that all leaves in the Pytree have the same length.
+    If leaves have different lengths, it will return the length of the first leaf encountered.
+    """
+
+    def __len__(self):
+        return len(jax.tree_util.tree_leaves(self)[0])
+
+    def __iter__(self):
+        return (self[i] for i in range(len(self)))
+
+    cls.__len__ = __len__
+    cls.__iter__ = __iter__
+    return cls
+
+def concatable(cls):
+    def __add__(self, other):
+        if not isinstance(other, cls):
+            raise TypeError(f"Cannot add {type(self)} and {type(other)}")
+        
+        def concat_leaves(x, y):
+            return jnp.concatenate([x, y])
+        
+        return jax.tree_util.tree_map(concat_leaves, self, other)
+
+    cls.__add__ = __add__
+    return cls
+
+def pythonic_pytree(cls):
+    """
+    A decorator that composes indexable, iterable, and concatable decorators
+    to make working with pytrees more Pythonic.
+    """
+    return indexable(iterable(concatable(cls)))
+
+
+@pythonic_pytree
 @pz.pytree_dataclass
 class Pose(genjax.Pytree):
     p: FloatArray
@@ -137,7 +176,7 @@ print(pose.rotate(pi / 2))
 
 
 # %%
-@indexable
+@pythonic_pytree
 @pz.pytree_dataclass
 class Control(genjax.Pytree):
     ds: FloatArray
@@ -240,7 +279,6 @@ world, robot_inputs, T = load_world("../example_20_program.json")
 #
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path. Naïvely, this results in the following.
 
-
 # %%
 def integrate_controls_unphysical(robot_inputs):
     """
@@ -255,17 +293,13 @@ def integrate_controls_unphysical(robot_inputs):
     Returns:
     - list: A list of Pose instances representing the path taken by applying the controls.
     """
-    # Initialize the path with the starting pose
-    path = [robot_inputs["start"]]
+    return jax.lax.scan(
+        lambda pose, control: (pose.apply_control(control), pose.apply_control(control)),
+        robot_inputs["start"],
+        # Prepend a no-op control
+        Control(jnp.array([0.0]), jnp.array([0.0])) + robot_inputs["controls"]
+    )[1]
 
-    # Iterate over each control step to compute the new pose and add it to the path
-    controls = robot_inputs["controls"]
-    for i in range(len(controls.ds)):
-        p = path[-1].p + controls.ds[i] * path[-1].dp()
-        hd = path[-1].hd + controls.dhd[i]
-        path.append(Pose(p, hd))
-
-    return path
 
 
 # %% [markdown]
@@ -348,7 +382,7 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd):
     # Find the closest wall
     closest_wall_index = jnp.argmin(distances)
     closest_wall_distance = distances[closest_wall_index]
-    closest_wall = jax.tree.map(lambda v: v[closest_wall_index], world["walls"])
+    closest_wall = world["walls"][closest_wall_index]
 
     # Calculate wall normal and collision point
     wall_direction = closest_wall[1] - closest_wall[0]
@@ -372,31 +406,30 @@ def physical_step(p1: FloatArray, p2: FloatArray, hd):
 
 
 # %%
-def integrate_controls(robot_inputs):
+def integrate_controls_physical(robot_inputs):
     """
     Integrates controls to generate a path, taking into account physical interactions with walls.
 
     Args:
     - robot_inputs: Dictionary containing the starting pose and control steps.
-    - world_inputs: Dictionary containing the world configuration.
 
     Returns:
-    - list: A list of Pose instances representing the path taken by applying the controls.
+    - Pose: A Pose object representing the path taken by applying the controls.
     """
-    path = [robot_inputs["start"]]
-
-    controls = robot_inputs["controls"]
-    for i in range(len(controls.ds)):
-        next_position = path[-1].p + controls.ds[i] * path[-1].dp()
-        next_heading = path[-1].hd + controls.dhd[i]
-        path.append(physical_step(path[-1].p, next_position, next_heading))
-
-    return path
+    return jax.lax.scan(
+        lambda pose, control: (
+            physical_step(pose.p, pose.p + control.ds * pose.dp(), pose.hd + control.dhd),
+            physical_step(pose.p, pose.p + control.ds * pose.dp(), pose.hd + control.dhd)
+        ),
+        robot_inputs["start"],
+        # Prepend a no-op control
+        Control(jnp.array([0.0]), jnp.array([0.0])) + robot_inputs["controls"]
+    )[1]
 
 
 # %%
 
-path_integrated = integrate_controls(robot_inputs)
+path_integrated = integrate_controls_physical(robot_inputs)
 
 # %% [markdown]
 # ### Plot such data
@@ -582,19 +615,13 @@ poses
 
 
 def poses_to_plots(poses: Pose, constants={}, **plot_opts):
-    return list(
-        map(
-            lambda i, p, hd: pose_arrow(
-                Pose(p, hd), constants={"step": i, **constants}, **plot_opts
-            ),
-            range(len(poses.p)),
-            poses.p,
-            poses.hd,
-        )
-    )
+    return [
+        pose_arrow(pose, constants={"step": i, **constants}, **plot_opts)
+        for i, pose in enumerate(poses)
+    ]
 
 
-poses_plot = functools.reduce(lambda p, q: p + q, poses_to_plots(poses))
+poses_plot = poses_to_plots(poses)
 
 # Plot the world, starting pose samples, and 95% confidence region
 
@@ -1085,7 +1112,7 @@ def animate_path_with_sensor(path, readings):
         (
             walls_plot
             # Prior poses in black
-            + [pose_arrow(Pose(p, hd)) for p, hd in zip(path.p[:step], path.hd[:step])]
+            + [pose_arrow(pose) for pose in path[:step]]
             + plot_sensors(Pose(path.p[step], path.hd[step]), readings[step])
             # Next pose in red
             + [pose_arrow(Pose(path.p[step], path.hd[step]), stroke="red")]
