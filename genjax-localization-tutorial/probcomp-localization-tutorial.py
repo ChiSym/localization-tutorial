@@ -74,12 +74,13 @@ def indexable(cls):
     A decorator that adds support for bracket indexing/slicing to a class.
     This allows for numpy/jax style indexing on Pytree-like objects.
     """
-    
+
     def __getitem__(self, idx):
         return jax.tree_util.tree_map(lambda v: v[idx], self)
 
     cls.__getitem__ = __getitem__
     return cls
+
 
 def iterable(cls):
     """
@@ -100,18 +101,20 @@ def iterable(cls):
     cls.__iter__ = __iter__
     return cls
 
+
 def concatable(cls):
     def __add__(self, other):
         if not isinstance(other, cls):
             raise TypeError(f"Cannot add {type(self)} and {type(other)}")
-        
+
         def concat_leaves(x, y):
             return jnp.concatenate([x, y])
-        
+
         return jax.tree_util.tree_map(concat_leaves, self, other)
 
     cls.__add__ = __add__
     return cls
+
 
 def pythonic_pytree(cls):
     """
@@ -279,6 +282,7 @@ world, robot_inputs, T = load_world("../example_20_program.json")
 #
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path. Naïvely, this results in the following.
 
+
 # %%
 def integrate_controls_unphysical(robot_inputs):
     """
@@ -294,12 +298,14 @@ def integrate_controls_unphysical(robot_inputs):
     - list: A list of Pose instances representing the path taken by applying the controls.
     """
     return jax.lax.scan(
-        lambda pose, control: (pose.apply_control(control), pose.apply_control(control)),
+        lambda pose, control: (
+            pose.apply_control(control),
+            pose.apply_control(control),
+        ),
         robot_inputs["start"],
         # Prepend a no-op control
-        Control(jnp.array([0.0]), jnp.array([0.0])) + robot_inputs["controls"]
+        Control(jnp.array([0.0]), jnp.array([0.0])) + robot_inputs["controls"],
     )[1]
-
 
 
 # %% [markdown]
@@ -418,12 +424,16 @@ def integrate_controls_physical(robot_inputs):
     """
     return jax.lax.scan(
         lambda pose, control: (
-            physical_step(pose.p, pose.p + control.ds * pose.dp(), pose.hd + control.dhd),
-            physical_step(pose.p, pose.p + control.ds * pose.dp(), pose.hd + control.dhd)
+            physical_step(
+                pose.p, pose.p + control.ds * pose.dp(), pose.hd + control.dhd
+            ),
+            physical_step(
+                pose.p, pose.p + control.ds * pose.dp(), pose.hd + control.dhd
+            ),
         ),
         robot_inputs["start"],
         # Prepend a no-op control
-        Control(jnp.array([0.0]), jnp.array([0.0])) + robot_inputs["controls"]
+        Control(jnp.array([0.0]), jnp.array([0.0])) + robot_inputs["controls"],
     )[1]
 
 
