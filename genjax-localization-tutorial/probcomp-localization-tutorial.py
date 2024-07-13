@@ -71,28 +71,14 @@ os.makedirs("imgs", exist_ok=True)
 def nth(x, idx):
     return jax.tree_util.tree_map(lambda v: v[idx], x)
 
-
-def indexable(cls):
+class PythonicPytree:
     """
-    A decorator that adds support for bracket indexing/slicing to a class.
-    This allows for numpy/jax style indexing on Pytree-like objects.
+    A class that adds support for bracket indexing/slicing, sequence-like operations,
+    and concatenation to make working with pytrees more Pythonic.
     """
 
     def __getitem__(self, idx):
         return nth(self, idx)
-
-    cls.__getitem__ = __getitem__
-    return cls
-
-
-def iterable(cls):
-    """
-    A decorator that adds sequence-like operations to a class.
-    This provides `len` and `__iter__` methods for Pytree-like objects.
-
-    Note: The `__len__` method assumes that all leaves in the Pytree have the same length.
-    If leaves have different lengths, it will return the length of the first leaf encountered.
-    """
 
     def __len__(self):
         return len(jax.tree_util.tree_leaves(self)[0])
@@ -100,14 +86,8 @@ def iterable(cls):
     def __iter__(self):
         return (self[i] for i in range(len(self)))
 
-    cls.__len__ = __len__
-    cls.__iter__ = __iter__
-    return cls
-
-
-def concatable(cls):
     def __add__(self, other):
-        if not isinstance(other, cls):
+        if not isinstance(other, type(self)):
             raise TypeError(f"Cannot add {type(self)} and {type(other)}")
 
         def concat_leaves(x, y):
@@ -115,21 +95,9 @@ def concatable(cls):
 
         return jax.tree_util.tree_map(concat_leaves, self, other)
 
-    cls.__add__ = __add__
-    return cls
 
-
-def pythonic_pytree(cls):
-    """
-    A decorator that composes indexable, iterable, and concatable decorators
-    to make working with pytrees more Pythonic.
-    """
-    return indexable(iterable(concatable(cls)))
-
-
-@pythonic_pytree
 @pz.pytree_dataclass
-class Pose(genjax.Pytree):
+class Pose(genjax.Pytree, PythonicPytree):
     p: FloatArray
     hd: FloatArray
 
@@ -182,9 +150,8 @@ print(pose.rotate(pi / 2))
 
 
 # %%
-@pythonic_pytree
 @pz.pytree_dataclass
-class Control(genjax.Pytree):
+class Control(genjax.Pytree, PythonicPytree):
     ds: FloatArray
     dhd: FloatArray
 
