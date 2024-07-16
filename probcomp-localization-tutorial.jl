@@ -240,25 +240,76 @@ end
 gif(ani, "imgs/ideal_distances.gif", fps=1)
 
 # %% [markdown]
-# Let us work instead with less ideal sensors, whose readings are somewhat stochastically inexact.
+# ### Noisy sensors and generative functions
+#
+# Let us work instead with less ideal sensors, whose readings are somewhat stochastically inexact.  Say, the sensor readings are each subject to indepdent Gaussian noise.
+#
+# Assuming that `normal(μ, σ)` calls a sampler for the normal distribution of mean `μ` and standard deviation `σ`, one can code a sampler for the resulting distribution over sensor values as follows:
+# ```julia
+# function noisy_sensor_sample(pose, walls, sensor_settings)
+#     readings = Vector{Float64}(undef, sensor_settings.num_angles)
+#     for j in 1:sensor_settings.num_angles
+#         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
+#         readings[j] = normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
+#     end
+#     return readings
+# end;
+# ```
+# For purposes of optimization, we will also want to compute densities of samples produced by `noisy_sensor_sample`.  Assuming `logpdf(normal, x, μ, σ)` computes the log PDF of the normal distribution of mean `μ` and standard deviation `σ`, then the following code would evaluate log of the desired density:
+# ```julia
+# function noisy_sensor_density(readings, pose, walls, sensor_settings)
+#     log_density = 0.0
+#     for j in 1:sensor_settings.num_angles
+#         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
+#         log_density += logpdf(normal, readings[j], sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
+#     end
+#     return log_density
+# end
+# ```
+# Each operation we wish to perform on models requires implementing another function for each model.  Working out all of these operations times all of these models is both tedious and error-prone.  Fortunately, the various functionalities can be achieved through automated code transformation, and Gen takes care of this for us.
+
+# %% [markdown]
+# In the following code, the `@gen` decorator declares a *generative function*, which is a single declarative model on which we can operate to extract samples, compute densties, and so on.  Within the generative function, we may draw sample values from distributions using the syntax `{address} ~ distribution()`.  The syntactic sugar `var ~ distribution()` is provided to enact the common pattern `var = {:var} ~ distribution()`.  An address can be any value, but any address may only occur once per run of the model.
+#
+# Next we see two basic operations performed upon the model.
+# * The function `Gen.propose(model, args)` runs `model` on `args` and returns a tuple `(choices, log_density, retval)`.  Here `choices` is a *choice map*, which is an associative array from addresses to the observed draws from distributions within the run of the code; `log_density` is the sum of the log densities of those draws; and `retval` is the return value of the code (in this case, `nothing`).
+# * The function `Gen.assess(model, args, choices)` runs `model` on `args`, but instead of drawing from the distributions it looks up the values from a user-supplied complete choice map `choices`.  It then returns a tuple `(density, retval)`.
+#
+# The functionality we were hoping for only requires making cosmetic adjustments to these: convert the choice map to an array in the first case, and discard the return value in the second case.
 
 # %%
-function noisy_sensor(pose, walls, sensor_settings)
-    readings = Vector{Float64}(undef, sensor_settings.num_angles)
+@gen function noisy_sensor_model(pose, walls, sensor_settings)
     for j in 1:sensor_settings.num_angles
         sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
-        readings[j] = normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
+        {j => :sensor} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
     end
-    return readings
-end;
+end
+
+function noisy_sensor_sample(pose, walls, sensor_settings)
+    sample, _, _ = propose(noisy_sensor_model, (pose, walls, sensor_settings))
+    return [sample[j => :sensor] for j in 1:sensor_settings.num_angles]
+end
+
+function noisy_sensor_log_density(readings, pose, walls, sensor_settings)
+    # This constructor takes zero or more args, each of the form `(address, value)`.
+    choices = choicemap(((j => :sensor, reading) for (j, reading) in enumerate(readings))...)
+    return assess(noisy_sensor_model, (pose, walls, sensor_settings), choices)[1]
+end
+
+random_pose_coords(world) =
+    [uniform(world.bounding_box[1], world.bounding_box[2]),
+     uniform(world.bounding_box[3], world.bounding_box[4]),
+     uniform(-pi, pi)]
+
+random_pose(world) = Pose(random_pose_coords(world));
 
 # %%
 sensor_settings = (sensor_settings..., s_noise = 0.10)
 
 ani = Animation()
 for _ in 1:20
-    pose = Pose([uniform(world.bounding_box[1], world.bounding_box[2]), uniform(world.bounding_box[1], world.bounding_box[2])], uniform(-pi,pi))
-    readings = noisy_sensor(pose, world.walls, sensor_settings)
+    pose = random_pose(world)
+    readings = noisy_sensor_sample(pose, world.walls, sensor_settings)
     frame_plot = plot_world(world, "Noisy sensor distances")
     plot_sensors!(pose, readings, "noisy sensors", sensor_settings)
     plot!(pose; color=:red, label="pose")
