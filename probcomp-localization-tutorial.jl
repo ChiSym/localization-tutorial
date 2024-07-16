@@ -24,7 +24,7 @@
 # Global setup code
 
 # Install dependencies listed in Project.toml
-using Pkg 
+using Pkg
 Pkg.activate(".")
 Pkg.instantiate()
 
@@ -1840,7 +1840,7 @@ function particle_filter_rejuv(model, T, args, constraints, N_particles, ESS_thr
         if effective_sample_size(log_weights) < (1. + ESS_threshold * length(log_weights))
             traces, log_weights = resample(traces, log_weights)
         end
-    
+
         for rejuv_args in rejuv_args_schedule
             for i in 1:N_particles
                 traces[i], log_weights[i] = rejuv_kernel(traces[i], log_weights[i], rejuv_args)
@@ -1874,7 +1874,7 @@ function particle_filter_rejuv_infos(model, T, args, constraints, N_particles, E
             traces, log_weights = resample(traces, log_weights)
             push!(infos, (type = :resample, time = now(), t = t, label = "resample", traces = copy(traces), log_weights = copy(log_weights)))
         end
-    
+
         for rejuv_args in rejuv_args_schedule
             vizs_collected = []
             for i in 1:N_particles
@@ -2514,8 +2514,8 @@ end;
 # We are assessing the suitability of a family of weighted particles $(w_t^{(i)}, z_{0:t}^{(i)})_{i=1}^N$ constructed up to time $t$.  These particles were constructed either using `Gen.generate` at the first time step $t=0$, or otherwise extended from a family $(w_{t-1}^{(i)},z_{0:t-1}^{(i)})_{i=1}^N$ using `Gen.update`.  Both of these `Gen` operations also returned some kind (log) "weight" $\~w_t^{(i)}$, namely the importance weight $\~w_0^{(i)} := w_0^{(i)}$ in the first case, and the incremental weight $\~w_t^{(i)} := w_t^{(i)}/w_{t-1}^{(i)}$ in the second case.  Each of these weights $\~w_t^{(i)}$ is equal to the sensor model probability density $P_\text{sensor}(o_t^{(i)};z_t^{(i)},\ldots)$ of the observations $o_t^{(i)}$ at time step $t$.  Thus, on the one hand, one can recover these numbers in a unform manner using `Gen.project` as explained earlier, and on the other hand, they measure the fitness of the step $z_t^{(i)}$ as an extension of the particle to time $t$.
 #
 # Out of many possible design choices, we will limit ourselves to considering when a given function $h(w)$ of tuples $w = (w^{(i)})_{i=1}^N$ meets a given "allowance" bound when evaluated at $\~w_t := (\~w_t^{(i)})_{i=1}^N$.  Here are two choices of such functions $h$.  They have been normalized so that the allowances do not need to be adjusted as the number $N$ of particles is changed:
-# * The average log weight, $h(w) = \frac1N \sum_{i=1}^N \log w^{(i)}$.  
-# * The log average weight, also known as the *log marginal likelihood estimate*, $h(w) = \log \big[ \frac1N \sum_{i=1}^n w^{(i)} \big]$.  
+# * The average log weight, $h(w) = \frac1N \sum_{i=1}^N \log w^{(i)}$.
+# * The log average weight, also known as the *log marginal likelihood estimate*, $h(w) = \log \big[ \frac1N \sum_{i=1}^n w^{(i)} \big]$.
 #
 # The first of these responds equally to changes in each weight, and therefore measures the fitness of all the particles, whereas the second is predominately determined by the largest weights, and therefore measures the fitness of the best-fitting particles.  Let's have a look at how an inference step is assessed by these rules.
 
