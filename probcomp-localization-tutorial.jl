@@ -1765,10 +1765,10 @@ smcp3_kernel(fwd_proposal, bwd_proposal) =
 # There is a much faster and simpler way, at the cost of so little incremental weight variance that it has empirically negligible impact on inference performance: ignore the data $o_t$, and just draw $z_t$ from (the restriction to the inverse grid of) the path model.  This strategy is implemented by `grid_bwd_proposal` below.
 
 # %%
-function vector_grid(center, grid_n_points, grid_sizes)
-    offset = center .- (grid_n_points .+ 1) .* grid_sizes ./ 2.
-    return reshape(map(I -> [Tuple(I)...] .* grid_sizes .+ offset, CartesianIndices(Tuple(grid_n_points))), (:,))
-end
+multi_indices(ranges) = reshape([[Tuple(i)...] for i in CartesianIndices(Tuple(ranges))], (:,))
+
+vector_grid_centered(center, grid_n_points, grid_sizes) =
+    [center .+ (i .- (grid_n_points .+ 1)/2.) .* grid_sizes for i in multi_indices(grid_n_points)]
 
 inverse_grid_index(grid_n_points, j) =
     LinearIndices(Tuple(grid_n_points))[(grid_n_points .+ 1 .- [Tuple(CartesianIndices(Tuple(grid_n_points))[j])...])...]
@@ -1779,7 +1779,7 @@ inverse_grid_index(grid_n_points, j) =
     p = trace[prefix_address(t+1, :pose => :p)]
     hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
+    pose_grid = vector_grid_centered([p[1], p[2], hd], grid_n_points, grid_sizes)
     choicemap_grid = [choicemap((prefix_address(t+1, :pose => :p), [x, y]),
                                 (prefix_address(t+1, :pose => :hd), h))
                       for (x, y, h) in pose_grid]
@@ -1802,7 +1802,7 @@ end
     p = trace[prefix_address(t+1, :pose => :p)]
     hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
+    pose_grid = vector_grid_centered([p[1], p[2], hd], grid_n_points, grid_sizes)
     choicemap_grid = [choicemap((prefix_address(t+1, :pose => :p), [x, y]),
                                 (prefix_address(t+1, :pose => :hd), h))
                       for (x, y, h) in pose_grid]
@@ -1825,7 +1825,7 @@ grid_smcp3_kernel = smcp3_kernel(grid_fwd_proposal, grid_bwd_proposal);
     p = trace[prefix_address(t+1, :pose => :p)]
     hd = trace[prefix_address(t+1, :pose => :hd)]
 
-    pose_grid = vector_grid([p[1], p[2], hd], grid_n_points, grid_sizes)
+    pose_grid = vector_grid_centered([p[1], p[2], hd], grid_n_points, grid_sizes)
     choicemap_grid = [choicemap((prefix_address(t+1, :pose => :p), [x, y]),
                                 (prefix_address(t+1, :pose => :hd), h))
                       for (x, y, h) in pose_grid]
