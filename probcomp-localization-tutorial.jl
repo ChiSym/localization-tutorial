@@ -60,8 +60,6 @@ mkpath("imgs");
 # %%
 # General code here
 
-norm(v) = sqrt(sum(v.^2))
-
 struct Segment
     p1 :: Vector{Float64}
     p2 :: Vector{Float64}
@@ -315,6 +313,8 @@ end;
 # We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance from the point of contact in the normal direction to the wall.
 
 # %%
+norm(v) = sqrt(sum(v.^2))
+
 function physical_step(p1, p2, hd, world_inputs)
     step_pose = Pose(p1, p2 - p1)
     (s, i) = findmin(w -> distance(step_pose, w), world_inputs.walls)
