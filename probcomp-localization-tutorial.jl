@@ -29,6 +29,7 @@ Pkg.activate(".")
 Pkg.instantiate()
 
 # The dependencies consist of the following Julia packages.
+using Statistics: mean
 using Dates: now, value
 using JSON: parsefile
 using Plots
