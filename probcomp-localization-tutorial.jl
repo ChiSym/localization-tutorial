@@ -323,17 +323,74 @@ gif(ani, "imgs/noisy_distances.gif", fps=1)
 # We consider several approaches to the problem where, given a set of sensor readings taken from a single position of the robot, we are to determine the likely values of this position.
 
 # %% [markdown]
-# ### Using a neural net
+# ### Using a neural net to learn the inverse of the sensor function
 #
-# Let us start with a typical attack using a simple neural net.
+# Let us start with a common kind of attack using a neural net.  The neural net takes inputs the sensor data, and outputs a pose for the robot.
 
 # %%
-function make_localizer_net(world, sensor_settings, N_training_data)
-    # Document this chioice of model!
-    net = Chain(Dense(sensor_settings.num_angles, length(world.walls), relu),
-                Dense(length(world.walls), 3, sigmoid))
-    # Minimize how log-unlikely the noisy sensor readings 
-    loss(model, sensors, pose) = ideal_sensor(Pose(model(sensors)))
+function make_inverter_net(world, sensor_settings, N_batch_size, N_batches)
+    # Enough hidden layer parameters to capture the relationships to all the walls.
+    model = Chain(
+                Dense(sensor_settings.num_angles => length(world.walls), relu),
+                BatchNorm(length(world.walls)),
+                Dense(length(world.walls) => 3, sigmoid),
+                Dense(3 => 3))
+    
+    # Minimize the distance to the true pose.
+    function loss_function(model, readings, pose_coords)
+        modeled_pose_coords = model(readings)
+        point_diff2 = (modeled_pose_coords[1] - pose_coords[1])^2 + (modeled_pose_coords[2] - pose_coords[2])^2
+        angle_diff = acos((cos(modeled_pose_coords[3]) * cos(pose_coords[3]) + sin(modeled_pose_coords[3]) * sin(pose_coords[3])) * 0.999)
+        return point_diff2 + (angle_diff * world.box_size) / (2pi * 4.0)
+    end
+
+    # Nothing fancy.
+    optimization_state = Flux.setup(Descent(), model)
+
+    N_training_data = N_batch_size * N_batches
+    training_outputs = [random_pose_coords(world) for _ in 1:N_training_data]
+    training_inputs = [ideal_sensor(Pose(pose_coords), world.walls, sensor_settings) for pose_coords in training_outputs]
+    loader = Flux.DataLoader((hcat(training_inputs...), hcat(training_outputs...)), batchsize=N_batch_size, shuffle=true);
+
+    return model, loss_function, optimization_state, training_inputs, training_outputs, loader
+end;
+
+# %%
+# Much of this cell, and some of the cell above it, were stolen from the Flux webpage demo.
+
+N_batch_size, N_batches = 64, 16
+model, loss_function, optimization_state, training_inputs, training_outputs, loader =
+    make_inverter_net(world, sensor_settings, N_batch_size, N_batches)
+
+N_epochs = 1000
+losses = []
+for epoch in 1:N_epochs
+    for (x, y) in loader
+        loss, grads = Flux.withgradient(m -> loss_function(m, x, y), model)
+        Flux.update!(optimization_state, model, grads[1])
+        push!(losses, loss)
+    end
+    # Flux.train!(loss_function, model, loader, optimization_state)
+end
+
+plot(losses; xaxis=(:log10, "iteration"), yaxis="loss", label="per batch")
+plot!(N_batches:N_batches:length(losses), mean.(Iterators.partition(losses, N_batches)), label="epoch mean", dpi=200)
+
+# %%
+trained_outputs_array = model(hcat(training_inputs...))
+trained_outputs = [trained_outputs_array[:,i] for i in 1:length(training_inputs)]
+
+ani = Animation()
+for i in 1:20
+    training = Pose(Vector{Float64}(training_outputs[i]))
+    trained = Pose(Vector{Float64}(trained_outputs[i]))
+    frame_plot = plot_world(world, "Neural net performance")
+    plot!(training; color=:red, label="true pose")
+    plot!(trained; color=:green, label="learned pose")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/nn1.gif", fps=1)
+
 end
 
 # %% [markdown]
