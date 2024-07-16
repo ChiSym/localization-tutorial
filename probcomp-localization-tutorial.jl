@@ -391,7 +391,91 @@ for i in 1:20
 end
 gif(ani, "imgs/nn1.gif", fps=1)
 
+# %% [markdown]
+# ### Using a neural net to learn a probability distribution over likely poses given sensors
+#
+# Instead we try to "learn" a probability distribution on the possible poses.  More precisely, we declare a parametric family of probability distributions over poses, and try to learn a function mapping sensor data to parameters.
+
+# %%
+multi_indices(ranges) = reshape([[Tuple(i)...] for i in CartesianIndices(Tuple(ranges))], (:,))
+
+vector_grid_bounded(bounds_low, bounds_high, grid_n_points) =
+    [bounds_low .+ (i .- 1/2.) .* (bounds_high .- bounds_low) ./ grid_n_points for i in multi_indices(grid_n_points)]
+
+function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins)
+    bin_centers = vector_grid_bounded([world.bounding_box[1], world.bounding_box[2], -pi], [world.bounding_box[3], world.bounding_box[4], pi], N_bins)
+
+    # Enough hidden layer parameters to capture the relationships to all the walls.
+    model = Chain(
+                Dense(sensor_settings.num_angles => length(world.walls), relu),
+                BatchNorm(length(world.walls)),
+                Dense(length(world.walls) => length(bin_centers)),
+                softmax)
+    
+    # Minimize the distance to the true pose.
+    loss_function(model, readings, sensor_probs) = Flux.crossentropy(model(readings), sensor_probs)
+
+    # Nothing fancy.
+    optimization_state = Flux.setup(Descent(), model)
+
+    N_training_data = N_batch_size * N_batches
+    training_data = [random_pose_coords(world) for _ in 1:N_training_data]
+    training_inputs = [noisy_sensor_sample(Pose(pose_coords), world.walls, sensor_settings) for pose_coords in training_data]
+    training_outputs = [softmax([noisy_sensor_log_density(training_input, Pose(pose_coords), world.walls, sensor_settings)
+                                 for pose_coords in bin_centers])
+                        for training_input in training_inputs]
+    # In case all the bin densities bottom out, assign a default bin.
+    for i in 1:N_training_data
+        if any(isnan, training_outputs[i])
+            training_outputs[i] = zero(training_outputs[i])
+            training_outputs[i][1] = 1.0
+        end
+    end
+    loader = Flux.DataLoader((hcat(training_inputs...), hcat(training_outputs...)), batchsize=N_batch_size, shuffle=true);
+
+    return model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader
+end;
+
+# %%
+N_bins = [24, 24, 24]
+model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader =
+    make_parameter_net(world, sensor_settings, 10, 10, N_bins);
+
+# %%
+# # N_batch_size, N_batches = 64, 16
+# N_batch_size, N_batches = 10, 10
+# N_bins = [24, 24, 24]
+# model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader =
+#     make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins);
+
+N_epochs = 2000
+losses = []
+for epoch in 1:N_epochs
+    for (x, y) in loader
+        loss, grads = Flux.withgradient(m -> loss_function(m, x, y), model)
+        Flux.update!(optimization_state, model, grads[1])
+        push!(losses, loss)
+    end
+    # Flux.train!(loss_function, model, loader, optimization_state)
 end
+
+plot(losses; xaxis=(:log10, "iteration"), yaxis="loss", label="per batch")
+plot!(N_batches:N_batches:length(losses), mean.(Iterators.partition(losses, N_batches)), label="epoch mean", dpi=200)
+
+# %%
+trained_outputs_array = model(hcat(training_inputs...))
+trained_outputs = [trained_outputs_array[:,i] for i in 1:length(training_inputs)]
+
+ani = Animation()
+for i in 1:20
+    training = Pose(Vector{Float64}(training_outputs[i]))
+    trained = Pose(Vector{Float64}(trained_outputs[i]))
+    frame_plot = plot_world(world, "Neural net performance")
+    plot!(training; color=:red, label="true pose")
+    plot!(trained; color=:green, label="learned pose")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/nn1.gif", fps=1)
 
 # %% [markdown]
 # ## Localization in motion
