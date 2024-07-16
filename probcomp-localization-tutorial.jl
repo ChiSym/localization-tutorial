@@ -384,7 +384,7 @@ ani = Animation()
 for i in 1:20
     training = Pose(Vector{Float64}(training_outputs[i]))
     trained = Pose(Vector{Float64}(trained_outputs[i]))
-    frame_plot = plot_world(world, "Neural net performance")
+    frame_plot = plot_world(world, "Neural net performance (inversion)")
     plot!(training; color=:red, label="true pose")
     plot!(trained; color=:green, label="learned pose")
     frame(ani, frame_plot)
@@ -466,16 +466,18 @@ plot!(N_batches:N_batches:length(losses), mean.(Iterators.partition(losses, N_ba
 trained_outputs_array = model(hcat(training_inputs...))
 trained_outputs = [trained_outputs_array[:,i] for i in 1:length(training_inputs)]
 
+bin_centers = vector_grid_bounded([world.bounding_box[1], world.bounding_box[2], -pi], [world.bounding_box[3], world.bounding_box[4], pi], N_bins)
+
 ani = Animation()
-for i in 1:20
-    training = Pose(Vector{Float64}(training_outputs[i]))
-    trained = Pose(Vector{Float64}(trained_outputs[i]))
-    frame_plot = plot_world(world, "Neural net performance")
-    plot!(training; color=:red, label="true pose")
-    plot!(trained; color=:green, label="learned pose")
+for i in 1:4
+    frame_plot = plot_world(world, "Neural net performance (parametric)")
+    for (bin_pose, density) in zip(bin_centers, trained_outputs[i])
+        plot!(Pose(bin_pose); alpha=density, label=nothing)
+    end
+    plot!(Pose(Vector{Float64}(training_data[i])); color=:red, label="true pose")
     frame(ani, frame_plot)
 end
-gif(ani, "imgs/nn1.gif", fps=1)
+gif(ani, "imgs/nn2.gif", fps=1)
 
 # %% [markdown]
 # ## Localization in motion
