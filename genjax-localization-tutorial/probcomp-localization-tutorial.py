@@ -245,7 +245,7 @@ world, robot_inputs, T = load_world("../example_20_program.json")
 #
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path. Naïvely, this results in the following.
 
-# 55
+# %%
 
 noop_control = Control(jnp.array([0.0]), jnp.array([0.0]))
 
@@ -406,7 +406,7 @@ path_integrated = integrate_controls_physical(robot_inputs)
 
 # %% [markdown]
 # ### Plot such data
-
+# %%
 
 def arrow_plot(start, end, wing_angle, wing_length, constants={}, **mark_options):
     mark_options = {"strokeWidth": 1.25, **mark_options}
@@ -726,16 +726,16 @@ trace.project(key, S[("p")])
 # %%
 key, sub_key = jax.random.split(key)
 trace.project(key, S["p"] | S["hd"])
-# %% [markdown]
 
-# If in fact all of those projections resulted in the same number, you have encountered the issue [GEN-316](https://linear.app/chi-fro/issue/GEN-316/project-is-broken-in-genjax).
 # %% [markdown]
+# If in fact all of those projections resulted in the same number, you have encountered the issue [GEN-316](https://linear.app/chi-fro/issue/GEN-316/project-is-broken-in-genjax).
+# 
 # ### Modeling a full path
 #
 # The model contains all information in its trace, rendering its return value redundant.  The noisy path integration will just be a wrapper around its functionality, extracting what it needs from the trace.
 #
-# (It is worth acknowledging two strange things in the code below: the use of the suffix `.accumulate()` in make_path_model_step and the use of that auxiliary function itself.
-
+# (It is worth acknowledging two strange things in the code below: the use of the suffix `.accumulate()` in path_model and the use of that auxiliary function itself.
+# %%
 
 @genjax.gen
 def path_model_start(robot_inputs, motion_settings):
@@ -744,7 +744,7 @@ def path_model_start(robot_inputs, motion_settings):
         "pose",
     )
 
-
+@genjax.gen
 def path_model_step(motion_settings, previous_pose, control):
     return step_model(previous_pose, control, motion_settings) @ (
         "steps",
@@ -752,18 +752,15 @@ def path_model_step(motion_settings, previous_pose, control):
     )
 
 
-# TODO(huebert): use a genjax-compatible partial:
-# def generative_partial(gen_fn, closed_over):
-# @genjax.static_gen_fn
-# def _inner(*args):
-#     return gen_fn.inline(*args, closed_over)
-# return _inner
+def gen_partial(gen_fn, closed_over):
+    @genjax.gen
+    def inner(*args):
+        return gen_fn.inline(closed_over, *args)
+    return inner
 
-path_model = genjax.gen(
-    functools.partial(path_model_step, default_motion_settings)
-).accumulate()
+path_model = gen_partial(path_model_step, default_motion_settings).accumulate()
 
-# TODO(colin,huebert): After we fix `partial`, we should talk about accumulate, what it does, and _why_ from the point of view of acceleration. This is the flow control modification we were hinting at above, and it constrains the step function to have the two-argument signature that it does, which is why we reached for `partial` in the first place. Emphasize that this small bit of preparation allows massively parallel execution on a GPU and so it's worth the hassle.
+# TODO(colin,huebert): talk about accumulate, what it does, and _why_ from the point of view of acceleration. This is the flow control modification we were hinting at above, and it constrains the step function to have the two-argument signature that it does, which is why we reached for `partial` in the first place. Emphasize that this small bit of preparation allows massively parallel execution on a GPU and so it's worth the hassle.
 
 key, sub_key1, sub_key2 = jax.random.split(key, 3)
 initial_pose = path_model_start.simulate(
@@ -855,8 +852,7 @@ Plot.Frames(
 # ### Modifying traces
 #
 # The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `trace.update` takes as inputs a source of randomness, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace. It also returns (the log of) the ratio of the updated trace's density to the original trace's density, together with a precise record of the resulting modifications that played out.
-
-# %% [markdown]
+#
 # One could, for instance, consider just the placement of the first step, and replace its stochastic choice of heading with an updated value. The original trace was typical under the pose prior model, whereas the modified one may be rather less likely. This plot is annotated with log of how much unlikelier, the score ratio:
 # %%
 
@@ -886,8 +882,8 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
 
 # %% [markdown]
 # It is worth carefully thinking through a trickier instance of this.  Suppose instead, within the full path, we replaced the first step's stochastic choice of heading with some specific value.
-
 # %%
+
 key, sub_key = jax.random.split(key)
 trace = generate_path_trace(sub_key)
 key, sub_key = jax.random.split(key)
@@ -964,7 +960,6 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
 #
 # We first describe the ideal case, where the sensors return the true
 # distances to the walls.
-
 # %%
 
 sensor_settings = {
@@ -1056,9 +1051,8 @@ animate_path_with_sensor(generate_path(sample_key), readings)
 #
 # We assume that the sensor readings are themselves uncertain, say, the distances only knowable
 # up to some noise.  We model this as follows.
-
-
 # %%
+
 @genjax.gen
 def sensor_model_one(pose, angle):
     sensor_pose = pose.rotate(angle)
@@ -1081,8 +1075,8 @@ def noisy_sensor(pose):
 
 # %% [markdown]
 # The trace contains many choices corresponding to directions of sensor reading from the input pose. To explore the trace values, open the "folders" within the trace by clicking on the small triangles until you see the 41-element array of sensor values.
-
 # %%
+
 sensor_settings["s_noise"] = 0.10
 
 key, sub_key = jax.random.split(key)
@@ -1105,8 +1099,6 @@ pz.ts.display(trace.get_choices())
 # where we begin a habit of omitting the parameters to distributions that are implied by the code.
 #
 # Visualizing the traces of the model is probably more useful for orientation, so we do this now.
-
-
 # %%
 
 key, sub_key = jax.random.split(key)
@@ -1120,15 +1112,7 @@ animate_path_with_sensor(path, readings)
 # ### Full model
 #
 # We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
-
 # %%
-
-def gen_partial(gen_fn, closed_over):
-    @genjax.gen
-    def inner(*args):
-        return gen_fn.inline(closed_over, *args)
-    return inner
-
 
 @genjax.gen
 def full_model_initial(motion_settings):
@@ -1172,9 +1156,6 @@ fs = jax.jit(f.simulate)
 f.simulate(jax.random.PRNGKey(0), (jnp.array(3.0), {'y': jnp.array([3.0,4.0,5.0])}))
 # %% [markdown]
 # Again, the trace of the full model contains many choices, so we have used the Penzai visualization library to render the result. Click on the various nesting arrows and see if you can find the path within. For our purposes, we will supply a function `get_path` which will extract the list of Poses that form the path.
-
-# %%
-
 # %%
 
 def get_path(trace):
@@ -1197,7 +1178,6 @@ get_path(tr)
 # \end{align*}$$
 #
 # By this point, visualization is essential.
-
 # %%
 
 key, sub_key = jax.random.split(key)
@@ -1222,8 +1202,8 @@ animate_full_trace(tr, default_motion_settings)
 # ## The data
 #
 # Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.  We will generate two versions, one each with low or high motion deviation.
-
 # %%
+
 motion_settings_low_deviation = {
     "p_noise": 0.05,
     "hd_noise": (1 / 10.0) * 2 * jnp.pi / 360,
@@ -1254,8 +1234,8 @@ animate_full_trace(trace_low_deviation, motion_settings_low_deviation)
 animate_full_trace(trace_high_deviation, motion_settings_high_deviation)
 # %% [markdown]
 # Since we imagine these data as having been recorded from the real world, keep only their extracted data, *discarding* the traces that produced them.
-
 # %%
+
 # These are are what we hope to recover...
 path_low_deviation = get_path(trace_low_deviation)
 path_high_deviation = get_path(trace_high_deviation)
@@ -1281,8 +1261,8 @@ constraints_high_deviation = constraint_from_sensors(observations_high_deviation
 
 # %% [markdown]
 # We summarize the information available to the robot to determine its location. On the one hand, one has to produce a guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path. On the other hand, one has the sensor data.
-
 # %%
+
 world_plot + plot_sensors(world["center_point"], observations_low_deviation[0])
 
 
@@ -1312,13 +1292,11 @@ animate_bare_sensors(itertools.repeat(world["center_point"]))
 # ### Why we need inference: in a picture
 #
 # The path obtained by integrating the controls serves as a proposal for the true path, but it is unsatisfactory, especially in the high motion deviation case. The picture gives an intuitive sense of the fit:
-
 # %%
 
 animate_bare_sensors(path_integrated, walls_plot)
 
 # %%
-
 # At this point in the Julia notebook, Jay appeaals to a BlackBox inference technique which uses a Gen.jl library for particle filtering. The scoping for MathCamp suggests that we try importance sampling and stop there. Might as well give it a try?
 
 low_dev_model_importance = jax.jit(low_deviation_model.importance)
