@@ -1201,7 +1201,7 @@ get_path(tr)
 # %%
 
 key, sub_key = jax.random.split(key)
-tr = full_model.simulate(sub_key, (default_motion_settings,))
+tr = gen_partial(full_model, default_motion_settings).simulate(sub_key, ())
 
 def animate_full_trace(trace, motion_settings):
     path = get_path(trace)
@@ -1229,11 +1229,11 @@ motion_settings_low_deviation = {
     "hd_noise": (1 / 10.0) * 2 * jnp.pi / 360,
 }
 key, k_low, k_high = jax.random.split(key, 3)
-low_deviation_model = full_model(motion_settings_low_deviation)
+low_deviation_model = gen_partial(full_model, motion_settings_low_deviation)
 trace_low_deviation = low_deviation_model.simulate(k_low, ())
 
 motion_settings_high_deviation = {"p_noise": 0.25, "hd_noise": 2 * jnp.pi / 360}
-high_deviation_model = full_model(motion_settings_high_deviation)
+high_deviation_model = gen_partial(full_model, motion_settings_high_deviation)
 trace_high_deviation = high_deviation_model.simulate(k_high, ())
 
 animate_full_trace(trace_low_deviation, motion_settings_low_deviation)
