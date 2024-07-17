@@ -29,7 +29,6 @@ from __future__ import annotations
 import json
 import genstudio.plot as Plot
 
-import functools
 import itertools
 import jax
 import jax.numpy as jnp
@@ -729,7 +728,7 @@ trace.project(key, S["p"] | S["hd"])
 
 # %% [markdown]
 # If in fact all of those projections resulted in the same number, you have encountered the issue [GEN-316](https://linear.app/chi-fro/issue/GEN-316/project-is-broken-in-genjax).
-# 
+#
 # ### Modeling a full path
 #
 # The model contains all information in its trace, rendering its return value redundant.  The noisy path integration will just be a wrapper around its functionality, extracting what it needs from the trace.
@@ -1115,47 +1114,33 @@ animate_path_with_sensor(path, readings)
 # %%
 
 @genjax.gen
-def full_model_initial(motion_settings):
-    pose = start_pose_prior(robot_inputs["start"], motion_settings) @ "pose"
-    sensor_model(pose, sensor_angles) @ "sensor"
-    return pose
-
-@genjax.gen
-def full_model_kernel(motion_settings, state, control):
-    pose = step_model(state, control, motion_settings) @ "pose"
-    sensor_model(pose, sensor_angles) @ "sensor"
-    return pose, pose
-
-@genjax.gen
 def full_model(motion_settings):
-    initial = full_model_initial(motion_settings) @ "initial"
-    return gen_partial(full_model_kernel, motion_settings).scan(n=T)(initial, robot_inputs["controls"]) @ "steps"
+
+    motion_settings = motion_settings.const
+
+    @genjax.gen
+    def full_model_initial():
+        pose = start_pose_prior(robot_inputs["start"], motion_settings) @ "pose"
+        sensor_model(pose, sensor_angles) @ "sensor"
+        return pose
+
+    @genjax.gen
+    def full_model_kernel(state, control):
+        pose = step_model(state, control, motion_settings) @ "pose"
+        sensor_model(pose, sensor_angles) @ "sensor"
+        return pose, pose
+
+    initial = full_model_initial() @ "initial"
+    return full_model_kernel.scan(n=T)(initial, robot_inputs["controls"]) @ "steps"
+
 
 key, sub_key = jax.random.split(key)
-
-tr = gen_partial(full_model, default_motion_settings).simulate(sub_key, ())
-
-# the following will cause a tracer leak error
-# tr = full_model.simulate(sub_key, (default_motion_settings,))
+tr = full_model.simulate(sub_key, (genjax.Const(default_motion_settings),))
 
 pz.ts.display(tr.get_retval())
-
-# %%
-@genjax.gen
-def g(x, y):
-
-    y = genjax.normal(x + y, 0.001) @ 'y'
-    return y,y
-
-@genjax.gen
-def f(x, d):
-    return g.scan(n=3)(x, d['y']) @ 'g'
-
-fs = jax.jit(f.simulate)
-
-f.simulate(jax.random.PRNGKey(0), (jnp.array(3.0), {'y': jnp.array([3.0,4.0,5.0])}))
 # %% [markdown]
 # Again, the trace of the full model contains many choices, so we have used the Penzai visualization library to render the result. Click on the various nesting arrows and see if you can find the path within. For our purposes, we will supply a function `get_path` which will extract the list of Poses that form the path.
+
 # %%
 
 def get_path(trace):
@@ -1181,7 +1166,8 @@ get_path(tr)
 # %%
 
 key, sub_key = jax.random.split(key)
-tr = gen_partial(full_model, default_motion_settings).simulate(sub_key, ())
+tr = gen_partial(full_model, genjax.Const(default_motion_settings)).simulate(sub_key, ())
+
 
 def animate_full_trace(trace, motion_settings):
     path = get_path(trace)
@@ -1209,11 +1195,11 @@ motion_settings_low_deviation = {
     "hd_noise": (1 / 10.0) * 2 * jnp.pi / 360,
 }
 key, k_low, k_high = jax.random.split(key, 3)
-low_deviation_model = gen_partial(full_model, motion_settings_low_deviation)
+low_deviation_model = gen_partial(full_model, genjax.Const(motion_settings_low_deviation))
 trace_low_deviation = low_deviation_model.simulate(k_low, ())
 
 motion_settings_high_deviation = {"p_noise": 0.25, "hd_noise": 2 * jnp.pi / 360}
-high_deviation_model = gen_partial(full_model, motion_settings_high_deviation)
+high_deviation_model = gen_partial(full_model, genjax.Const(motion_settings_high_deviation))
 trace_high_deviation = high_deviation_model.simulate(k_high, ())
 
 animate_full_trace(trace_low_deviation, motion_settings_low_deviation)
@@ -1261,10 +1247,6 @@ constraints_high_deviation = constraint_from_sensors(observations_high_deviation
 
 # %% [markdown]
 # We summarize the information available to the robot to determine its location. On the one hand, one has to produce a guess of the start pose plus some controls, which one might integrate to produce an idealized guess of path. On the other hand, one has the sensor data.
-# %%
-
-world_plot + plot_sensors(world["center_point"], observations_low_deviation[0])
-
 
 # %%
 def animate_bare_sensors(path, plot_base=[]):
