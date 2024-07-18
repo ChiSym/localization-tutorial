@@ -1069,8 +1069,6 @@ sensor_settings["s_noise"] = 0.10
 key, sub_key = jax.random.split(key)
 trace = sensor_model.simulate(sub_key, (robot_inputs["start"], sensor_angles))
 
-pz.ts.display(trace.get_choices())
-
 # %% [markdown]
 # The mathematical picture is as follows.  Given the parameters of a pose $y$, walls $w$,
 # and settings $\nu$, one gets a distribution $\text{sensor}(y, w, \nu)$ over the traces
@@ -1137,7 +1135,7 @@ def get_sensors(trace):
 key, sub_key = jax.random.split(key)
 tr = full_model.simulate(sub_key, (genjax.Const(default_motion_settings),))
 
-pz.ts.display(tr.get_retval())
+pz.ts.display(tr)
 # %% [markdown]
 # Again, the trace of the full model contains many choices, so we have used the Penzai visualization library to render the result. Click on the various nesting arrows and see if you can find the path within. For our purposes, we will supply a function `get_path` which will extract the list of Poses that form the path.
 
@@ -1154,13 +1152,14 @@ pz.ts.display(tr.get_retval())
 # %%
 
 key, sub_key = jax.random.split(key)
-tr = gen_partial(full_model, genjax.Const(default_motion_settings)).simulate(sub_key, ())
+tr = full_model.simulate(sub_key, (genjax.Const(default_motion_settings),))
 
 
-def animate_full_trace(trace, motion_settings, frame_key=None):
+def animate_full_trace(trace, frame_key=None):
     # TODO: get the motion settings from trace.get_args()
     path = get_path(trace)
     readings = get_sensors(trace)
+    motion_settings = trace.get_args()[0].const
 
     frames = [
         plot_path_with_confidence(path, step, motion_settings)
@@ -1170,9 +1169,7 @@ def animate_full_trace(trace, motion_settings, frame_key=None):
 
     return Plot.Frames(frames, fps=2, key=frame_key)
 
-
-animate_full_trace(tr, default_motion_settings)
-
+animate_full_trace(tr)
 # %% [markdown]
 # ## The data
 #
@@ -1184,14 +1181,12 @@ motion_settings_low_deviation = {
     "hd_noise": (1 / 10.0) * 2 * jnp.pi / 360,
 }
 key, k_low, k_high = jax.random.split(key, 3)
-low_deviation_model = gen_partial(full_model, genjax.Const(motion_settings_low_deviation))
-trace_low_deviation = low_deviation_model.simulate(k_low, ())
+trace_low_deviation = full_model.simulate(k_low, (genjax.Const(motion_settings_low_deviation),))
 
 motion_settings_high_deviation = {"p_noise": 0.25, "hd_noise": 2 * jnp.pi / 360}
-high_deviation_model = gen_partial(full_model, genjax.Const(motion_settings_high_deviation))
-trace_high_deviation = high_deviation_model.simulate(k_high, ())
+trace_high_deviation = full_model.simulate(k_high, (genjax.Const(motion_settings_high_deviation),))
 
-animate_full_trace(trace_low_deviation, motion_settings_low_deviation)
+animate_full_trace(trace_low_deviation)
 # frames_low = frames_from_full_trace(world, "Low motion deviation", trace_low_deviation)
 # frames_high = frames_from_full_trace(world, "High motion deviation", trace_high_deviation)
 # ani = Animation()
@@ -1206,7 +1201,7 @@ animate_full_trace(trace_low_deviation, motion_settings_low_deviation)
 
 # TODO: next task is to create a side-by-side animation of the low and high deviation paths.
 
-animate_full_trace(trace_high_deviation, motion_settings_high_deviation)
+animate_full_trace(trace_high_deviation)
 # %% [markdown]
 # Since we imagine these data as having been recorded from the real world, keep only their extracted data, *discarding* the traces that produced them.
 # %%
@@ -1280,13 +1275,12 @@ animate_bare_sensors(path_integrated, walls_plot)
 
 # %%
 
-low_dev_model_importance = jax.jit(low_deviation_model.importance)
-high_dev_model_importance = jax.jit(high_deviation_model.importance)
+full_model_importance = jax.jit(full_model.importance)
 
 key, sub_key = jax.random.split(key)
-sample, log_weight = low_dev_model_importance(sub_key, constraints_low_deviation, ())
+sample, log_weight = full_model_importance(sub_key, constraints_low_deviation, (genjax.Const(motion_settings_low_deviation),))
 
-animate_full_trace(sample, motion_settings_low_deviation) | f"log_weight: {log_weight}"
+animate_full_trace(sample) | f"log_weight: {log_weight}"
 # %% [markdown]
 # A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key situational difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
 #
@@ -1347,9 +1341,9 @@ constraints_path_integrated_observations_low_deviation = constraints_path_integr
 constraints_path_integrated_observations_high_deviation = constraints_path_integrated + constraints_high_deviation
 
 key, sub_key = jax.random.split(key)
-trace_path_integrated_observations_low_deviation, w_low = low_deviation_model.importance(sub_key, constraints_path_integrated_observations_low_deviation, ())
+trace_path_integrated_observations_low_deviation, w_low = full_model_importance(sub_key, constraints_path_integrated_observations_low_deviation, (genjax.Const(motion_settings_low_deviation),))
 key, sub_key = jax.random.split(key)
-trace_path_integrated_observations_high_deviation, w_high = high_deviation_model.importance(sub_key, constraints_path_integrated_observations_high_deviation, ())
+trace_path_integrated_observations_high_deviation, w_high = full_model_importance(sub_key, constraints_path_integrated_observations_high_deviation, (genjax.Const(motion_settings_high_deviation),))
 
 w_low, w_high
 # TODO: Jay then does two projections to compare the log-weights of these two things,
@@ -1359,11 +1353,11 @@ w_low, w_high
 # %%
 
 Plot.Row(
-    *[(Plot.Hiccup("div.f3.b.tc", title) 
-       | animate_full_trace(trace, motion_settings, frame_key="frame") 
-       | f"score: {score:,.2f}") 
-     for (title, trace, motion_settings, score) in 
-     [["Low deviation", 
+    *[(Plot.Hiccup("div.f3.b.tc", title)
+       | animate_full_trace(trace, frame_key="frame")
+       | f"score: {score:,.2f}")
+     for (title, trace, motion_settings, score) in
+     [["Low deviation",
        trace_path_integrated_observations_low_deviation,
        motion_settings_low_deviation,
        w_low],
