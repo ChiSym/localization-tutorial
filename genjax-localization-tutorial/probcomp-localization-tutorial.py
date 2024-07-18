@@ -98,7 +98,7 @@ class PythonicPytree:
             return jnp.concatenate([x, y])
 
         return jax.tree_util.tree_map(concat_leaves, self, other)
-    
+
     def prepend(self, child):
         return jax.tree.map(lambda x: x[jnp.newaxis], child) + self
 
@@ -413,13 +413,13 @@ def pose_plot(p, r=0.5, constants={}, fill: str | Any = "black", **opts):
     WING_ANGLE, WING_LENGTH = jnp.pi/12, 0.6
     center = p.p
     angle = jnp.arctan2(*(center - p.step_along(-r).p)[::-1])
-    
+
     # Calculate wing endpoints
     wing_ends = [
         center - WING_LENGTH * jnp.array([jnp.cos(angle + a), jnp.sin(angle + a)])
         for a in [WING_ANGLE, -WING_ANGLE]
     ]
-    
+
     # Draw wings
     wings = Plot.line(
         [wing_ends[0], center, wing_ends[1]],
@@ -427,10 +427,10 @@ def pose_plot(p, r=0.5, constants={}, fill: str | Any = "black", **opts):
         stroke=fill,
         opacity=0.3
     )
-    
+
     # Draw center dot
     dot = Plot.scaled_circle(*center, r=0.14, fill=fill, **opts)
-    
+
     return wings + dot
 
 
@@ -1158,6 +1158,7 @@ tr = gen_partial(full_model, genjax.Const(default_motion_settings)).simulate(sub
 
 
 def animate_full_trace(trace, motion_settings):
+    # TODO: get the motion settings from trace.get_args()
     path = get_path(trace)
     readings = get_sensors(trace)
 
@@ -1226,8 +1227,8 @@ def constraint_from_sensors(readings):
     return jax.vmap(
         lambda ix, v: C["steps", ix, "sensor", angle_indices, "distance"].set(v)
     )(
-        jnp.arange(T+1), readings
-    )  # + C['initial', 'sensor', angle_indices, 'distance'].set(readings[0])
+        jnp.arange(T), readings[1:]
+    ) + C['initial', 'sensor', angle_indices, 'distance'].set(readings[0])
 
 
 constraints_low_deviation = constraint_from_sensors(observations_low_deviation)
@@ -1265,23 +1266,132 @@ animate_bare_sensors(itertools.repeat(world["center_point"]))
 # %%
 
 animate_bare_sensors(path_integrated, walls_plot)
+# %% [markdown]
+# It would seem that the fit is reasonable in low motion deviation, but really breaks down in high motion deviation.
+#
+# We are not limited to visual judgments here: the model can quantitatively assess how good a fit the integrated path is for the data.  In order to do this, we detour to explain how to produce samples from our model that agree with the fixed observation data.
+
+# %% [markdown]
+# ### Producing samples with constraints
+#
+# We have seen how `simulate` performs traced execution of a generative function: as the program runs, it draws stochastic choices from all required primitive distributions, and records them in a choice map.
+#
+# Given a choice map of *constraints* that declare fixed values of some of the primitive choices, the operation `importance` proposes traces of the generative function that are consistent with these constraints.
 
 # %%
-# At this point in the Julia notebook, Jay appeaals to a BlackBox inference technique which uses a Gen.jl library for particle filtering. The scoping for MathCamp suggests that we try importance sampling and stop there. Might as well give it a try?
 
 low_dev_model_importance = jax.jit(low_deviation_model.importance)
 high_dev_model_importance = jax.jit(high_deviation_model.importance)
 
-
-N_importance_samples = 1
 key, sub_key = jax.random.split(key)
-samples = jax.vmap(high_dev_model_importance, in_axes=(0, None, None))(
-    jax.random.split(sub_key, N_importance_samples), constraints_high_deviation, ()
-)
+sample, log_weight = low_dev_model_importance(sub_key, constraints_low_deviation, ())
+
+animate_full_trace(sample, motion_settings_low_deviation) | f"log_weight: {log_weight}"
+# %% [markdown]
+# A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key situational difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
+#
+# On the superficial level, since all traces produced by `importance` are consistent with the constraints, those traces that are inconsistent with the constraints do not occur at all, and in aggregate the traces that are consistent with the constraints are more common.
+#
+# More deeply and importantly, the stochastic choice of the *constraints* under a run of `simulate` might have any density, perhaps very low.  This constraints density contributes as always to the `get_score`, whereas it does not influence the frequency of producing this trace under `importance`.
+#
+# The ratio of the `get_score` of a trace to the probability density that `importance` would produce it with the given constraints, is called the *importance weight*.  For convenience, (the log of) this quantity is returned by `importance` along with the trace.
+#
+# We stress the basic invariant:
+# $$
+# \text{get\_score}(\text{trace})
+# =
+# (\text{weight from importance})
+# \cdot
+# (\text{frequency simulate creates this trace}).
+# $$
+# %% [markdown]
+# The preceding comments apply to generative functions in wide generality.  We can say even more about our present examples, because further assumptions hold.
+# 1. There is no untraced randomness.  Given a full choice map for constraints, everything else is deterministic.  In particular, the importance weight is the `get_score`.
+# 2. The generative function was constructed using GenJAX's DSL and primitive distributions.  Ancestral sampling; `importance` with empty constraints reduces to `simulate` with importance weight $1$.
+# 3. Combined, the importance weight is directly computed as the `project` of the trace upon the choice map addresses that were constrained in the call to `importance`.
+#
+#   In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
+# %%
+# TODO: this calculation doesn't work in GenJAX currently
+# log_weight - project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...))
+
+# %% [markdown]
+# ### Why we need inference: in numbers
+#
+# We return to how the model offers a numerical benchmark for how good a fit the integrated path is.
+#
+# In words, the data are incongruously unlikely for the integrated path.  The (log) density of the measurement data, given the integrated path...
+
+# %%
+path_integrated
+sample.get_choices()
+constraints_path_integrated = C[""]
+
+def constraint_from_path(path):
+
+    c_ps = jax.vmap(
+        lambda ix, p: C["steps", ix, "pose", "p"].set(p)
+    )(jnp.arange(T), path.p[1:])
+
+    c_hds = jax.vmap(
+        lambda ix, hd: C["steps", ix, "pose", "hd"].set(hd)
+    )(jnp.arange(T), path.hd[1:])
+
+    c_p = C["initial", "pose", "p"].set(path.p[0])
+    c_hd = C["initial", "pose", "hd"].set(path.hd[0])
+
+    return c_ps + c_hds + c_p + c_hd
+
+constraints_path_integrated = constraint_from_path(path_integrated)
+constraints_path_integrated_observations_low_deviation = constraints_path_integrated + constraints_low_deviation
+constraints_path_integrated_observations_high_deviation = constraints_path_integrated + constraints_high_deviation
+
+key, sub_key = jax.random.split(key)
+trace_path_integrated_observations_low_deviation, w_low = low_deviation_model.importance(sub_key, constraints_path_integrated_observations_low_deviation, ())
+key, sub_key = jax.random.split(key)
+trace_path_integrated_observations_high_deviation, w_high = high_deviation_model.importance(sub_key, constraints_path_integrated_observations_high_deviation, ())
+
+w_low, w_high
+# TODO: Jay then does two projections to compare the log-weights of these two things,
+# in order to show that we can be quantitative about the quality of the paths generated
+# by the two models. Unfortunately we can't, and so we should raise the priority of the
+# blocking bug
+# %%
+(animate_full_trace(trace_path_integrated_observations_high_deviation, motion_settings_high_deviation)
+ & animate_full_trace(trace_path_integrated_observations_low_deviation, motion_settings_low_deviation))
+
+# %%
+#pz.ts.display(sample.get_choices()["steps", ..., "pose", "p"])
+key, sub_key = jax.random.split(key)
+u_tr, u_w, _, _ = sample.update(sub_key, constraint_from_path(path_integrated))
+pz.ts.display(u_tr.get_choices()["initial", "pose", "p"])
 
 
-amax = jnp.argmax(samples[0].get_score())
-animate_full_trace(nth(samples[0], amax), motion_settings_high_deviation)
+# %%
+constraints_path_integrated =
+    choicemap(((prefix_address(t, :pose => :p), path_integrated[t].p) for t in 1:(T+1))...,
+              ((prefix_address(t, :pose => :hd), path_integrated[t].hd) for t in 1:(T+1))...)
+
+constraints_path_integrated_observations_low_deviation =
+    merge(constraints_path_integrated, merged_constraints_low_deviation)
+constraints_path_integrated_observations_high_deviation =
+    merge(constraints_path_integrated, merged_constraints_high_deviation)
+
+trace_path_integrated_observations_low_deviation, _ =
+    generate(full_model, (T, full_model_args...), constraints_path_integrated_observations_low_deviation)
+trace_path_integrated_observations_high_deviation, _ =
+    generate(full_model, (T, full_model_args...), constraints_path_integrated_observations_high_deviation);
+
+selection = select((prefix_address(i, :sensor) for i in 1:(T+1))...)
+
+println("Log density of low deviation observations assuming integrated path: $(project(trace_path_integrated_observations_low_deviation, selection))")
+println("Log density of high deviation observations assuming integrated path: $(project(trace_path_integrated_observations_high_deviation, selection))");
+
+
+
 # %%
 animate_full_trace(trace_low_deviation, motion_settings_low_deviation)
+# %%
+pz.ts.display(sample.get_choices())
+
 # %%
