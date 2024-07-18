@@ -55,6 +55,8 @@ from typing import Any, Iterable
 
 import os
 
+html = Plot.Hiccup
+
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
 
@@ -1286,11 +1288,11 @@ w_low, w_high
 # %%
 
 Plot.Row(
-    *[(Plot.Hiccup("div.f3.b.tc", title)
-       | animate_full_trace(trace, frame_key="frame")
-       | f"score: {score:,.2f}")
-     for (title, trace, motion_settings, score) in
-     [["Low deviation",
+    *[(html("div.f3.b.tc", title) 
+       | animate_full_trace(trace, frame_key="frame") 
+       | html("span.tc", f"score: {score:,.2f}"))
+     for (title, trace, motion_settings, score) in 
+     [["Low deviation", 
        trace_path_integrated_observations_low_deviation,
        motion_settings_low_deviation,
        w_low],
