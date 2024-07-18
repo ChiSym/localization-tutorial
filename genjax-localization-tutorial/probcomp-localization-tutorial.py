@@ -801,7 +801,7 @@ def plot_path_with_confidence(path: Pose, step: int, motion_settings: dict):
     plot = (
         world_plot
         + [pose_plot(path[i]) for i in range(step + 1)]
-        + Plot.color_map({"sampled next pose": "red"})
+        + Plot.color_map({"next pose": "red"})
     )
     if step < len(path) - 1:
         plot += [
@@ -809,7 +809,7 @@ def plot_path_with_confidence(path: Pose, step: int, motion_settings: dict):
                 path[step].apply_control(robot_inputs["controls"][step]),
                 motion_settings,
             ),
-            pose_plot(path[step + 1], fill=Plot.constantly("sampled next pose")),
+            pose_plot(path[step + 1], fill=Plot.constantly("next pose")),
         ]
     return plot
 
@@ -1157,7 +1157,7 @@ key, sub_key = jax.random.split(key)
 tr = gen_partial(full_model, genjax.Const(default_motion_settings)).simulate(sub_key, ())
 
 
-def animate_full_trace(trace, motion_settings):
+def animate_full_trace(trace, motion_settings, frame_key=None):
     # TODO: get the motion settings from trace.get_args()
     path = get_path(trace)
     readings = get_sensors(trace)
@@ -1168,7 +1168,7 @@ def animate_full_trace(trace, motion_settings):
         for step, pose in enumerate(path)
     ]
 
-    return Plot.Frames(frames, fps=2)
+    return Plot.Frames(frames, fps=2, key=frame_key)
 
 
 animate_full_trace(tr, default_motion_settings)
@@ -1357,8 +1357,21 @@ w_low, w_high
 # by the two models. Unfortunately we can't, and so we should raise the priority of the
 # blocking bug
 # %%
-(animate_full_trace(trace_path_integrated_observations_high_deviation, motion_settings_high_deviation)
- & animate_full_trace(trace_path_integrated_observations_low_deviation, motion_settings_low_deviation))
+
+Plot.Row(
+    *[(Plot.Hiccup("div.f3.b.tc", title) 
+       | animate_full_trace(trace, motion_settings, frame_key="frame") 
+       | f"score: {score:,.2f}") 
+     for (title, trace, motion_settings, score) in 
+     [["Low deviation", 
+       trace_path_integrated_observations_low_deviation,
+       motion_settings_low_deviation,
+       w_low],
+       ["High deviation",
+       trace_path_integrated_observations_high_deviation,
+       motion_settings_high_deviation,
+       w_high]]]) | Plot.Slider("frame", T, fps=2)
+
 
 # %%
 #pz.ts.display(sample.get_choices()["steps", ..., "pose", "p"])
