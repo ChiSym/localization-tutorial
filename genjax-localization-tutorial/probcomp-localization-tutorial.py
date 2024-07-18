@@ -98,6 +98,9 @@ class PythonicPytree:
             return jnp.concatenate([x, y])
 
         return jax.tree_util.tree_map(concat_leaves, self, other)
+    
+    def prepend(self, child):
+        return jax.tree.map(lambda x: x[jnp.newaxis], child) + self
 
 
 @pz.pytree_dataclass
@@ -407,45 +410,58 @@ path_integrated = integrate_controls_physical(robot_inputs)
 # ### Plot such data
 # %%
 
-def arrow_plot(start, end, wing_angle, wing_length, constants={}, **mark_options):
+def arrow_plot(start, end, wing_angle, wing_length, wing_position=1.0, constants={}, **mark_options):
     mark_options = {"strokeWidth": 1.25, **mark_options}
 
     dx, dy = end[0] - start[0], end[1] - start[1]
     angle = atan2(dy, dx)
 
+    # Calculate the position of the arrow wings
+    wing_x = start[0] + wing_position * dx
+    wing_y = start[1] + wing_position * dy
+
     left_wing_angle = angle + wing_angle
     right_wing_angle = angle - wing_angle
 
     left_wing_end = {
-        "x": end[0] - wing_length * cos(left_wing_angle),
-        "y": end[1] - wing_length * sin(left_wing_angle),
+        "x": wing_x - wing_length * cos(left_wing_angle),
+        "y": wing_y - wing_length * sin(left_wing_angle),
+        "z": "wing",
         **constants,
     }
     right_wing_end = {
-        "x": end[0] - wing_length * cos(right_wing_angle),
-        "y": end[1] - wing_length * sin(right_wing_angle),
+        "x": wing_x - wing_length * cos(right_wing_angle),
+        "y": wing_y - wing_length * sin(right_wing_angle),
+        "z": "wing",
         **constants,
     }
 
     return Plot.line(
         [
-            {**constants, "x": start[0], "y": start[1]},
-            {**constants, "x": end[0], "y": end[1]},
+            {**constants, "x": start[0], "y": start[1], "z": "main"},
+            {**constants, "x": end[0], "y": end[1], "z": "main"},
             left_wing_end,
-            {**constants, "x": end[0], "y": end[1]},
+            {**constants, "x": wing_x, "y": wing_y, "z": "wing"},
             right_wing_end,
         ],
-        {"x": "x", "y": "y", **mark_options},
+        {"x": "x", "y": "y", "z": "z", **mark_options},
     )
 
 
 def pose_arrow(p, r=0.5, constants={}, **opts):
     end = p.p
     start = p.step_along(-r).p
-    wing_angle = pi / 4
-    wing_length = 0.4
+    wing_angle = pi / 4.5
+    wing_length = 0.3
 
-    return arrow_plot(start, end, wing_angle, wing_length, constants, **opts)
+    return arrow_plot(start, 
+                      end, 
+                      wing_angle, 
+                      wing_length, 
+                      wing_position=0.75, 
+                      constants=constants, 
+                      strokeWidth=1,
+                      **opts)
 
 
 walls_plot = Plot.new(
@@ -601,6 +617,7 @@ def confidence_circle(pose: Pose, motion_settings: dict):
     + poses_to_plots(pose_samples.get_retval(), stroke=Plot.constantly("step samples"))
     + Plot.color_map({"step from here": "#000", "step samples": "red"})
 )
+
 # %% [markdown]
 # ### Traces: choice maps
 #
@@ -1136,7 +1153,8 @@ def full_model(motion_settings):
 def get_path(trace):
     p = trace.get_subtrace(("initial",)).get_retval()
     ps = trace.get_retval()[1]
-    return Pose(p.p[jnp.newaxis], p.hd[jnp.newaxis]) + ps
+    return ps.prepend(p)
+
 
 def get_sensors(trace):
     ch = trace.get_choices()
