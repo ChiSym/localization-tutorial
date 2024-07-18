@@ -1480,23 +1480,24 @@ def resample(key: PRNGKey, constraints: genjax.ChoiceMap, motion_settings: dict,
     k1, k2 = jax.random.split(key)
     """Generate N importance samples and return an importance-weighted subsample of size K."""
     samples, log_weights = jax.vmap(full_model_importance, in_axes=(0, None, None))(jax.random.split(k1, N), constraints, (genjax.Const(motion_settings), ))
-    ixs = jax.vmap(jax.jit(genjax.categorical.sampler), in_axes=(0, None))(
-        jax.random.split(k2, K), log_weights
-    )
+    # ixs = jax.vmap(jax.jit(genjax.categorical.sampler), in_axes=(0, None))(
+    #     jax.random.split(k2, K), log_weights
+    # )
+    # we're cheating because we want a dishonestly-weighted look at the posterior to test the graphics. [:K] gives the worst. [-K:] gives the best.
+    ixs = jnp.argsort(log_weights)[-K:]
     selected = jax.tree.map(lambda x: x[ixs], samples)
     return samples, selected
 
 
 key, sub_key = jax.random.split(key)
-prior, posterior = resample(sub_key, constraints_high_deviation, motion_settings_high_deviation, 20000, 20)
+prior, posterior = resample(sub_key, constraints_low_deviation, motion_settings_low_deviation, 2000, 20)
 # %%1000
-paths = jax.vmap(get_path)(prior)
-prior.get_score(), posterior.get_score()
+prior.get_score().shape, posterior.get_score().shape
 # %%
-Plot.new(world_plot,
-        [poses_to_plots(pose, fill="blue", opacity=0.1) for pose in paths],
-#        [poses_to_plots(pose, fill="green", opacity=0.1) for pose in low_deviation_paths[:20]]
-)
+# Plot.new(world_plot,
+#         [poses_to_plots(pose, fill="blue", opacity=0.1) for pose in paths],
+# #        [poses_to_plots(pose, fill="green", opacity=0.1) for pose in low_deviation_paths[:20]]
+#)
 # %%
 
 def animate_path_as_line(path, **options):
@@ -1506,6 +1507,6 @@ def animate_path_as_line(path, **options):
                      {"curve": "cardinal-open",
                       **options})
 #
-world_plot + [animate_path_as_line(path, opacity=0.1, stroke="green") for path in paths]
+world_plot + [animate_path_as_line(path, opacity=0.2, strokeWidth=2, stroke="green") for path in jax.vmap(get_path)(posterior)]
 
 # %%
