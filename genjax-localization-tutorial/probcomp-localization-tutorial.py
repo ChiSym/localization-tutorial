@@ -1134,7 +1134,7 @@ def full_model(motion_settings):
     return full_model_kernel.scan(n=T)(initial, robot_inputs["controls"]) @ "steps"
 
 def get_path(trace):
-    p = tr.get_subtrace(("initial",)).get_retval()
+    p = trace.get_subtrace(("initial",)).get_retval()
     ps = trace.get_retval()[1]
     return Pose(p.p[jnp.newaxis], p.hd[jnp.newaxis]) + ps
 
@@ -1237,7 +1237,7 @@ def constraint_from_sensors(readings):
     return jax.vmap(
         lambda ix, v: C["steps", ix, "sensor", angle_indices, "distance"].set(v)
     )(
-        jnp.arange(T), readings
+        jnp.arange(T+1), readings
     )  # + C['initial', 'sensor', angle_indices, 'distance'].set(readings[0])
 
 
