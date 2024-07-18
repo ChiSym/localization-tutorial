@@ -1366,39 +1366,146 @@ Plot.Row(
        motion_settings_high_deviation,
        w_high]]]) | Plot.Slider("frame", T, fps=2)
 
+# %% [markdown]
+# ...more closely resembles the density of these data back-fitted onto any other typical (random) paths of the model...
+
 
 # %%
-#pz.ts.display(sample.get_choices()["steps", ..., "pose", "p"])
+N_samples = 200
+
 key, sub_key = jax.random.split(key)
-u_tr, u_w, _, _ = sample.update(sub_key, constraint_from_path(path_integrated))
-pz.ts.display(u_tr.get_choices()["initial", "pose", "p"])
+
+traces_generated_low_deviation, low_weights = jax.vmap(full_model_importance, in_axes=(0, None, None))(jax.random.split(sub_key, N_samples), constraints_low_deviation, (genjax.Const(motion_settings_low_deviation), ))
+
+traces_generated_high_deviation, high_weights = jax.vmap(full_model_importance, in_axes=(0, None, None))(jax.random.split(sub_key, N_samples), constraints_high_deviation, (genjax.Const(motion_settings_high_deviation), ))
+
+low_weights, high_weights
+
+# two histograms
 
 
 # %%
-constraints_path_integrated =
-    choicemap(((prefix_address(t, :pose => :p), path_integrated[t].p) for t in 1:(T+1))...,
-              ((prefix_address(t, :pose => :hd), path_integrated[t].hd) for t in 1:(T+1))...)
-
-constraints_path_integrated_observations_low_deviation =
-    merge(constraints_path_integrated, merged_constraints_low_deviation)
-constraints_path_integrated_observations_high_deviation =
-    merge(constraints_path_integrated, merged_constraints_high_deviation)
-
-trace_path_integrated_observations_low_deviation, _ =
-    generate(full_model, (T, full_model_args...), constraints_path_integrated_observations_low_deviation)
-trace_path_integrated_observations_high_deviation, _ =
-    generate(full_model, (T, full_model_args...), constraints_path_integrated_observations_high_deviation);
-
-selection = select((prefix_address(i, :sensor) for i in 1:(T+1))...)
-
-println("Log density of low deviation observations assuming integrated path: $(project(trace_path_integrated_observations_low_deviation, selection))")
-println("Log density of high deviation observations assuming integrated path: $(project(trace_path_integrated_observations_high_deviation, selection))");
-
-
+low_deviation_paths = jax.vmap(get_path)(traces_generated_low_deviation)
+high_deviation_paths = jax.vmap(get_path)(traces_generated_high_deviation)
 
 # %%
-animate_full_trace(trace_low_deviation, motion_settings_low_deviation)
+Plot.new(world_plot,
+        [poses_to_plots(pose, fill="blue", opacity=0.1) for pose in high_deviation_paths[:20]],
+        [poses_to_plots(pose, fill="green", opacity=0.1) for pose in low_deviation_paths[:20]]
+ )
+# %% [markdown]
+# ## Generic strategies for inference
+#
+# We now spell out some generic strategies for conditioning the ouputs of a model towards some observed data.  The word "generic" indicates that they make no special intelligent use of the model structure, and their convergence is guaranteed by theorems of a similar nature.  In terms to be defined shortly, they simply take a pair $(Q,f)$ of a proposal and a weight function that implement importance sampling with target $P$.
+#
+# There is no free lunch in this game: generic inference recipies are inefficient, for example, converging very slowly or needing vast counts of particles, especially in high-dimensional settings.  One of the root problems is that proposals $Q$ may provide arbitrarily bad samples relative to our target $P$; if $Q$ still supports all samples of $P$ with microscopic but nonzero density, then the generic algorithm will converge in the limit, however astronomically slowly.
+#
+# Rather, efficiency will become possible when we do the *opposite* of generic: exploit what we actually know about the problem in our design of the inference strategy to propose better traces towards our target.  Gen's aim is to provide the right entry points to enact this exploitation.
+
+# %% [markdown]
+# ### The posterior distribution and importance sampling
+#
+# Mathematically, the passage from the prior to the posterior is the operation of conditioning distributions.
+#
+# Intuitively, the conditional distribution $\text{full}(\cdot | o_{0:T})$ is just the restriction of the joint distribution $\text{full}(z_{0:T}, o_{0:T})$ to where the parameter $o_{0:T}$ is constant, letting $z_{0:T}$ continue to vary.  This restriction no longer has total density equal to $1$, so we must renormalize it.  The normalizing constant must be
+# $$
+# P_\text{marginal}(o_{0:T})
+# := \int P_\text{full}(Z_{0:T}, o_{0:T}) \, dZ_{0:T}
+#  = \mathbf{E}_{Z_{0:T} \sim \text{path}}\big[P_\text{full}(Z_{0:T}, o_{0:T})\big].
+# $$
+# By Fubini's Theorem, this function of $o_{0:T}$ is the density of a probability distribution over observations $o_{0:T}$, called the *marginal distribution*; but we will often have $o_{0:T}$ fixed, and consider it a constant.  Then, finally, the *conditional distribution* $\text{full}(\cdot | o_{0:T})$ is defined to have the normalized density
+# $$
+# P_\text{full}(z_{0:T} | o_{0:T}) := \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T})}.
+# $$
+#
+# The goal of inference is to produce samples $\text{trace}_{0:T}$ distributed (approximately) according to $\text{full}(\cdot | o_{0:T})$.  The most immediately evident problem with doing inference is that the quantity $P_\text{marginal}(o_{0:T})$ is intractable!
+
+# %% [markdown]
+# Define the function $\hat f(z_{0:T})$ of sample values $z_{0:T}$ to be the ratio of probability densities between the posterior distribution $\text{full}(\cdot | o_{0:T})$ that we wish to sample from, and the prior distribution $\text{path}$ that we are presently able to produce samples from.  Manipulating it à la Bayes's Rule gives:
+# $$
+# \hat f(z_{0:T})
+# :=
+# \frac{P_\text{full}(z_{0:T} | o_{0:T})}{P_\text{path}(z_{0:T})}
+# =
+# \frac{P_\text{full}(z_{0:T}, o_{0:T})}{P_\text{marginal}(o_{0:T}) \cdot P_\text{path}(z_{0:T})}
+# =
+# \frac{\prod_{t=0}^T P_\text{sensor}(o_t)}{P_\text{marginal}(o_{0:T})}.
+# $$
+# Noting that the intractable quantity
+# $$
+# Z := P_\text{marginal}(o_{0:T})
+# $$
+# is constant in $z_{0:T}$, we define the explicitly computable quantity
+# $$
+# f(z_{0:T}) := Z \cdot \hat f(z_{0:T}) = \prod\nolimits_{t=0}^T P_\text{sensor}(o_t).
+# $$
+# The right hand side has been written sloppily, but we remind the reader that $P_\text{sensor}(o_t)$ is a product of densities of normal distributions that *does depend* on $z_t$ as well as "sensor" and "world" parameters.
+#
+# Compare to our previous description of calling `importance` on `full_model` with the observations $o_{0:T}$ as constraints: it produces a trace of the form $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}$ has been drawn from $\text{path}$, together with the weight equal to none other than this $f(z_{0:T})$.
+
+# %% [markdown]
+# This reasoning involving `importance` is indicative of the general scenario with conditioning, and fits into the following shape.
+#
+# We have on hand two distributions, a *target* $P$ from which we would like to (approximately) generate samples, and a *proposal* $Q$ from which we are presently able to generate samples.  We must assume that the proposal is a suitable substitute for the target, in the sense that every possible event under $P$ occurs under $Q$ (mathematically, $P$ is absolutely continuous with respect to $Q$).
+#
+# Under these hypotheses, there is a well-defined density ratio function $\hat f$ between $P$ and $Q$ (mathematically, the Radon–Nikodym derivative).  If $z$ is a sample drawn from $Q$, then $\hat w = \hat f(z)$ is how much more or less likely $z$ would have been drawn from $P$.  We only require that we are able to compute the *unnormalized* density ratio, that is, some function of the form $f = Z \cdot \hat f$ where $Z > 0$ is constant.
+#
+# The pair $(Q,f)$ is said to implement *importance sampling* for $P$, and the values of $f$ are called *importance weights*.  Generic inference attempts to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$, and thereby use $Q$ to produce samples from (approximately) $P$.
+#
+# So in our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, the proposal $Q$ is the path prior $\text{path}$, and the importance weight $f$ is the product of the sensor model densities.  We seek a computational model of the first; the second and third are computationally modeled by calling `importance` on `full_model` constrained by the observations $o_{0:T}$.  (The computation of the second, on its own, simplifies to `path_prior`.)
+#
+
+# %% [markdown]
+
+# ### TODO: TBD: rejection sampling. We proceed directly to SIR.
+
+# %% [markdown]
+# ### Sampling / importance resampling
+#
+# We turn to inference strategies that require only our proposal $Q$ and unnormalized weight function $f$ for the target $P$, *without* forcing us to wrangle any intractable integrals or upper bounds.
+#
+# Suppose we are given a list of nonnegative numbers, not all zero: $w^1, w^2, \ldots, w^N$.  To *normalize* the numbers means computing $\hat w^i := w^i / \sum_{j=1}^N w^j$.  The normalized list $\hat w^1, \hat w^2, \ldots, \hat w^N$ determines a *categorical distribution* on the indices $1, \ldots, N$, wherein the index $i$ occurs with probability $\hat w^i$.
+# Note that for any constant $Z > 0$, the scaled list $Zw^1, Zw^2, \ldots, Zw^N$ leads to the same normalized $\hat w^i$ as well as the same categorical distribution.
+#
+# When some list of data $z^1, z^2, \ldots, z^N$ have been associated with these respective numbers $w^1, w^2, \ldots, w^N$, then to *importance **re**sample* $M$ values from these data according to these weights means to independently sample indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$ and return the new list of data $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$.  Compare to the function `resample` implemented in the code box below.
+#
+# The *sampling / importance resampling* (SIR) strategy for inference runs as follows.  Let counts $N > 0$ and $M > 0$ be given.
+# 1. Importance sample:  Independently sample $N$ data $z^1, z^2, \ldots, z^N$ from the proposal $Q$, called *particles*.  Compute also their *importance weights* $w^i := f(z^i)$ for $i = 1, \ldots, N$.
+# 2. Importance resample:  Independently sample $M$ indices $a^1, a^2, \ldots, a^M \sim \text{categorical}([\hat w^1, \hat w^2, \ldots, \hat w^N])$, where $\hat w^i = w^i / \sum_{j=1}^N w^j$, and return $z^{a^1}, z^{a^2}, \ldots, z^{a^M}$. These sampled particles all inherit the *average weight* $\sum_{j=1}^N w^j / N$.
+#
+# As $N \to \infty$ with $M$ fixed, the samples produced by this algorithm converge to $M$ independent samples drawn from the target $P$.  This strategy is computationally an improvement over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guesses among these.
+
 # %%
-pz.ts.display(sample.get_choices())
+def resample(key: PRNGKey, constraints: genjax.ChoiceMap, motion_settings: dict, N: int, K: int):
+    k1, k2 = jax.random.split(key)
+    """Generate N importance samples and return an importance-weighted subsample of size K."""
+    samples, log_weights = jax.vmap(full_model_importance, in_axes=(0, None, None))(jax.random.split(k1, N), constraints, (genjax.Const(motion_settings), ))
+    ixs = jax.vmap(jax.jit(genjax.categorical.sampler), in_axes=(0, None))(
+        jax.random.split(k2, K), log_weights
+    )
+    selected = jax.tree.map(lambda x: x[ixs], samples)
+    return samples, selected
+
+
+key, sub_key = jax.random.split(key)
+prior, posterior = resample(sub_key, constraints_high_deviation, motion_settings_high_deviation, 20000, 20)
+# %%1000
+paths = jax.vmap(get_path)(prior)
+prior.get_score(), posterior.get_score()
+# %%
+Plot.new(world_plot,
+        [poses_to_plots(pose, fill="blue", opacity=0.1) for pose in paths],
+#        [poses_to_plots(pose, fill="green", opacity=0.1) for pose in low_deviation_paths[:20]]
+)
+# %%
+
+def animate_path_as_line(path, **options):
+    x_coords = path.p[:, 0]
+    y_coords = path.p[:, 1]
+    return Plot.line({"x": x_coords, "y": y_coords},
+                     {"curve": "cardinal-open",
+                      **options})
+#
+world_plot + [animate_path_as_line(path, opacity=0.1, stroke="green") for path in paths]
 
 # %%
