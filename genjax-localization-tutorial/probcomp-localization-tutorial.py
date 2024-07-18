@@ -1133,6 +1133,17 @@ def full_model(motion_settings):
     initial = full_model_initial() @ "initial"
     return full_model_kernel.scan(n=T)(initial, robot_inputs["controls"]) @ "steps"
 
+def get_path(trace):
+    p = tr.get_subtrace(("initial",)).get_retval()
+    ps = trace.get_retval()[1]
+    return Pose(p.p[jnp.newaxis], p.hd[jnp.newaxis]) + ps
+
+def get_sensors(trace):
+    ch = trace.get_choices()
+    return jnp.concatenate((
+        ch["initial", "sensor", ..., "distance"][jnp.newaxis],
+        ch["steps", ..., "sensor", ..., "distance"]
+    ))
 
 key, sub_key = jax.random.split(key)
 tr = full_model.simulate(sub_key, (genjax.Const(default_motion_settings),))
@@ -1140,18 +1151,6 @@ tr = full_model.simulate(sub_key, (genjax.Const(default_motion_settings),))
 pz.ts.display(tr.get_retval())
 # %% [markdown]
 # Again, the trace of the full model contains many choices, so we have used the Penzai visualization library to render the result. Click on the various nesting arrows and see if you can find the path within. For our purposes, we will supply a function `get_path` which will extract the list of Poses that form the path.
-
-# %%
-
-def get_path(trace):
-    return trace.get_retval()[1]
-
-
-def get_sensors(trace):
-    return trace.get_choices()["steps", ..., "sensor", ..., "distance"]
-
-
-get_path(tr)
 
 # %% [markdown]
 # In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}(\ldots)$ and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
