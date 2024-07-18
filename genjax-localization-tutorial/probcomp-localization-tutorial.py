@@ -37,7 +37,7 @@ from genjax import SelectionBuilder as S
 from genjax import ChoiceMapBuilder as C
 from genjax.typing import FloatArray, PRNGKey
 from penzai import pz
-from typing import Iterable
+from typing import Any, Iterable
 
 import os
 from math import sin, cos, pi, atan2
@@ -409,59 +409,29 @@ path_integrated = integrate_controls_physical(robot_inputs)
 # %% [markdown]
 # ### Plot such data
 # %%
-
-def arrow_plot(start, end, wing_angle, wing_length, wing_position=1.0, constants={}, **mark_options):
-    mark_options = {"strokeWidth": 1.25, **mark_options}
-
-    dx, dy = end[0] - start[0], end[1] - start[1]
-    angle = atan2(dy, dx)
-
-    # Calculate the position of the arrow wings
-    wing_x = start[0] + wing_position * dx
-    wing_y = start[1] + wing_position * dy
-
-    left_wing_angle = angle + wing_angle
-    right_wing_angle = angle - wing_angle
-
-    left_wing_end = {
-        "x": wing_x - wing_length * cos(left_wing_angle),
-        "y": wing_y - wing_length * sin(left_wing_angle),
-        "z": "wing",
-        **constants,
-    }
-    right_wing_end = {
-        "x": wing_x - wing_length * cos(right_wing_angle),
-        "y": wing_y - wing_length * sin(right_wing_angle),
-        "z": "wing",
-        **constants,
-    }
-
-    return Plot.line(
-        [
-            {**constants, "x": start[0], "y": start[1], "z": "main"},
-            {**constants, "x": end[0], "y": end[1], "z": "main"},
-            left_wing_end,
-            {**constants, "x": wing_x, "y": wing_y, "z": "wing"},
-            right_wing_end,
-        ],
-        {"x": "x", "y": "y", "z": "z", **mark_options},
+def pose_plot(p, r=0.5, constants={}, fill: str | Any = "black", **opts):
+    WING_ANGLE, WING_LENGTH = jnp.pi/12, 0.6
+    center = p.p
+    angle = jnp.arctan2(*(center - p.step_along(-r).p)[::-1])
+    
+    # Calculate wing endpoints
+    wing_ends = [
+        center - WING_LENGTH * jnp.array([jnp.cos(angle + a), jnp.sin(angle + a)])
+        for a in [WING_ANGLE, -WING_ANGLE]
+    ]
+    
+    # Draw wings
+    wings = Plot.line(
+        [wing_ends[0], center, wing_ends[1]],
+        strokeWidth=2,
+        stroke=fill,
+        opacity=0.3
     )
-
-
-def pose_arrow(p, r=0.5, constants={}, **opts):
-    end = p.p
-    start = p.step_along(-r).p
-    wing_angle = pi / 4.5
-    wing_length = 0.3
-
-    return arrow_plot(start, 
-                      end, 
-                      wing_angle, 
-                      wing_length, 
-                      wing_position=0.75, 
-                      constants=constants, 
-                      strokeWidth=1,
-                      **opts)
+    
+    # Draw center dot
+    dot = Plot.scaled_circle(*center, r=0.14, fill=fill, **opts)
+    
+    return wings + dot
 
 
 walls_plot = Plot.new(
@@ -484,9 +454,9 @@ world_plot = Plot.new(
 # %%
 
 # Plot of the starting pose of the robot
-starting_pose_plot = pose_arrow(
+starting_pose_plot = pose_plot(
     robot_inputs["start"],
-    stroke=Plot.constantly("given start pose"),
+    fill=Plot.constantly("given start pose"),
     constants={"frame": 0},
 ) + Plot.color_map({"given start pose": "blue"})
 
@@ -588,7 +558,7 @@ pose_samples = jax.vmap(step_model.simulate, in_axes=(0, None))(
 
 def poses_to_plots(poses: Iterable[Pose], constants={}, **plot_opts):
     return [
-        pose_arrow(pose, constants={"step": i, **constants}, **plot_opts)
+        pose_plot(pose, constants={"step": i, **constants}, **plot_opts)
         for i, pose in enumerate(poses)
     ]
 
@@ -609,12 +579,12 @@ def confidence_circle(pose: Pose, motion_settings: dict):
 
 (
     world_plot
-    + poses_to_plots([robot_inputs["start"]], stroke=Plot.constantly("step from here"))
+    + poses_to_plots([robot_inputs["start"]], fill=Plot.constantly("step from here"))
     + confidence_circle(
         robot_inputs["start"].apply_control(robot_inputs["controls"][0]),
         default_motion_settings,
     )
-    + poses_to_plots(pose_samples.get_retval(), stroke=Plot.constantly("step samples"))
+    + poses_to_plots(pose_samples.get_retval(), fill=Plot.constantly("step samples"))
     + Plot.color_map({"step from here": "#000", "step samples": "red"})
 )
 
@@ -822,6 +792,7 @@ key, sub_key = jax.random.split(key)
 sample_paths_v = jax.vmap(generate_path)(jax.random.split(sub_key, N_samples))
 
 Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths_v])
+
 # %%
 # Animation showing a single path with confidence circles
 
@@ -829,7 +800,7 @@ Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths_v])
 def plot_path_with_confidence(path: Pose, step: int, motion_settings: dict):
     plot = (
         world_plot
-        + [pose_arrow(path[i]) for i in range(step + 1)]
+        + [pose_plot(path[i]) for i in range(step + 1)]
         + Plot.color_map({"sampled next pose": "red"})
     )
     if step < len(path) - 1:
@@ -838,7 +809,7 @@ def plot_path_with_confidence(path: Pose, step: int, motion_settings: dict):
                 path[step].apply_control(robot_inputs["controls"][step]),
                 motion_settings,
             ),
-            pose_arrow(path[step + 1], stroke=Plot.constantly("sampled next pose")),
+            pose_plot(path[step + 1], fill=Plot.constantly("sampled next pose")),
         ]
     return plot
 
@@ -886,9 +857,9 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
 (
     Plot.new(
         world_plot
-        + pose_arrow(trace.get_retval(), stroke=Plot.constantly("some pose"))
-        + pose_arrow(
-            rotated_trace.get_retval(), stroke=Plot.constantly("with heading modified")
+        + pose_plot(trace.get_retval(), fill=Plot.constantly("some pose"))
+        + pose_plot(
+            rotated_trace.get_retval(), fill=Plot.constantly("with heading modified")
         )
         + Plot.color_map({"some pose": "green", "with heading modified": "red"})
         + Plot.title("Modifying a heading")
@@ -912,11 +883,11 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
 (
     world_plot
     + [
-        pose_arrow(pose, stroke=Plot.constantly("with heading modified"))
+        pose_plot(pose, fill=Plot.constantly("with heading modified"))
         for pose in path_from_trace(rotated_first_step)
     ]
     + [
-        pose_arrow(pose, stroke=Plot.constantly("some path"))
+        pose_plot(pose, fill=Plot.constantly("some path"))
         for pose in path_from_trace(trace)
     ]
     + Plot.color_map({"some path": "green", "with heading modified": "red"})
@@ -1048,9 +1019,9 @@ def animate_path_with_sensor(path, readings):
     frames = [
         (
             world_plot
-            + [pose_arrow(pose) for pose in path[:step]]
+            + [pose_plot(pose) for pose in path[:step]]
             + plot_sensors(pose, readings[step])
-            + [pose_arrow(pose, stroke="red")]
+            + [pose_plot(pose, fill="red")]
         )
         for step, pose in enumerate(path)
     ]
