@@ -403,7 +403,7 @@ vector_grid_bounded(bounds_low, bounds_high, grid_n_points) =
     [bounds_low .+ (i .- 1/2.) .* (bounds_high .- bounds_low) ./ grid_n_points for i in multi_indices(grid_n_points)]
 
 function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins)
-    bin_centers = vector_grid_bounded([world.bounding_box[1], world.bounding_box[2], -pi], [world.bounding_box[3], world.bounding_box[4], pi], N_bins)
+    bin_centers = vector_grid_bounded([world.bounding_box[1], world.bounding_box[3], -pi], [world.bounding_box[2], world.bounding_box[4], pi], N_bins)
 
     # Enough hidden layer parameters to capture the relationships to all the walls.
     model = Chain(
