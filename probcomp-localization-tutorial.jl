@@ -403,13 +403,13 @@ vector_grid_bounded(bounds_low, bounds_high, grid_n_points) =
     [bounds_low .+ (i .- 1/2.) .* (bounds_high .- bounds_low) ./ grid_n_points for i in multi_indices(grid_n_points)]
 
 function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins)
-    bin_centers = vector_grid_bounded([world.bounding_box[1], world.bounding_box[3], -pi], [world.bounding_box[2], world.bounding_box[4], pi], N_bins)
+    pose_grid = vector_grid_bounded([world.bounding_box[1], world.bounding_box[3], -pi], [world.bounding_box[2], world.bounding_box[4], pi], N_bins)
 
     # Enough hidden layer parameters to capture the relationships to all the walls.
     model = Chain(
                 Dense(sensor_settings.num_angles => length(world.walls), relu),
                 BatchNorm(length(world.walls)),
-                Dense(length(world.walls) => length(bin_centers)),
+                Dense(length(world.walls) => length(pose_grid)),
                 softmax)
     
     # Minimize the distance to the true pose.
@@ -433,7 +433,7 @@ function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_b
     end
     loader = Flux.DataLoader((hcat(training_inputs...), hcat(training_outputs...)), batchsize=N_batch_size, shuffle=true);
 
-    return model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader
+    return pose_grid, model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader
 end;
 
 # %%
@@ -465,8 +465,6 @@ plot!(N_batches:N_batches:length(losses), mean.(Iterators.partition(losses, N_ba
 # %%
 trained_outputs_array = model(hcat(training_inputs...))
 trained_outputs = [trained_outputs_array[:,i] for i in 1:length(training_inputs)]
-
-bin_centers = vector_grid_bounded([world.bounding_box[1], world.bounding_box[2], -pi], [world.bounding_box[3], world.bounding_box[4], pi], N_bins)
 
 ani = Animation()
 for i in 1:4
