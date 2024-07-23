@@ -402,6 +402,9 @@ multi_indices(ranges) = reshape([[Tuple(i)...] for i in CartesianIndices(Tuple(r
 vector_grid_bounded(bounds_low, bounds_high, grid_n_points) =
     [bounds_low .+ (i .- 1/2.) .* (bounds_high .- bounds_low) ./ grid_n_points for i in multi_indices(grid_n_points)]
 
+log_densities_grid(readings, pose_grid, walls, sensor_settings) =
+    [noisy_sensor_log_density(readings, Pose(pose_coords), walls, sensor_settings) for pose_coords in pose_grid]
+
 function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins)
     pose_grid = vector_grid_bounded([world.bounding_box[1], world.bounding_box[3], -pi], [world.bounding_box[2], world.bounding_box[4], pi], N_bins)
 
@@ -421,9 +424,7 @@ function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_b
     N_training_data = N_batch_size * N_batches
     training_data = [random_pose_coords(world) for _ in 1:N_training_data]
     training_inputs = [noisy_sensor_sample(Pose(pose_coords), world.walls, sensor_settings) for pose_coords in training_data]
-    training_outputs = [softmax([noisy_sensor_log_density(training_input, Pose(pose_coords), world.walls, sensor_settings)
-                                 for pose_coords in bin_centers])
-                        for training_input in training_inputs]
+    training_outputs = [softmax(log_densities_grid(training_input, pose_grid, world.walls, sensor_settings)) for training_input in training_inputs]
     # In case all the bin densities bottom out, assign a default bin.
     for i in 1:N_training_data
         if any(isnan, training_outputs[i])
