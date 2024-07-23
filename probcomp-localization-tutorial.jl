@@ -466,8 +466,8 @@ trained_outputs = [trained_outputs_array[:,i] for i in 1:length(training_inputs)
 ani = Animation()
 for i in 1:4
     frame_plot = plot_world(world, "Neural net performance (parametric)")
-    for (bin_pose, density) in zip(bin_centers, trained_outputs[i])
-        plot!(Pose(bin_pose); alpha=density, label=nothing)
+    for (pose, density) in zip(pose_grid, trained_outputs[i])
+        plot!(Pose(pose); alpha=density, label=nothing)
     end
     plot!(Pose(Vector{Float64}(training_data[i])); color=:red, label="true pose")
     frame(ani, frame_plot)
