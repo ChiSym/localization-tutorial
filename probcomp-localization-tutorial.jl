@@ -438,16 +438,12 @@ function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_b
 end;
 
 # %%
-N_bins = [24, 24, 24]
-model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader =
-    make_parameter_net(world, sensor_settings, 10, 10, N_bins);
+# This cell takes about 26min to run on my machine.
 
-# %%
-# # N_batch_size, N_batches = 64, 16
-# N_batch_size, N_batches = 10, 10
-# N_bins = [24, 24, 24]
-# model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader =
-#     make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins);
+N_batch_size, N_batches = 10, 10
+N_bins = [24, 24, 24]
+pose_grid, model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader =
+    make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins)
 
 N_epochs = 2000
 losses = []
