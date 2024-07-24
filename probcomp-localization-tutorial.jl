@@ -299,16 +299,14 @@ end
 random_pose_coords(world) =
     [uniform(world.bounding_box[1], world.bounding_box[2]),
      uniform(world.bounding_box[3], world.bounding_box[4]),
-     uniform(-pi, pi)]
-
-random_pose(world) = Pose(random_pose_coords(world));
+     uniform(-pi, pi)];
 
 # %%
 sensor_settings = (sensor_settings..., s_noise = 0.10)
 
 ani = Animation()
 for _ in 1:20
-    pose = random_pose(world)
+    pose = Pose(random_pose_coords(world))
     readings = noisy_sensor_sample(pose, world.walls, sensor_settings)
     frame_plot = plot_world(world, "Noisy sensor distances")
     plot_sensors!(pose, readings, "noisy sensors", sensor_settings)
@@ -385,8 +383,8 @@ for i in 1:20
     training = Pose(Vector{Float64}(training_outputs[i]))
     trained = Pose(Vector{Float64}(trained_outputs[i]))
     frame_plot = plot_world(world, "Neural net performance (inversion)")
-    plot!(training; color=:red, label="true pose")
     plot!(trained; color=:green, label="learned pose")
+    plot!(training; color=:red, label="true pose")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/nn1.gif", fps=1)
@@ -438,7 +436,7 @@ function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_b
 end;
 
 # %%
-# This cell takes about 26min to run on my machine.
+# This cell takes about 27min to run on my machine.
 
 N_batch_size, N_batches = 10, 10
 N_bins = [24, 24, 24]
@@ -467,7 +465,7 @@ ani = Animation()
 for i in 1:4
     frame_plot = plot_world(world, "Neural net performance (parametric)")
     for (pose, density) in zip(pose_grid, trained_outputs[i])
-        plot!(Pose(pose); alpha=density, label=nothing)
+        plot!(Pose(pose); color=:green, alpha=density, label=nothing)
     end
     plot!(Pose(Vector{Float64}(training_data[i])); color=:red, label="true pose")
     frame(ani, frame_plot)
