@@ -499,13 +499,14 @@ for _ in 1:20
     pose = Pose(random_pose_coords(world))
     readings = ideal_sensor(pose, world.walls, sensor_settings)
 
-    grid_poses, log_densities = Pose[], Float64[]
-    for _ in 1:N_idx_samples
+    grid_poses = Array{Pose}(undef, N_idx_samples)
+    log_densities = Array{Float64}(undef, N_idx_samples)
+    for i in 1:N_idx_samples
         grid_idx = uniform_discrete(1, N_grid)
         grid_pose = Pose(vector_grid_coords_bounded(grid_idx, grid_settings...))
         log_density = noisy_sensor_log_density(readings, grid_pose, world.walls, sensor_settings)
-        push!(grid_poses, grid_pose)
-        push!(log_densities, log_density)
+        grid_poses[i] = grid_pose
+        log_densities[i] = log_density
     end
     selected_pose = grid_poses[categorical(softmax(log_densities))]
 
