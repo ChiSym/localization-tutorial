@@ -75,6 +75,7 @@ struct Pose
     Pose(p :: Vector{Float64}, hd :: Float64) = new(p, rem2pi(hd, RoundNearest), [cos(hd), sin(hd)])
 end
 Pose(v :: Vector{Float64}) = Pose([v[1], v[2]], v[3])
+Pose(v :: Vector{Float32}) = Pose(Vector{Float64}(v))
 Pose(p :: Vector{Float64}, dp :: Vector{Float64}) = Pose(p, atan(dp[2], dp[1]))
 Base.show(io :: IO, p :: Pose) = Base.show(io, "Pose($(p.p), $(p.hd))")
 
@@ -326,65 +327,51 @@ gif(ani, "imgs/noisy_distances.gif", fps=1)
 # Let us start with a common kind of attack using a neural net.  The neural net takes inputs the sensor data, and outputs a pose for the robot.
 
 # %%
-function make_inverter_net(world, sensor_settings, N_batch_size, N_batches)
-    # Enough hidden layer parameters to capture the relationships to all the walls.
-    model = Chain(
-                Dense(sensor_settings.num_angles => length(world.walls), relu),
-                BatchNorm(length(world.walls)),
-                Dense(length(world.walls) => 3, sigmoid),
-                Dense(3 => 3))
-    
-    # Minimize the distance to the true pose.
-    function loss_function(model, readings, pose_coords)
-        modeled_pose_coords = model(readings)
-        point_diff2 = (modeled_pose_coords[1] - pose_coords[1])^2 + (modeled_pose_coords[2] - pose_coords[2])^2
-        angle_diff = acos((cos(modeled_pose_coords[3]) * cos(pose_coords[3]) + sin(modeled_pose_coords[3]) * sin(pose_coords[3])) * 0.999)
-        return point_diff2 + (angle_diff * world.box_size) / (2pi * 4.0)
-    end
+model = Chain(
+    Dense(sensor_settings.num_angles => length(world.walls), relu),
+    BatchNorm(length(world.walls)),
+    Dense(length(world.walls) => 3, sigmoid),
+    Dense(3 => 3))
+optimization_state = Flux.setup(Descent(), model)
 
-    # Nothing fancy.
-    optimization_state = Flux.setup(Descent(), model)
+# Minimize the squared distance to the true pose.
+function loss_function_inverter(model, readings, pose_coords)
+    modeled_pose_coords = model(readings)
+    point_diff2 = (modeled_pose_coords[1] - pose_coords[1])^2 + (modeled_pose_coords[2] - pose_coords[2])^2
+    dot_product = cos(modeled_pose_coords[3]) * cos(pose_coords[3]) + sin(modeled_pose_coords[3]) * sin(pose_coords[3])
+    angle_diff = acos(dot_product * 0.999)
+    return point_diff2 + (angle_diff / 2pi) * (world.box_size / 4.0)
+end
 
-    N_training_data = N_batch_size * N_batches
-    training_outputs = [random_pose_coords(world) for _ in 1:N_training_data]
-    training_inputs = [ideal_sensor(Pose(pose_coords), world.walls, sensor_settings) for pose_coords in training_outputs]
-    loader = Flux.DataLoader((hcat(training_inputs...), hcat(training_outputs...)), batchsize=N_batch_size, shuffle=true);
-
-    return model, loss_function, optimization_state, training_inputs, training_outputs, loader
-end;
-
-# %%
-# Much of this cell, and some of the cell above it, were stolen from the Flux webpage demo.
-
-N_batch_size, N_batches = 64, 16
-model, loss_function, optimization_state, training_inputs, training_outputs, loader =
-    make_inverter_net(world, sensor_settings, N_batch_size, N_batches)
+N_batches, N_batchsize = 16, 64
+N_training_data = N_batches * N_batchsize
+training_pose_coords = [random_pose_coords(world) for _ in 1:N_training_data]
+training_readings = [ideal_sensor(Pose(pose_coords), world.walls, sensor_settings) for pose_coords in training_pose_coords]
+loader = Flux.DataLoader((hcat(training_readings...), hcat(training_pose_coords...)), batchsize=N_batchsize, shuffle=true)
 
 N_epochs = 1000
 losses = []
 for epoch in 1:N_epochs
     for (x, y) in loader
-        loss, grads = Flux.withgradient(m -> loss_function(m, x, y), model)
+        loss, grads = Flux.withgradient(m -> loss_function_inverter(m, x, y), model)
         Flux.update!(optimization_state, model, grads[1])
         push!(losses, loss)
     end
-    # Flux.train!(loss_function, model, loader, optimization_state)
+    # Flux.train!(loss_function_inverter, model, loader, optimization_state)
 end
 
 plot(losses; xaxis=(:log10, "iteration"), yaxis="loss", label="per batch")
 plot!(N_batches:N_batches:length(losses), mean.(Iterators.partition(losses, N_batches)), label="epoch mean", dpi=200)
 
 # %%
-trained_outputs_array = model(hcat(training_inputs...))
-trained_outputs = [trained_outputs_array[:,i] for i in 1:length(training_inputs)]
-
 ani = Animation()
-for i in 1:20
-    training = Pose(Vector{Float64}(training_outputs[i]))
-    trained = Pose(Vector{Float64}(trained_outputs[i]))
+for _ in 1:20
     frame_plot = plot_world(world, "Neural net performance (inversion)")
-    plot!(trained; color=:green, label="learned pose")
-    plot!(training; color=:red, label="true pose")
+    pose = Pose(random_pose_coords(world))
+    readings = ideal_sensor(pose, world.walls, sensor_settings)
+    inverted_pose = Pose(model(hcat([readings]...))[:, 1])
+    plot!(inverted_pose; color=:green, label="inverted (\"learned\") pose", legend=:bottomright)
+    plot!(pose; color=:red, label="true pose")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/nn1.gif", fps=1)
@@ -397,77 +384,66 @@ gif(ani, "imgs/nn1.gif", fps=1)
 # %%
 multi_indices(ranges) = reshape([[Tuple(i)...] for i in CartesianIndices(Tuple(ranges))], (:,))
 
-vector_grid_bounded(bounds_low, bounds_high, grid_n_points) =
-    [bounds_low .+ (i .- 1/2.) .* (bounds_high .- bounds_low) ./ grid_n_points for i in multi_indices(grid_n_points)]
+vector_grid_coords_bounded(i, bounds_low, bounds_high, grid_n_points) =
+    bounds_low .+ (i .- 1/2.) .* (bounds_high .- bounds_low) ./ grid_n_points
 
 log_densities_grid(readings, pose_grid, walls, sensor_settings) =
-    [noisy_sensor_log_density(readings, Pose(pose_coords), walls, sensor_settings) for pose_coords in pose_grid]
-
-function make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins)
-    pose_grid = vector_grid_bounded([world.bounding_box[1], world.bounding_box[3], -pi], [world.bounding_box[2], world.bounding_box[4], pi], N_bins)
-
-    # Enough hidden layer parameters to capture the relationships to all the walls.
-    model = Chain(
-                Dense(sensor_settings.num_angles => length(world.walls), relu),
-                BatchNorm(length(world.walls)),
-                Dense(length(world.walls) => length(pose_grid)),
-                softmax)
-    
-    # Minimize the distance to the true pose.
-    loss_function(model, readings, sensor_probs) = Flux.crossentropy(model(readings), sensor_probs)
-
-    # Nothing fancy.
-    optimization_state = Flux.setup(Descent(), model)
-
-    N_training_data = N_batch_size * N_batches
-    training_data = [random_pose_coords(world) for _ in 1:N_training_data]
-    training_inputs = [noisy_sensor_sample(Pose(pose_coords), world.walls, sensor_settings) for pose_coords in training_data]
-    training_outputs = [softmax(log_densities_grid(training_input, pose_grid, world.walls, sensor_settings)) for training_input in training_inputs]
-    # In case all the bin densities bottom out, assign a default bin.
-    for i in 1:N_training_data
-        if any(isnan, training_outputs[i])
-            training_outputs[i] = zero(training_outputs[i])
-            training_outputs[i][1] = 1.0
-        end
-    end
-    loader = Flux.DataLoader((hcat(training_inputs...), hcat(training_outputs...)), batchsize=N_batch_size, shuffle=true);
-
-    return pose_grid, model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader
-end;
+    [noisy_sensor_log_density(readings, Pose(grid_pose_coords), walls, sensor_settings) for grid_pose_coords in pose_grid];
 
 # %%
-# This cell takes about 27min to run on my machine.
-
-N_batch_size, N_batches = 10, 10
 N_bins = [24, 24, 24]
-pose_grid, model, loss_function, optimization_state, training_data, training_inputs, training_outputs, loader =
-    make_parameter_net(world, sensor_settings, N_batch_size, N_batches, N_bins)
+grid_settings = ([world.bounding_box[1], world.bounding_box[3], -pi],
+                 [world.bounding_box[2], world.bounding_box[4], pi],
+                 N_bins)
+pose_grid = [vector_coords_bounded(i, grid_settings...) for i in multi_indices(N_bins)]
+N_grid = prod(N_bins) # == length(pose_grid)
 
+model = Chain(
+            Dense(sensor_settings.num_angles => length(world.walls), relu),
+            BatchNorm(length(world.walls)),
+            Dense(length(world.walls) => N_grid),
+            softmax)
+optimization_state = Flux.setup(Descent(), model)
+loss_function_parametric(model, readings, probs_grid) = Flux.crossentropy(model(readings), probs_grid)
+
+N_batches, N_batchsize = 10, 10
+N_training_data = N_batches * N_batchsize
+training_pose_coords = [random_pose_coords(world) for _ in 1:N_training_data]
+training_readings = [ideal_sensor(Pose(pose_coords), world.walls, sensor_settings) for pose_coords in training_pose_coords]
+
+# The following line takes about 20min on my machine.
+training_distrs = [softmax(log_densities_grid(training_reading, pose_grid, world.walls, sensor_settings)) for training_reading in training_readings]
+loader = Flux.DataLoader((hcat(training_readings...), hcat(training_distrs...)), batchsize=N_batchsize, shuffle=true)
+
+# The following loop takes another ~5min on my machine.
 N_epochs = 2000
 losses = []
 for epoch in 1:N_epochs
     for (x, y) in loader
-        loss, grads = Flux.withgradient(m -> loss_function(m, x, y), model)
+        loss, grads = Flux.withgradient(m -> loss_function_parametric(m, x, y), model)
         Flux.update!(optimization_state, model, grads[1])
         push!(losses, loss)
     end
-    # Flux.train!(loss_function, model, loader, optimization_state)
+    # Flux.train!(loss_function_parametric, model, loader, optimization_state)
 end
 
 plot(losses; xaxis=(:log10, "iteration"), yaxis="loss", label="per batch")
 plot!(N_batches:N_batches:length(losses), mean.(Iterators.partition(losses, N_batches)), label="epoch mean", dpi=200)
 
-# %%
-trained_outputs_array = model(hcat(training_inputs...))
-trained_outputs = [trained_outputs_array[:,i] for i in 1:length(training_inputs)]
 
+# %%
 ani = Animation()
-for i in 1:4
+for _ in 1:20
     frame_plot = plot_world(world, "Neural net performance (parametric)")
-    for (pose, density) in zip(pose_grid, trained_outputs[i])
-        plot!(Pose(pose); color=:green, alpha=density, label=nothing)
+    pose = Pose(random_pose_coords(world))
+    readings = ideal_sensor(pose, world.walls, sensor_settings)
+    distr = model(hcat([readings]...))[:, 1]
+    for (grid_pose_coords, density) in zip(pose_grid, distr)
+        if density > 0.1
+            plot!(Pose(grid_pose_coords); color=:green, alpha=density, label=nothing)
+        end
     end
-    plot!(Pose(Vector{Float64}(training_data[i])); color=:red, label="true pose")
+    plot!(pose; color=:red, label="true pose")
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/nn2.gif", fps=1)
