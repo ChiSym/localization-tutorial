@@ -449,6 +449,73 @@ end
 gif(ani, "imgs/nn2.gif", fps=1)
 
 # %% [markdown]
+# ### Searching through the grid of poses
+#
+# However, we have on hand the measure of fitness of each bin to exlain the data.  Instead of "learning" the function and thereby oxymoronically forgetting about it, we could just work with it directly.
+
+# %%
+# But we could simply choose the best fit bin, directly from the densities...
+
+ani = Animation()
+for _ in 1:20
+    frame_plot = plot_world(world, "Grid optimization")
+    pose = Pose(random_pose_coords(world))
+    readings = ideal_sensor(pose, world.walls, sensor_settings)
+    best_fit_idx = argmax(log_densities_grid(readings, pose_grid, world.walls, sensor_settings))
+    best_fit_pose = Pose(pose_grid[best_fit_idx])
+    plot!(best_fit_pose; color=:green, label="best fit pose")
+    plot!(pose; color=:red, label="true pose")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/grid_search.gif", fps=1)
+
+# %%
+# ...or we could work with the whole distribution over bins...
+
+ani = Animation()
+for _ in 1:20
+    frame_plot = plot_world(world, "Distribution over grid")
+    pose = Pose(random_pose_coords(world))
+    readings = ideal_sensor(pose, world.walls, sensor_settings)
+    distr = softmax(log_densities_grid(readings, pose_grid, world.walls, sensor_settings))
+    for (grid_pose_coords, density) in zip(pose_grid, distr)
+        if density > 0.1
+            plot!(Pose(grid_pose_coords); color=:green, alpha=density, label=nothing)
+        end
+    end
+    plot!(pose; color=:red, label="true pose")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/grid_distr.gif", fps=1)
+
+# %%
+# ...and then instead sparsely sample from it, only computing what we have to.
+
+N_idx_samples = 1000
+
+ani = Animation()
+for _ in 1:20
+    frame_plot = plot_world(world, "Sparse search over grid")
+    pose = Pose(random_pose_coords(world))
+    readings = ideal_sensor(pose, world.walls, sensor_settings)
+
+    grid_poses, log_densities = Pose[], Float64[]
+    for _ in 1:N_idx_samples
+        grid_idx = uniform_discrete(1, N_grid)
+        grid_pose = Pose(vector_grid_coords_bounded(grid_idx, grid_settings...))
+        log_density = noisy_sensor_log_density(readings, grid_pose, world.walls, sensor_settings)
+        push!(grid_poses, grid_pose)
+        push!(log_densities, log_density)
+    end
+    selected_pose = grid_poses[categorical(softmax(log_densities))]
+
+    plot!(selected_pose; color=:green, label="sparse search fit pose", legend=:bottomright)
+    plot!(pose; color=:red, label="true pose")
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/grid_distr.gif", fps=1)
+
+# %% [markdown]
 # ## Localization in motion
 #
 # We turn to the scenario where the robot noisily executes of a program consisting of controls, and we are to use the sensor data to determine its likely path.
