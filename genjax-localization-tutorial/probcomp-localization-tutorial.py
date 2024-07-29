@@ -923,7 +923,7 @@ def plot_sensors(pose: Pose, readings):
     projections = [
         pose.rotate(angle).step_along(s) for angle, s in zip(sensor_angles, readings)
     ]
-    
+
     return (
         Plot.line(
             [(x, y, i) for i, p in enumerate(projections) for x, y in [pose.p, p.p]],
@@ -1286,11 +1286,11 @@ w_low, w_high
 # %%
 
 Plot.Row(
-    *[(html("div.f3.b.tc", title) 
-       | animate_full_trace(trace, frame_key="frame") 
+    *[(html("div.f3.b.tc", title)
+       | animate_full_trace(trace, frame_key="frame")
        | html("span.tc", f"score: {score:,.2f}"))
-     for (title, trace, motion_settings, score) in 
-     [["Low deviation", 
+     for (title, trace, motion_settings, score) in
+     [["Low deviation",
        trace_path_integrated_observations_low_deviation,
        motion_settings_low_deviation,
        w_low],
