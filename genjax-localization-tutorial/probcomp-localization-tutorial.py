@@ -23,13 +23,7 @@ if "google.colab" in sys.modules:
 
     auth.authenticate_user()
     %pip install --quiet keyring keyrings.google-artifactregistry-auth  # type: ignore # noqa
-    %pip install --quiet genjax==0.5.0.post30.dev0+2df4f579 genstudio==2024.7.24.1802 --extra-index-url https://us-west1-python.pkg.dev/probcomp-caliban/probcomp/simple/  # type: ignore # noqa
-    # This example will work on GPU, CPU or TPU. To change your runtime,
-    # select "Change runtime type" from the dropdown on the top right
-    # of the colab page.
-    #
-    # Make sure that the string in brackets below is either `cuda12` (for GPU), `cpu` or `tpu`:
-    %pip install --quiet jax[cuda12]==0.4.28  # type: ignore # noqa
+    %pip install --quiet genjax==0.5.1 genstudio==2024.7.30.1617 --extra-index-url https://us-west1-python.pkg.dev/probcomp-caliban/probcomp/simple/  # type: ignore # noqa
 # %% [markdown]
 # # ProbComp Localization Tutorial
 #
@@ -43,10 +37,10 @@ import json
 import genstudio.plot as Plot
 
 import itertools
-from functools import partial
 import jax
 import jax.numpy as jnp
 import genjax
+from urllib.request import urlopen
 from genjax import SelectionBuilder as S
 from genjax import ChoiceMapBuilder as C
 from genjax.typing import FloatArray, PRNGKey
@@ -203,8 +197,8 @@ def load_world(file_name):
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
-    with open(file_name, "r") as file:
-        data = json.load(file)
+    with urlopen("https://raw.githubusercontent.com/probcomp/gen-localization/main/resources/example_20_program.json") as url:
+        data = json.load(url)
 
     walls_vec = jnp.array(data["wall_verts"])
     clutters_vec = jnp.array(data["clutter_vert_groups"])
