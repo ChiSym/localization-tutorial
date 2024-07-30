@@ -55,6 +55,9 @@ from typing import Any, Iterable
 
 import os
 
+html = Plot.Hiccup
+Plot.configure({"display_as": "html", "dev": False})
+
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
 
@@ -138,12 +141,12 @@ def create_segments(points):
     return jnp.stack([points, jnp.roll(points, shift=-1, axis=0)], axis=1)
 
 
-def make_world(walls_vec, clutters_vec, start, controls):
+def make_world(wall_verts, clutters_vec, start, controls):
     """
     Constructs the world by creating segments for walls and clutters, calculates the bounding box, and prepares the simulation parameters.
 
     Args:
-    - walls_vec (list of list of float): A list of 2D points representing the vertices of walls.
+    - wall_verts (list of list of float): A list of 2D points representing the vertices of walls.
     - clutters_vec (list of list of list of float): A list where each element is a list of 2D points representing the vertices of a clutter.
     - start (Pose): The starting pose of the robot.
     - controls (list of Control): Control actions for the robot.
@@ -152,12 +155,12 @@ def make_world(walls_vec, clutters_vec, start, controls):
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
     # Create segments for walls and clutters
-    walls = create_segments(walls_vec)
+    walls = create_segments(wall_verts)
     clutters = jax.vmap(create_segments)(clutters_vec)
 
     # Combine all points for bounding box calculation
     all_points = jnp.vstack(
-        (jnp.array(walls_vec), jnp.concatenate(clutters_vec), jnp.array([start.p]))
+        (jnp.array(wall_verts), jnp.concatenate(clutters_vec), jnp.array([start.p]))
     )
     x_min, y_min = jnp.min(all_points, axis=0)
     x_max, y_max = jnp.max(all_points, axis=0)
@@ -178,6 +181,7 @@ def make_world(walls_vec, clutters_vec, start, controls):
     return (
         {
             "walls": walls,
+            "wall_verts": wall_verts,
             "clutters": clutters,
             "bounding_box": bounding_box,
             "box_size": box_size,
@@ -387,7 +391,7 @@ path_integrated = integrate_controls_physical(robot_inputs)
 # %% [markdown]
 # ### Plot such data
 # %%
-def pose_plot(p, r=0.5, constants={}, fill: str | Any = "black", **opts):
+def pose_plot(p, r=0.5, fill: str | Any = "black", **opts):
     WING_ANGLE, WING_LENGTH = jnp.pi/12, 0.6
     center = p.p
     angle = jnp.arctan2(*(center - p.step_along(-r).p)[::-1])
@@ -407,20 +411,16 @@ def pose_plot(p, r=0.5, constants={}, fill: str | Any = "black", **opts):
     )
 
     # Draw center dot
-    dot = Plot.scaled_circle(*center, r=0.14, fill=fill, **opts)
+    dot = Plot.ellipse([center], r=0.14, fill=fill, **opts)
 
     return wings + dot
 
-
 walls_plot = Plot.new(
-    [
-        Plot.line(
-            [wall[0], wall[1]],
+    Plot.line(
+            Plot.cache(world["wall_verts"]),
             strokeWidth=2,
             stroke="#ccc",
-        )
-        for wall in world["walls"]
-    ],
+        ),
     {"margin": 0, "inset": 50, "width": 500, "axis": None, "aspectRatio": 1},
     Plot.domain([0, 20]),
 )
@@ -435,7 +435,6 @@ world_plot = Plot.new(
 starting_pose_plot = pose_plot(
     robot_inputs["start"],
     fill=Plot.constantly("given start pose"),
-    constants={"frame": 0},
 ) + Plot.color_map({"given start pose": "blue"})
 
 # Plot of the path from integrating controls
@@ -533,10 +532,10 @@ pose_samples = jax.vmap(step_model.simulate, in_axes=(0, None))(
 )
 
 
-def poses_to_plots(poses: Iterable[Pose], constants={}, **plot_opts):
+def poses_to_plots(poses: Iterable[Pose], **plot_opts):
     return [
-        pose_plot(pose, constants={"step": i, **constants}, **plot_opts)
-        for i, pose in enumerate(poses)
+        pose_plot(pose, **plot_opts)
+        for pose in poses
     ]
 
 
@@ -924,11 +923,12 @@ def plot_sensors(pose: Pose, readings):
     projections = [
         pose.rotate(angle).step_along(s) for angle, s in zip(sensor_angles, readings)
     ]
+
     return (
-        [
-            Plot.line([pose.p, p.p], stroke=Plot.constantly("sensor rays"))
-            for p in projections
-        ],
+        Plot.line(
+            [(x, y, i) for i, p in enumerate(projections) for x, y in [pose.p, p.p]],
+            stroke=Plot.constantly("sensor rays")
+        ),
         [
             Plot.dot(
                 [pose.p for pose in projections],
@@ -1286,9 +1286,9 @@ w_low, w_high
 # %%
 
 Plot.Row(
-    *[(Plot.Hiccup("div.f3.b.tc", title)
+    *[(html("div.f3.b.tc", title)
        | animate_full_trace(trace, frame_key="frame")
-       | f"score: {score:,.2f}")
+       | html("span.tc", f"score: {score:,.2f}"))
      for (title, trace, motion_settings, score) in
      [["Low deviation",
        trace_path_integrated_observations_low_deviation,
@@ -1437,9 +1437,9 @@ def animate_path_as_line(path, **options):
 (world_plot
  + [animate_path_as_line(path, opacity=0.2, strokeWidth=2, stroke="green") for path in jax.vmap(get_path)(low_posterior)]
  + [animate_path_as_line(path, opacity=0.2, strokeWidth=2, stroke="blue") for path in jax.vmap(get_path)(high_posterior)]
- + poses_to_plots(path_low_deviation, {}, fill=Plot.constantly("low deviation path"), opacity=0.2)
- + poses_to_plots(path_high_deviation, {}, fill=Plot.constantly("high deviation path"), opacity=0.2)
- + poses_to_plots(path_integrated, {}, fill=Plot.constantly("integrated path"), opacity=0.2)
+ + poses_to_plots(path_low_deviation, fill=Plot.constantly("low deviation path"), opacity=0.2)
+ + poses_to_plots(path_high_deviation, fill=Plot.constantly("high deviation path"), opacity=0.2)
+ + poses_to_plots(path_integrated, fill=Plot.constantly("integrated path"), opacity=0.2)
  + Plot.color_map({"low deviation path": "green", "high deviation path": "blue", "integrated path": "black"}))
 # %% [markdown]
 # Let's pause a moment to examine this chart. If the robot had no sensors, it would have no alternative but to estimate its position by integrating the control inputs to produce the integrated path in gray. In the low deviation setting, Gen has helped the robot to see that about halfway through its journey, noise in the control-effector relationship has caused the robot to deviate to the south slightly, and *the sensor data combined with importance sampling is enough* to give accurate results in the low deviation setting.
@@ -1495,7 +1495,7 @@ selected_traces = jax.tree.map(lambda v: v[selected_indices], drift_traces)
 def plot_traces(traces):
     return (world_plot
         + [animate_path_as_line(path, opacity=0.2, strokeWidth=2, stroke="green") for path in jax.vmap(get_path)(traces)]
-        + poses_to_plots(path_high_deviation, {}, fill=Plot.constantly("high deviation path"), opacity=0.2)
+        + poses_to_plots(path_high_deviation, fill=Plot.constantly("high deviation path"), opacity=0.2)
         + Plot.color_map({"low deviation path": "green", "high deviation path": "blue", "integrated path": "black"}))
 
 plot_traces(selected_traces)
