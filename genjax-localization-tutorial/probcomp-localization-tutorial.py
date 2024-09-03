@@ -834,7 +834,7 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
         + Plot.color_map({"some pose": "green", "with heading modified": "red"})
         + Plot.title("Modifying a heading")
     )
-    | f"score ratio: {rotated_trace_weight_diff}"
+    | html("span.tc", f"score ratio: {rotated_trace_weight_diff}")
 )
 
 # %% [markdown]
@@ -861,7 +861,7 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
         for pose in path_from_trace(trace)
     ]
     + Plot.color_map({"some path": "green", "with heading modified": "red"})
-) | f"score ratio: {rotated_first_step_weight_diff}"
+) | html("span.tc", f"score ratio: {rotated_first_step_weight_diff}")
 
 # %% [markdown]
 # ### Ideal sensors
@@ -1203,11 +1203,11 @@ high_deviation_importance = jax.jit(high_deviation_model.importance)
 key, sub_key = jax.random.split(key)
 sample, log_weight = low_deviation_importance(sub_key, constraints_low_deviation, ())
 
-animate_full_trace(sample) | f"log_weight: {log_weight}"
+animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # %%
 key, sub_key = jax.random.split(key)
 sample, log_weight = high_deviation_importance(sub_key, constraints_high_deviation, ())
-animate_full_trace(sample) | f"log_weight: {log_weight}"
+animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # %% [markdown]
 # A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key situational difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
 #
