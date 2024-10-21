@@ -23,7 +23,7 @@ if "google.colab" in sys.modules:
 
     auth.authenticate_user()
     %pip install --quiet keyring keyrings.google-artifactregistry-auth  # type: ignore # noqa
-    %pip install --quiet genjax==0.5.1 genstudio==2024.7.30.1617 --extra-index-url https://us-west1-python.pkg.dev/probcomp-caliban/probcomp/simple/  # type: ignore # noqa
+    %pip install --quiet genjax==0.7.0 genstudio==2024.9.7 --extra-index-url https://us-west1-python.pkg.dev/probcomp-caliban/probcomp/simple/  # type: ignore # noqa
 # %% [markdown]
 # # ProbComp Localization Tutorial
 #
@@ -35,6 +35,9 @@ if "google.colab" in sys.modules:
 
 import json
 import genstudio.plot as Plot
+
+
+
 
 import itertools
 import jax
@@ -385,8 +388,10 @@ path_integrated = integrate_controls_physical(robot_inputs)
 # %% [markdown]
 # ### Plot such data
 # %%
-def pose_plot(p, r=0.5, fill: str | Any = "black", **opts):
-    WING_ANGLE, WING_LENGTH = jnp.pi/12, 0.6
+def pose_plot(p, fill: str | Any = "black", **opts):
+    r = opts.get('r', 0.5)
+    wing_opacity = opts.get('opacity', 0.3)
+    WING_ANGLE, WING_LENGTH = jnp.pi/12, opts.get('wing_length', 0.6)
     center = p.p
     angle = jnp.arctan2(*(center - p.step_along(-r).p)[::-1])
 
@@ -399,19 +404,19 @@ def pose_plot(p, r=0.5, fill: str | Any = "black", **opts):
     # Draw wings
     wings = Plot.line(
         [wing_ends[0], center, wing_ends[1]],
-        strokeWidth=2,
+        strokeWidth=opts.get('strokeWidth', 2),
         stroke=fill,
-        opacity=0.3
+        opacity=wing_opacity
     )
 
     # Draw center dot
-    dot = Plot.ellipse([center], r=0.14, fill=fill, **opts)
+    dot = Plot.ellipse([center], fill=fill, **opts)
 
     return wings + dot
 
 walls_plot = Plot.new(
     Plot.line(
-            Plot.cache(world["wall_verts"]),
+            world["wall_verts"],
             strokeWidth=2,
             stroke="#ccc",
         ),
@@ -762,7 +767,6 @@ key, sub_key = jax.random.split(key)
 sample_paths_v = jax.vmap(generate_path)(jax.random.split(sub_key, N_samples))
 
 Plot.Grid([walls_plot + poses_to_plots(path) for path in sample_paths_v])
-
 # %%
 # Animation showing a single path with confidence circles
 
@@ -976,7 +980,6 @@ def sensor_model_one(pose, angle):
         )
         @ "distance"
     )
-
 
 sensor_model = sensor_model_one.vmap(in_axes=(None, 0))
 
@@ -1516,4 +1519,151 @@ plot_traces(drifted_traces)
 # %% [markdown]
 # We can see some improvement in the density of the paths selected. It's possible to imagine improving the search by repeating this drift process on all of the samples retured by the original importance sample. But we must face one important fact: we have used acceleration to improve what amounts to a brute-force search. The next inference step should take advantage of the information we have about the control steps, iteratively improving the path from the starting point, combining the control step and sensor data information to refine the selection of each step as it is made.
 
+# %%
+# Let's approach the problem step by step instead of trying to infer the whole path.
+# For each given pose, we will use the sensor data to propose a refinement.
+
+@genjax.gen
+def perturb_pose(pose: Pose, motion_settings):
+    d_p = jnp.array((
+        genjax.normal(0.0, motion_settings['p_noise']) @ 'd_x',
+        genjax.normal(0.0, motion_settings['p_noise']) @ 'd_y'
+    ))
+    d_hd = genjax.normal(0.0, motion_settings['hd_noise']) @ 'd_hd'
+    return Pose(pose.p + d_p, pose.hd + d_hd)
+
+@genjax.gen
+def perturb_model(pose: Pose, motion_settings):
+    p1 = perturb_pose(pose, motion_settings) @ 'pose'
+    _ = sensor_model(p1, sensor_angles) @ 'sensor'
+    return p1
+
+# %% [markdown]
+# To get started we'll work with the initial point, and then improve it. Once that's done,
+# we can chain together such improved moves to hopefully get a better inference of the
+# actual path.
+
+# %%
+key, sub_key = jax.random.split(key)
+p0 = start_pose_prior.simulate(sub_key, (robot_inputs['start'], motion_settings_low_deviation))
+key, sub_key = jax.random.split(key)
+tr_p0 = jax.vmap(perturb_model.simulate, in_axes=(0, None))(jax.random.split(sub_key, 100), (p0.get_retval(), motion_settings_low_deviation))
+# %%
+
+# %% [markdown]
+# Create a choicemap that will enforce the observations found at step $i$.
+
+def observations_to_choicemap(observations, i):
+    o_i = observations[i]
+    return C['sensor', jnp.arange(len(o_i)), 'distance'].set(o_i)
+# %% [markdown]
+# The first thing we'll try is a Boltzmann update: generate a cloud of nearby points
+# using the generative function we wrote, and weightedly select a replacement from that.
+# First, let's generate the cloud and visualize it.
+# %%
+def boltzmann_sample(key: PRNGKey, N: int, pose: Pose, motion_settings, observations, i):
+    return jax.vmap(perturb_model.importance, in_axes=(0, None, None))(
+        jax.random.split(key, N),
+        observations_to_choicemap(observations, i),
+        (pose, motion_settings)
+    )
+
+def small_pose_plot(p: Pose, **opts):
+    """This variant of pose_plot will is better when we're zoomed in on the vicinity of one pose.
+    TODO: consider scaling r and wing_length based on the size of the plot domain."""
+    opts = {'r': 0.001} | opts
+    return pose_plot(p, wing_length=0.006, **opts)
+
+def weighted_small_pose_plot(target, poses, ws):
+    lse_ws = jnp.log(jnp.sum(jnp.exp(ws)))
+    scaled_ws = jnp.exp(ws - lse_ws)
+    max_scaled_w: FloatArray = jnp.max(scaled_ws)
+    scaled_ws /= max_scaled_w
+    # the following hack "boosts" lower scores a bit, to give us more visibility into
+    # the density of the nearby cloud. Aesthetically, I found too many points were
+    # invisible without some adjustment, since the score distribution is concentrated
+    # closely around 1.0
+    scaled_ws = scaled_ws ** 0.3
+    return (Plot.new([small_pose_plot(p, fill=w) for p, w in zip(poses, scaled_ws)]
+                    + small_pose_plot(target, r = 0.003, fill='red')
+                    + small_pose_plot(robot_inputs['start'], r=0.003,fill='green'))
+            + {
+                "color": {"type":"linear", "scheme":"Purples"},
+                "height": 400,
+                "width": 400,
+                "aspectRatio": 1
+            })
+key, sub_key = jax.random.split(key)
+bs = boltzmann_sample(sub_key, 1000, p0.get_retval(), motion_settings_low_deviation, observations_low_deviation, 0)
+weighted_small_pose_plot(p0.get_retval(), bs[0].get_retval(), bs[1])
+
+# %%
+
+# %%
+# def weighted_small_pose_plot_0(poses, ws):
+#     lse_ws = jnp.log(jnp.sum(jnp.exp(ws)))
+#     scaled_ws = jnp.exp(ws - lse_ws)
+#     max_scaled_w: FloatArray = jnp.max(scaled_ws)
+#     bias_factor = 1.05 # Set > 1 to lift things close to zero
+#     rescaled_ws = (1 - 1/bias_factor) + scaled_ws / (bias_factor * max_scaled_w)
+#     # use rescaled_ws as a color density
+#     print(f'range: {jnp.min(rescaled_ws), jnp.max(rescaled_ws)}')
+#     return (Plot.new([small_pose_plot(p, opacity=w) for p, w in zip(poses, rescaled_ws)]
+#                     + small_pose_plot(p0.get_retval(), r = 0.003, fill='red')
+#                     + small_pose_plot(robot_inputs['start'], r=0.003,fill='green'))
+#             + {
+#                 "color": {"type":"linear", "scheme":"Purples"},
+#                 "height": 400,
+#                 "width": 400,
+#                 "aspectRatio": 1
+#             })
+
+
+
+
+
+
+# (weighted_small_pose_plot(trs.get_retval(), ws) + Plot.color_map({"real start": "green", "perceived start": "red", "nearby candidate": "black", "selected candidate": "cyan"})
+#          + {"height": 400, "width": 400, "aspectRatio": 1})
+
+# %%
+# Grid approach (using assess maybe?)
+def grid_of_nearby_poses(p, size, n):
+    grid_ax = jnp.arange(-n, n+1) * size
+    n_ax = len(grid_ax)
+    grid = jnp.dstack(jnp.meshgrid(grid_ax, grid_ax)).reshape(n_ax * n_ax, -1)
+    return Pose(p.p + grid, jnp.repeat(p.hd, n_ax*n_ax))
+
+# %%
+grid_of_nearby_poses(p0.get_retval(), 0.01, 3)
+# %%
+
+# def grid_plot(g):
+#     return (Plot.new([small_pose_plot(p) for p in g])
+#             + small_pose_plot(p0.get_retval(), fill='red')
+#             + small_pose_plot(robot_inputs['start'], fill='green'))
+
+# grid_plot(grid_of_nearby_poses(p0.get_retval(), 0.015, 10))
+# %%
+
+pose_grid = grid_of_nearby_poses(p0.get_retval(), 0.008, 15)
+@genjax.gen
+def assess_model(p):
+    sensor_model(p, sensor_angles) @ 'sensor'
+    return p
+# %%
+key, sub_key = jax.random.split(key)
+assess_scores, assess_retvals = jax.vmap(lambda k, p: assess_model.assess(k, (p,)), in_axes=(None, 0))(cm, pose_grid)
+#assess_scores, assess_retvals = jax.vmap(lambda p: sensor_model.assess(cm, (p, sensor_angles)))(pose_grid)
+# %%
+#sensor_model.assess(cm, (pose_grid[0], sensor_angles))
+#sensor_model.simulate(sub_key, (pose_grid[0], sensor_angles))
+#sensor_model.importance(sub_key, observations_to_choicemap(observations_low_deviation, 0), (pose_grid[0], sensor_angles))
+
+# Since the above calls work...
+# I think this ought to work, but doesn't! TODO: find a minimal repro and file an issue
+#sensor_model.assess(cm, (pose_grid[0], sensor_angles))
+
+(weighted_small_pose_plot(p0.get_retval(), assess_retvals, assess_scores) &
+(weighted_small_pose_plot(p0.get_retval(), bs[0].get_retval(), bs[1])))
 # %%
