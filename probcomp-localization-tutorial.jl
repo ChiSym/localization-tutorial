@@ -38,29 +38,16 @@ using Gen
 mkpath("imgs");
 
 # %% [markdown]
-# ## The "real world"
+# ## Ojbects of reasoning
 #
-# We assume given
-# * a map of a space, together with
-# * some clutters that sometimes unexpectedly exist in that space.
+# ### The map
 #
-# We also assume given a description of a robot's behavior via
-# * an estimated initial pose (= position + heading), and
-# * a program of controls (= advance distance, followed by rotate heading).
+# The tutorial will revolve around modeling the activity of a robot within some space.  A large simplifying assumption, which could be lifted with more effort, is that we have been given a *map* of the space, to which the robot will have access.  
 #
-# *In addition to the uncertainty in the initial pose, we are uncertain about the true execution of the motion of the robot.*
-#
-# Below, we will also introduce sensors.
-
-# %% [markdown]
-# ### Load map and robot data
-#
-# Generally speaking, we keep general code and specific examples in separate cells, as signposted here.
+# The code below loads such a map, along with other data for later use.  Generally speaking, we keep general code and specific examples in separate cells, as signposted here.
 
 # %%
 # General code here
-
-norm(v) = sqrt(sum(v.^2))
 
 struct Segment
     p1 :: Vector{Float64}
@@ -70,6 +57,84 @@ struct Segment
 end
 Base.show(io :: IO, s :: Segment) = Base.show(io, "Segment($(s.p1), $(s.p2))")
 
+function create_segments(verts; loop_around=false)
+    segs = [Segment(p1, p2) for (p1, p2) in zip(verts[1:end-1], verts[2:end])]
+    if loop_around; push!(segs, Segment(verts[end], verts[1])) end
+    return segs
+end
+
+function make_world(walls_vec, clutters_vec, start, controls; args...)
+    walls = create_segments(walls_vec; args...)
+    clutters = [create_segments(clutter; args...) for clutter in clutters_vec]
+    all_points = [walls_vec ; clutters_vec...]
+    x_min, x_max = extrema(first, all_points)
+    y_min, y_max = extrema(last, all_points)
+    bounding_box = (x_min, x_max, y_min, y_max)
+    box_size = max(x_max - x_min, y_max - y_min)
+    center_point = [(x_min + x_max) / 2.0, (y_min + y_max) / 2.0]
+    return (; walls, clutters, bounding_box, box_size, center_point)
+end
+
+function load_world(file_name; args...)
+    data = parsefile(file_name)
+    walls_vec = Vector{Vector{Float64}}(data["wall_verts"])
+    clutters_vec = Vector{Vector{Vector{Float64}}}(data["clutter_vert_groups"])
+    return make_world(walls_vec, clutters_vec; args...)
+end;
+
+# %%
+# Specific example code here
+
+world = load_world("world.json");
+
+# %% [markdown]
+# ### Plotting
+#
+# It is crucial to picture what we are doing at all times, so we develop plotting code early and often.
+
+# %%
+function plot_list!(list; label=nothing, args...)
+    if !isempty(list)
+        plt = plot!(list[1]; label=label, args...)
+        for item in list[2:end]; plot!(item; label=nothing, args...) end
+        return plt
+    end
+end
+
+Plots.plot!(seg :: Segment; args...) = plot!([seg.p1[1], seg.p2[1]], [seg.p1[2], seg.p2[2]]; args...)
+Plots.plot!(segs :: Vector{Segment}; args...) = plot_list!(segs; args...)
+Plots.plot!(seg_groups :: Vector{Vector{Segment}}; args...) = plot_list!(seg_groups; args...)
+
+function plot_world(world, title; show=())
+    border = world.box_size * (3.)/19.
+    the_plot = plot(
+        size         = (500, 500),
+        aspect_ratio = :equal,
+        grid         = false,
+        xlim         = (world.bounding_box[1]-border, world.bounding_box[2]+border),
+        ylim         = (world.bounding_box[3]-border, world.bounding_box[4]+border),
+        title        = title,
+        legend       = :bottomleft)
+    (walls_label, clutter_label) = :label in show ? ("walls", "clutters") : (nothing, nothing)
+    plot!(world.walls; c=:black, label=walls_label)
+    if :clutters in show; plot!(world.clutters; c=:magenta, label=clutter_label) end
+    return the_plot
+end;
+
+# %% [markdown]
+# Following this initial display of the given data, we *suppress the clutters* until much later in the notebook.
+
+# %%
+plot_world(world, "Given data", show=(:label, :clutters=true))
+
+# %% [markdown]
+# ### Robot poses
+#
+# We will model the robot's physical state as a *pose* (or mathematically speaking a ray), defined to be a *position* (2D point relative to the map) plus a *heading* (angle from -$\pi$ to $\pi$).
+#
+# These will be visualized using arrows whose tip is at the position, and whose direction indicates the heading.
+
+# %%
 struct Pose
     p  :: Vector{Float64}
     hd :: Float64
@@ -82,50 +147,126 @@ Base.show(io :: IO, p :: Pose) = Base.show(io, "Pose($(p.p), $(p.hd))")
 step_along_pose(p, s) = p.p + s * p.dp
 rotate_pose(p, a) = Pose(p.p, p.hd + a)
 
+Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, step_along_pose(p, r)); arrow=true, args...)
+Plots.plot!(ps :: Vector{Pose}; args...) = plot_list!(ps; args...);
+
+# %%
+the_plot = plot_world(world, "Given data")
+plot!(Pose([1., 1.], 0.); color=:green3, label="a pose")
+plot!(Pose([2., 3.], pi/2.); color=:green4, label="another pose")
+the_plot
+
+# %% [markdown]
+# ### Ideal sensors
+#
+# The robot will need to reason about its location on the map, on the basis of LIDAR-like sensor data.
+
+# %%
+# A general algorithm to find the interection of a ray and a line segment.
+
+norm(v) = sqrt(sum(v.^2))
+
+# Return unique s, t such that p + s*u == q + t*v.
+function solve_lines(p, u, q, v; PARALLEL_TOL=1.0e-10)
+    det = u[1] * v[2] - u[2] * v[1]
+    if abs(det) < PARALLEL_TOL
+        return nothing, nothing
+    else
+        pq = p - q
+        s = (v[1] * pq[2] - v[2] * pq[1]) / det
+        t = (u[1] * pq[2] - u[2] * pq[1]) / det
+        return s, t
+    end
+end
+
+function distance(p :: Pose, seg :: Segment)
+    s, t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
+    # Solving failed (including, by fiat, if pose is parallel to segment) iff isnothing(s).
+    # Pose is oriented away from segment iff s < 0.
+    # Point of intersection lies on segment (as opposed to the infinite line) iff 0 <= t <= 1.
+    return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
+end;
+
+# %% [markdown]
+# An ideal sensor reports the exact distance cast to a wall.  (It is capped off at a max value in case of error.)
+
+# %%
+function sensor_distance(pose, walls, box_size)
+    d = minimum(distance(pose, seg) for seg in walls)
+    # Capping to a finite value avoids issues below.
+    return isinf(d) ? 2. * box_size : d
+end;
+
+sensor_angle(sensor_settings, j) =
+    sensor_settings.fov * (j - (sensor_settings.num_angles - 1) / 2.) / (sensor_settings.num_angles - 1)
+
+function ideal_sensor(pose, walls, sensor_settings)
+    readings = Vector{Float64}(undef, sensor_settings.num_angles)
+    for j in 1:sensor_settings.num_angles
+        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
+        readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
+    end
+    return readings
+end;
+
+# %%
+# Plot sensor data.
+
+function plot_sensors!(pose, color, readings, label, sensor_settings)
+    plot!([pose.p[1]], [pose.p[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
+    projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
+    plot!(first.(projections), last.(projections);
+            color=:blue, label=label, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
+    plot!([Segment(pose.p, pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
+end
+
+function frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false)
+    the_plot = plot_world(world, title; show_clutters=show_clutters)
+    plot!(poses; color=poses_color, label=poses_label)
+    plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
+    return the_plot
+end;
+
+# %%
+sensor_settings = (fov = 2π*(2/3), num_angles = 41, box_size = world.box_size)
+
+ani = Animation()
+for pose in path_integrated
+    frame_plot = frame_from_sensors(
+        world, "Ideal sensor distances",
+        path_integrated, :green2, "some path",
+        pose, ideal_sensor(pose, world.walls, sensor_settings), "ideal sensors",
+        sensor_settings)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/ideal_distances.gif", fps=1)
+
+# %% [markdown]
+# ### Robot programs
+#
+# We also assume given a description of a robot's movement via
+# * an estimated initial pose (= position + heading), and
+# * a program of controls (= advance distance, followed by rotate heading).
+
+# %%
 # A value `c :: Control` corresponds to the robot *first* advancing in its present direction by `c.ds`, *then* rotating by `c.dhd`.
 struct Control
     ds  :: Float64
     dhd :: Float64
 end
 
-function create_segments(verts; loop_around=false)
-    segs = [Segment(p1, p2) for (p1, p2) in zip(verts[1:end-1], verts[2:end])]
-    if loop_around; push!(segs, Segment(verts[end], verts[1])) end
-    return segs
-end
-
-function make_world(walls_vec, clutters_vec, start, controls; loop_around=false)
-    walls = create_segments(walls_vec; loop_around=loop_around)
-    clutters = [create_segments(clutter; loop_around=loop_around) for clutter in clutters_vec]
-    walls_clutters = [walls ; clutters...]
-    all_points = [walls_vec ; clutters_vec... ; [start.p]]
-    x_min = minimum(p[1] for p in all_points)
-    x_max = maximum(p[1] for p in all_points)
-    y_min = minimum(p[2] for p in all_points)
-    y_max = maximum(p[2] for p in all_points)
-    bounding_box = (x_min, x_max, y_min, y_max)
-    box_size = max(x_max - x_min, y_max - y_min)
-    center_point = [(x_min + x_max) / 2.0, (y_min + y_max) / 2.0]
-    T = length(controls)
-    return (walls=walls, clutters=clutters, walls_clutters=walls_clutters,
-            bounding_box=bounding_box, box_size=box_size, center_point=center_point),
-           (start=start, controls=controls),
-           T
-end
-
-function load_world(file_name; loop_around=false)
+function load_program(file_name)
     data = parsefile(file_name)
-    walls_vec = Vector{Vector{Float64}}(data["wall_verts"])
-    clutters_vec = Vector{Vector{Vector{Float64}}}(data["clutter_vert_groups"])
     start = Pose(Vector{Float64}(data["start_pose"]["p"]), Float64(data["start_pose"]["hd"]))
     controls = Vector{Control}([Control(control["ds"], control["dhd"]) for control in data["program_controls"]])
-    return make_world(walls_vec, clutters_vec, start, controls; loop_around=loop_around)
+    return (; start, controls), length(controls)
 end;
 
 # %%
-# Specific example code here
+robot_inputs, T = load_program("robot_program.json")
 
-world, robot_inputs, T = load_world("example_20_program.json");
+# %% [markdown]
+# Before we can visualize such a program, we will need to model robot motion.
 
 # %% [markdown]
 # ### Integrate a path from a starting pose and controls
@@ -150,26 +291,6 @@ end;
 # We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance from the point of contact in the normal direction to the wall.
 
 # %%
-# Return unique s, t such that p + s*u == q + t*v.
-function solve_lines(p, u, q, v; PARALLEL_TOL=1.0e-10)
-    det = u[1] * v[2] - u[2] * v[1]
-    if abs(det) < PARALLEL_TOL
-        return nothing, nothing
-    else
-        s = (v[1] * (p[2]-q[2]) - v[2] * (p[1]-q[1])) / det
-        t = (u[2] * (q[1]-p[1]) - u[1] * (q[2]-p[2])) / det
-        return s, t
-    end
-end
-
-function distance(p, seg)
-    s, t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
-    # Solving failed (including, by fiat, if pose is parallel to segment) iff isnothing(s).
-    # Pose is oriented away from segment iff s < 0.
-    # Point of intersection lies on segment (as opposed to the infinite line) iff 0 <= t <= 1.
-    return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
-end
-
 function physical_step(p1, p2, hd, world_inputs)
     step_pose = Pose(p1, p2 - p1)
     (s, i) = findmin(w -> distance(step_pose, w), world_inputs.walls)
@@ -204,43 +325,6 @@ end;
 world_inputs = (walls = world.walls, bounce = 0.1)
 
 path_integrated = integrate_controls(robot_inputs, world_inputs);
-
-# %% [markdown]
-# ### Plot such data
-
-# %%
-function plot_list!(list; label=nothing, args...)
-    if isempty(list); return end
-    plt = plot!(list[1]; label=label, args...)
-    for item in list[2:end]; plot!(item; label=nothing, args...) end
-    return plt
-end
-
-Plots.plot!(seg :: Segment; args...) = plot!([seg.p1[1], seg.p2[1]], [seg.p1[2], seg.p2[2]]; args...)
-Plots.plot!(segs :: Vector{Segment}; args...) = plot_list!(segs; args...)
-Plots.plot!(seg_groups :: Vector{Vector{Segment}}; args...) = plot_list!(seg_groups; args...)
-
-Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, step_along_pose(p, r)); arrow=true, args...)
-Plots.plot!(ps :: Vector{Pose}; args...) = plot_list!(ps; args...)
-
-function plot_world(world, title; label_world=false, show_clutters=false)
-    border = world.box_size * (3.)/19.
-    the_plot = plot(
-        size         = (500, 500),
-        aspect_ratio = :equal,
-        grid         = false,
-        xlim         = (world.bounding_box[1]-border, world.bounding_box[2]+border),
-        ylim         = (world.bounding_box[3]-border, world.bounding_box[4]+border),
-        title        = title,
-        legend       = :bottomleft)
-    (walls_label, clutter_label) = label_world ? ("walls", "clutters") : (nothing, nothing)
-    plot!(world.walls; c=:black, label=walls_label)
-    if show_clutters; plot!(world.clutters; c=:magenta, label=clutter_label) end
-    return the_plot
-end;
-
-# %% [markdown]
-# Following this initial display of the given data, we *suppress the clutters* until much later in the notebook.
 
 # %%
 the_plot = plot_world(world, "Given data", label_world=true, show_clutters=true)
@@ -609,64 +693,6 @@ end;
 function integrate_controls_noisy(robot_inputs, world_inputs, motion_settings)
     return get_path(simulate(path_model, (length(robot_inputs.controls), robot_inputs, world_inputs, motion_settings)))
 end;
-
-# %% [markdown]
-# ### Ideal sensors
-#
-# We now, additionally, assume the robot is equipped with sensors that cast rays upon the environment at certain angles relative to the given pose, and return the distance to a hit.
-#
-# We first describe the ideal case, where the sensors return the true distances to the walls.
-
-# %%
-function sensor_distance(pose, walls, box_size)
-    d = minimum(distance(pose, seg) for seg in walls)
-    # Capping to a finite value avoids issues below.
-    return isinf(d) ? 2. * box_size : d
-end;
-
-sensor_angle(sensor_settings, j) =
-    sensor_settings.fov * (j - (sensor_settings.num_angles - 1) / 2.) / (sensor_settings.num_angles - 1)
-
-function ideal_sensor(pose, walls, sensor_settings)
-    readings = Vector{Float64}(undef, sensor_settings.num_angles)
-    for j in 1:sensor_settings.num_angles
-        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
-        readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
-    end
-    return readings
-end;
-
-# %%
-# Plot sensor data.
-
-function plot_sensors!(pose, color, readings, label, sensor_settings)
-    plot!([pose.p[1]], [pose.p[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
-    projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
-    plot!(first.(projections), last.(projections);
-            color=:blue, label=label, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
-    plot!([Segment(pose.p, pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
-end
-
-function frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false)
-    the_plot = plot_world(world, title; show_clutters=show_clutters)
-    plot!(poses; color=poses_color, label=poses_label)
-    plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
-    return the_plot
-end;
-
-# %%
-sensor_settings = (fov = 2π*(2/3), num_angles = 41, box_size = world.box_size)
-
-ani = Animation()
-for pose in path_integrated
-    frame_plot = frame_from_sensors(
-        world, "Ideal sensor distances",
-        path_integrated, :green2, "some path",
-        pose, ideal_sensor(pose, world.walls, sensor_settings), "ideal sensors",
-        sensor_settings)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/ideal_distances.gif", fps=1)
 
 # %% [markdown]
 # ### Noisy sensors
@@ -2653,7 +2679,7 @@ the_plot
 # At the beginning of the notebook, we illustrated the data of "clutters", or extra boxes left inside the environment.  These would impact the motion and the sensory *observation data* of a run of the robot, but are not accounted for in the above *model* when attempting to infer its path.  How well does the inference process work in the presence of such discrepancies?
 
 # %%
-world_inputs_cluttered = (world_inputs..., walls=world.walls_clutters)
+world_inputs_cluttered = (world_inputs..., walls=[world.walls ; world.clutters...])
 trace_cluttered = simulate(full_model, (T, robot_inputs, world_inputs_cluttered, full_settings_low_dev))
 path_cluttered = get_path(trace_cluttered)
 observations_cluttered = get_sensors(trace_cluttered)
