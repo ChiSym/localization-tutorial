@@ -1064,10 +1064,11 @@ def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
 def animate_full_trace(trace, frame_key=None):
     path = get_path(trace)
     readings = get_sensors(trace)
-    motion_settings = trace.get_args()[0]
-    return animate_path_and_sensors(
-        path, readings, motion_settings, frame_key=frame_key
-    )
+    # since we use make_full_model to curry motion_settings around the scan combinator,
+    # that object will not be in the outer trace's argument list; but we can be a little
+    # crafty and find it at a lower level.
+    motion_settings = trace.get_subtrace(('initial',)).get_subtrace(('pose',)).get_args()[1]
+    return animate_path_and_sensors(path, readings, motion_settings, frame_key=frame_key)
 
 
 animate_full_trace(tr)
@@ -1256,28 +1257,18 @@ w_low, w_high
 # %%
 
 Plot.Row(
-    *[
-        (
-            html("div.f3.b.tc", title)
-            | animate_full_trace(trace, frame_key="frame")
-            | html("span.tc", f"score: {score:,.2f}")
-        )
-        for (title, trace, motion_settings, score) in [
-            [
-                "Low deviation",
-                trace_path_integrated_observations_low_deviation,
-                motion_settings_low_deviation,
-                w_low,
-            ],
-            [
-                "High deviation",
-                trace_path_integrated_observations_high_deviation,
-                motion_settings_high_deviation,
-                w_high,
-            ],
-        ]
-    ]
-) | Plot.Slider("frame", 0, T, fps=2)
+    *[(html("div.f3.b.tc", title)
+       | animate_full_trace(trace, frame_key="frame")
+       | html("span.tc", f"score: {score:,.2f}"))
+     for (title, trace, motion_settings, score) in
+     [["Low deviation",
+       trace_path_integrated_observations_low_deviation,
+       motion_settings_low_deviation,
+       w_low],
+       ["High deviation",
+       trace_path_integrated_observations_high_deviation,
+       motion_settings_high_deviation,
+       w_high]]]) | Plot.Slider("frame", 0, T, fps=2)
 
 # %% [markdown]
 # ...more closely resembles the density of these data back-fitted onto any other typical (random) paths of the model...
@@ -1446,7 +1437,7 @@ def animate_path_as_line(path, **options):
     x_coords = path.p[:, 0]
     y_coords = path.p[:, 1]
     return Plot.line({"x": x_coords, "y": y_coords},
-                     {"curve": "catmull-rom",
+                     {"curve": "linear",
                       **options})
 #
 (
@@ -1783,26 +1774,53 @@ def weighted_small_pose_plot(target, poses, ws):
 key, sub_key = jax.random.split(key)
 bs = boltzmann_sample(sub_key, 1000, p0.get_retval(), motion_settings_low_deviation, observations_low_deviation[0])
 weighted_small_pose_plot(p0.get_retval(), bs[0].get_retval(), bs[1])
+# %% [markdown]
+# Develop a function which will produce a grid of evenly spaced nearby poses given
+# an initial pose. $n$ is the number of steps to take in each cardinal direction
+# (up/down, left/right and changes in heading). For example, if you say $n = 2$, there
+# will be a $5\times 5$ grid of positions with the original pose in the center, and 5 layers
+# of this type, each with different heading deltas (including zero), for a total of
+# $125 = 5^3$ alternate poses.
 # %%
-# Grid approach (using assess maybe?)
-def grid_of_nearby_poses(p, size, n):
-    grid_ax = jnp.arange(-n, n+1) * size
-    n_ax = len(grid_ax)
-    grid = jnp.dstack(jnp.meshgrid(grid_ax, grid_ax)).reshape(n_ax * n_ax, -1)
-    return Pose(p.p + grid, jnp.repeat(p.hd, n_ax*n_ax))
-
+def grid_of_nearby_poses(p, n, motion_settings):
+    indices = jnp.arange(-n, n+1)
+    n_indices = len(indices)
+    grid_ax = indices * 2 * motion_settings['p_noise'] / n
+    grid = jnp.dstack(jnp.meshgrid(grid_ax, grid_ax)).reshape(n_indices * n_indices, -1)
+    # That's the position grid. We will now make a 1-d grid for the heading deltas,
+    # and then form the linear cartesian product.
+    headings = indices * 2 * motion_settings['hd_noise'] / n
+    return Pose(jnp.repeat(p.p + grid, n_indices, axis=0), jnp.tile(p.hd + headings, n_indices * n_indices))
 # %%
-grid_of_nearby_poses(p0.get_retval(), 0.01, 3)
-# %%
-pose_grid = grid_of_nearby_poses(p0.get_retval(), 0.008, 15)
+cube_step_size = 8
+pose_grid = grid_of_nearby_poses(p0.get_retval(), cube_step_size, motion_settings_low_deviation)
 @genjax.gen
 def assess_model(p):
     sensor_model(p, sensor_angles) @ 'sensor'
     return p
 # %%
 key, sub_key = jax.random.split(key)
-assess_scores, assess_retvals = jax.vmap(lambda k, p: assess_model.assess(k, (p,)), in_axes=(None, 0))(observation_to_choicemap(observations_low_deviation[0]), pose_grid)
+model_assess = jax.jit(assess_model.assess)
+assess_scores, assess_retvals = jax.vmap(lambda k, p: model_assess(k, (p,)), in_axes=(None, 0))(observation_to_choicemap(observations_low_deviation[0]), pose_grid)
 #assess_scores, assess_retvals = jax.vmap(lambda p: sensor_model.assess(cm, (p, sensor_angles)))(pose_grid)
+# %%
+# Our grid of nearby poses is actually a cube when we take into consideration the
+# heading deltas. In order to get a 2d density, we decide to flatten the cube by
+# taking the "best" of the headings by score at each point.
+def flatten_pose_cube(n, poses, scores):
+    d = 2 * n + 1
+    pose_groups = poses.p.reshape((d, d*d, 2))
+    heading_groups = poses.hd.reshape((d, d*d))
+    score_groups = scores.reshape((d, d*d))
+    # find the best score in each group
+    best = jnp.argmax(score_groups, axis=1)
+    # We want to select the best column from every row, so we need to
+    # explicitly enumerate the rows we want (using : would not have the
+    # same effect)
+    return (Pose(pose_groups[jnp.arange(len(pose_groups)), best],
+                heading_groups[jnp.arange(len(heading_groups)), best]),
+                score_groups[jnp.arange(len(score_groups)), best])
+
 # %%
 #sensor_model.assess(cm, (pose_grid[0], sensor_angles))
 #sensor_model.simulate(sub_key, (pose_grid[0], sensor_angles))
@@ -1811,7 +1829,11 @@ assess_scores, assess_retvals = jax.vmap(lambda k, p: assess_model.assess(k, (p,
 # Since the above calls work...
 # I think this ought to work, but doesn't! TODO: find a minimal repro and file an issue
 #sensor_model.assess(cm, (pose_grid[0], sensor_angles))
-
+# %% [markdown]
+# Prepare a plot showing the density of nearby improvements available using the grid
+# search and importance sampling techniques.
+# %%
+assess_pose_plane, assess_score_plan = flatten_pose_cube(cube_step_size, assess_retvals, assess_scores)
 (weighted_small_pose_plot(p0.get_retval(), assess_retvals, assess_scores) &
  weighted_small_pose_plot(p0.get_retval(), bs[0].get_retval(), bs[1]))
 # %% [markdown]
@@ -1824,7 +1846,7 @@ def select_by_weight(key: PRNGKey, weights: FloatArray, things):
     chosen = jax.random.categorical(key, weights)
     return jax.tree.map(lambda v: v[chosen], things)
 
-def improved_path(key: PRNGKey, motion_settings, observations):
+def improved_path(key: PRNGKey, motion_settings: dict, observations: FloatArray, mode: str):
 
     def boltzmann_improver(k: PRNGKey, pose, observation):
         k1, k2 = jax.random.split(k, 2)
@@ -1833,7 +1855,7 @@ def improved_path(key: PRNGKey, motion_settings, observations):
 
     def grid_search_improver(k: PRNGKey, pose, observation):
         choicemap = observation_to_choicemap(observation)
-        nearby_poses = grid_of_nearby_poses(pose, 0.008, 15)
+        nearby_poses = grid_of_nearby_poses(pose, 15, motion_settings)
         ws, retvals  = jax.vmap(lambda p: assess_model.assess(choicemap, (p,)))(nearby_poses)
         return select_by_weight(k, ws, nearby_poses)
 
@@ -1842,10 +1864,11 @@ def improved_path(key: PRNGKey, motion_settings, observations):
         observation, control, key = update
         k1, k2 = jax.random.split(key)
         # improve the step where we are
-        p1 = grid_search_improver(k1, pose, observation)
+        improver = {"grid": grid_search_improver, "boltzmann": boltzmann_improver}[mode]
+        p1 = improver(k1, pose, observation)
         # run the step model to advance one step
         p2 = step_model.simulate(k2, (p1, control, motion_settings))
-        return (p2.get_retval(), p2.get_retval())
+        return (p2.get_retval(), p1)
 
     # We have one fewer control than step, since no step got us to the initial position.
     # Our scan step starts at the initial step and applies a control input each time.
@@ -1860,43 +1883,35 @@ def improved_path(key: PRNGKey, motion_settings, observations):
         controls,
         sub_keys[1:]
     ))
-
-
-    # Generate initial point from prior
-    k1, k2 = jax.random.split(key, 2)
-    sp_tr = start_pose_prior.simulate(k1, (robot_inputs['start'], motion_settings))
-    p = sp_tr.get_retval()
 # %%
+# Select an importance sample via weight in both the low and high deviation settings.
 key, k1, k2 = jax.random.split(key, 3)
 low_importance = select_by_weight(k1, low_weights, low_deviation_paths)
 high_importance = select_by_weight(k2, high_weights, high_deviation_paths)
-
-
 # %%
-endpoint_low, improved_low = improved_path(jax.random.PRNGKey(0), motion_settings_low_deviation, observations_low_deviation)
-
+key, sub_key = jax.random.split(key)
+endpoint_low, improved_low = improved_path(sub_key, motion_settings_low_deviation, observations_low_deviation, "grid")
 # %%
 
-def path_comparison_plot(improved, integrated, importance, true):
-    return (world_plot
-     + animate_path_as_line(improved, strokeWidth=2, stroke=Plot.constantly("improved"))
-     + animate_path_as_line(integrated, strokeWidth=2, stroke=Plot.constantly("integrated"))
-     + animate_path_as_line(importance, strokeWidth=2, stroke=Plot.constantly("importance"))
-     + animate_path_as_line(true, strokeWidth=2, stroke=Plot.constantly("true"))
-     + poses_to_plots(improved, fill=Plot.constantly("improved"), opacity=0.2)
-     + poses_to_plots(integrated, fill=Plot.constantly("integrated"), opacity=0.2)
-     + poses_to_plots(importance, fill=Plot.constantly("importance"))
-     + poses_to_plots(true, fill=Plot.constantly("true"))
-     + Plot.color_map({"integrated": "green", "improved": "blue", "true": "black", "importance": "red"}))
+def path_comparison_plot(*plots):
+    types = ["improved", "integrated", "importance", "true"]
+    plot = world_plot
+    plot += [animate_path_as_line(p, strokeWidth=2, stroke=Plot.constantly(t)) for p, t in zip(plots, types)]
+    plot += [poses_to_plots(p, fill=Plot.constantly(t)) for p, t in zip(plots, types)]
+    return plot + Plot.color_map({"integrated": "green", "improved": "blue", "true": "black", "importance": "red"})
 
 # %%
 path_comparison_plot(improved_low, path_integrated, low_importance, path_low_deviation)
 # %%
-endpoint_high, improved_high = improved_path(jax.random.PRNGKey(0), motion_settings_high_deviation, observations_high_deviation)
+key, sub_key = jax.random.split(key)
+endpoint_high, improved_high = improved_path(sub_key, motion_settings_high_deviation, observations_high_deviation, "grid")
 path_comparison_plot(improved_high, path_integrated, high_importance, path_high_deviation)
-
-
-
+# %% [markdown]
+# To see how the grid search improves poses, we play back the grid-search path
+# next to an importance sample path. You can see the grid search has a better fit
+# of sensor data to wall position at a variety of time steps.
 # %%
-robot_inputs['controls'][-1]
-# %%
+Plot.Row(
+    animate_path_and_sensors(improved_high, observations_high_deviation, motion_settings_high_deviation, frame_key="frame"),
+    animate_path_and_sensors(high_importance, observations_high_deviation, motion_settings_high_deviation, frame_key="frame")
+) | Plot.Slider("frame", 0, T, fps=2)
