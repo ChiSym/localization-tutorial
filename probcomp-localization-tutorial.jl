@@ -63,7 +63,7 @@ function create_segments(verts; loop_around=false)
     return segs
 end
 
-function make_world(walls_vec, clutters_vec, start, controls; args...)
+function make_world(walls_vec, clutters_vec; args...)
     walls = create_segments(walls_vec; args...)
     clutters = [create_segments(clutter; args...) for clutter in clutters_vec]
     all_points = [walls_vec ; clutters_vec...]
@@ -125,7 +125,7 @@ end;
 # Following this initial display of the given data, we *suppress the clutters* until much later in the notebook.
 
 # %%
-plot_world(world, "Given data", show=(:label, :clutters=true))
+plot_world(world, "Given data", show=(:label, :clutters))
 
 # %% [markdown]
 # POSSIBLE VIZ GOAL: user-editable map, clutters, etc.
@@ -154,10 +154,9 @@ Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, step_along_pose(p, r
 Plots.plot!(ps :: Vector{Pose}; args...) = plot_list!(ps; args...);
 
 # %%
-the_plot = plot_world(world, "Given data")
+plot_world(world, "Given data")
 plot!(Pose([1., 1.], 0.); color=:green3, label="a pose")
 plot!(Pose([2., 3.], pi/2.); color=:green4, label="another pose")
-the_plot
 
 # %% [markdown]
 # POSSIBLE VIZ GOAL: user can manipulate a pose.  (Unconstrained vs. map for now.)
@@ -166,6 +165,8 @@ the_plot
 # ### Ideal sensors
 #
 # The robot will need to reason about its location on the map, on the basis of LIDAR-like sensor data.
+#
+# An "ideal" sensor reports the exact distance cast to a wall.  (It is capped off at a max value in case of error.)
 
 # %%
 # A general algorithm to find the interection of a ray and a line segment.
@@ -193,9 +194,6 @@ function distance(p :: Pose, seg :: Segment)
     return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
 end;
 
-# %% [markdown]
-# An ideal sensor reports the exact distance cast to a wall.  (It is capped off at a max value in case of error.)
-
 # %%
 function sensor_distance(pose, walls, box_size)
     d = minimum(distance(pose, seg) for seg in walls)
@@ -216,8 +214,6 @@ function ideal_sensor(pose, walls, sensor_settings)
 end;
 
 # %%
-# Plot sensor data.
-
 function plot_sensors!(pose, color, readings, label, sensor_settings)
     plot!([pose.p[1]], [pose.p[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
     projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
@@ -226,8 +222,8 @@ function plot_sensors!(pose, color, readings, label, sensor_settings)
     plot!([Segment(pose.p, pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
 end
 
-function frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show_clutters=false)
-    the_plot = plot_world(world, title; show_clutters=show_clutters)
+function frame_from_sensors(world, title, poses, poses_color, poses_label, pose, readings, readings_label, sensor_settings; show=())
+    the_plot = plot_world(world, title; show=show)
     plot!(poses; color=poses_color, label=poses_label)
     plot_sensors!(pose, poses_color, readings, readings_label, sensor_settings)
     return the_plot
@@ -236,11 +232,16 @@ end;
 # %%
 sensor_settings = (fov = 2π*(2/3), num_angles = 41, box_size = world.box_size)
 
+some_poses = [Pose([uniform(world.bounding_box[1], world.bounding_box[2]),
+                    uniform(world.bounding_box[3], world.bounding_box[4])],
+                   uniform(-pi,pi))
+              for _ in 1:20]
+
 ani = Animation()
-for pose in path_integrated
+for pose in some_poses
     frame_plot = frame_from_sensors(
         world, "Ideal sensor distances",
-        path_integrated, :green2, "some path",
+        pose, :green2, "robot pose",
         pose, ideal_sensor(pose, world.walls, sensor_settings), "ideal sensors",
         sensor_settings)
     frame(ani, frame_plot)
@@ -281,12 +282,12 @@ end;
 
 # %%
 sensor_settings = (sensor_settings..., s_noise = 0.10)
-cm, w = propose(sensor_model, (Pose([1., 1.], pi/2.), walls, sensor_settings))
+cm, w = propose(sensor_model, (Pose([1., 1.], pi/2.), world.walls, sensor_settings))
+cm
 
+# %%
 # For brevity, show just a subset of the choice map's addresses.
 get_selected(cm, select((1:5)...))
-# To instead see the whole trace, uncomment below:
-# cm
 
 # %% [markdown]
 # With a little wrapping, one gets a function of the same type as `ideal_sensor`.
@@ -302,10 +303,10 @@ end;
 
 # %%
 ani = Animation()
-for pose in path_integrated
+for pose in some_poses
     frame_plot = frame_from_sensors(
         world, "Sensor model (samples)",
-        path_integrated, :green2, "some path",
+        pose, :green2, "robot pose",
         pose, noisy_sensor(pose, world.walls, sensor_settings), "noisy sensors",
         sensor_settings)
     frame(ani, frame_plot)
@@ -332,10 +333,71 @@ exp(w)
 # %% [markdown]
 # There are many scenarios where one has on hand a full set of data, perhaps via observation, and seeks their score according to the model.  One could write a program by hand to do this—but one would simply recapitulate the code for `noisy_sensor`.  The difference is that the sampling operations would be replaced with density computations, and instead of storing them in a choice map it would compute their log product.
 #
-# The construction of a log density function is automated by the `Gen.assess` semantics for generative functions.  This method is passed the GF, a tuple of arguments, and a choice map.
+# The construction of a log density function is automated by the `Gen.assess` semantics for generative functions.  This method is passed the GF, a tuple of arguments, and a choice map, and returns the log weight plus the return value.
 
 # %%
-exp(assess(sensor_model, (Pose([1., 1.], pi/2.), walls, sensor_settings), cm))
+exp(assess(sensor_model, (Pose([1., 1.], pi/2.), world.walls, sensor_settings), cm)[1])
+
+# %% [markdown]
+# ## First steps in probabilistic reasoning
+#
+# Let pick some measured noisy distance data
+#
+# > ***LOAD THEM FROM FILE***
+#
+# and try to reason about where the robot could have taken them from.
+
+# %% [markdown]
+# POSSIBLE VIZ GOAL: User can start from the loaded data, or move around to grab some noisy sensors.  Then, user can move around a separate candiate-match pose, and `assess` the data against it with updated result somehow.
+
+# %% [markdown]
+# What we are exploring here is in Bayesian parlance the *likelihood* of the varying pose.  One gets a sense that certain poses were somehow more likely than others, and the modeling of this intuitive sense is called *inference*.
+#
+# The above exploration points at a strategy of finding the pose (parameter) that optimizes the likelihood (some statistic), a ubiquitous process called *variational inference*.
+#
+# A subtle but crucial matter must be dealt with.  This act of variational inference silently adopts assumptions having highly nontrivial consequences for our inferences, having to do with the issue of *prior* over the parameter.
+#
+# First we must acknowledge at all, that our reasoning always approaches the question "Where is the robot?" already having some idea of where it is possible for the robot to be.  We interpret new information in terms of these assumptions, and they definitely influence the inferences we make.  For example, if we were utterly sure the robot were near the center of the map, we would only really consider how the sensor data around such poses, even if there were better fits elsewhere that we did not expect the robot to be.
+#
+# These assumptions are modeled by a distribution over poses called the *prior*.  Then, according to Bayes's Law, the key quantity to examine is not the likelihood density $P_\text{sensor}(o;z)$ but rather the *posterior* density
+# $$
+# P_\text{posterior}(z|o) = P_\text{sensor}(o;z) \cdot P_\text{prior}(z) / Z
+# $$
+# where $Z > 0$ is a normalizing constant.   Likelihood optimization amounts to assuming a prior having $P_\text{prior}(z) \equiv 1$, a so-called "uniform" prior over the parameter space.
+#
+# The uniform prior may appear to be a natural expression of "complete ignorance", not preferencing any parameter over another.  The other thing to acknowledge is that this is not the case: the parameterization of the latents itself embodies preferences among parameter values.  Different parametramizations of the latents lead to different "uniform" distributions over them.  For example, parameterizing the spread of a univariate normal distribution by its standard deviation and its variance lead to different "uniform" priors over the parameter space, the square map being nonlinear.  Thus likelihood optimization's second tacit assumption is a particular parametric representation of the latents space, according to which uniformity occurs.
+#
+# Summarizing, likelihood optimization does not lead to *intrinsic* inference conclusions, because it relies on a prior that in turn is not intrinsic, but rather depends on how the parameters are presented.  Intrinsic conclusions are instead drawn by specifying the prior as a distribution, which has a consistent meaning across parameterizations.
+#
+# So let us be upfront that we choose the uniform prior relative to the conventional meaning of the pose parameters.  Here is a view onto the posterior distribution over poses, given a set of sensor measurements.
+
+# %% [markdown]
+# POSSIBLE VIZ GOAL: Gather the preceding viz into one view: alpha blend all candidate-match poses by likelihood, so only plausible things appear, with the mode highlighted.
+
+# %% [markdown]
+# PUT HERE: expanded discussion of single-pose inference problem.
+#
+# From optimization/VI to sampling techniques.  Reasons:
+# * Note *how much information we are throwing away* when passing from the distribution to a single statistic.  Something must be afoot.
+# * Later inferences depend on the *whole distribution* of parameters.
+#   * Reducing to (Dirac measures on) the modes breaks compositional validity!
+# * The modes might not even be *representative* of the posterior:
+#   * The mode might not even be where any mass actually accumulates, as in a high-dimensional Gaussian!
+#   * Mass might be distributed among multiple near-tied modes, unnaturally preferencing one of them.
+# * The posterior requires clearly specifying a prior, which (as mentioned above) prevents ambiguities of parameterization.
+#
+# Replace `argmax` with a resampling operation (SIR).  Grid vs. free choice.
+#
+# Compare to a NN approach.
+
+# %% [markdown]
+# ## Modeling robot motion
+#
+# As said initially, we are uncertain about the true initial position and subsequent motion of the robot.  In order to reason about these, we now specify a model using `Gen`.
+#
+# Each piece of the model is declared as a *generative function* (GF).  The `Gen` library provides two DSLs for constructing GFs: the dynamic DSL using the decorator `@gen` on a function declaration, and the static DSL similarly decorated with `@gen (static)`.  The dynamic DSL allows a rather wide class of program structures, whereas the static DSL only allows those for which a certain static analysis may be performed.
+#
+# The library offers two basic constructs for use within these DSLs: primitive *distributions* such as "Bernoulli" and "normal", and the sampling operator `~`.  Recursively, GFs may sample from other GFs using `~`.
 
 # %% [markdown]
 # ### Robot programs
@@ -359,7 +421,7 @@ function load_program(file_name)
 end;
 
 # %%
-robot_inputs, T = load_program("robot_program.json")
+robot_inputs, T = load_program("robot_program.json");
 
 # %% [markdown]
 # Before we can visualize such a program, we will need to model robot motion.
@@ -429,12 +491,10 @@ world_inputs = (walls = world.walls, bounce = 0.1)
 path_integrated = integrate_controls(robot_inputs, world_inputs);
 
 # %%
-the_plot = plot_world(world, "Given data", label_world=true, show_clutters=true)
+plot_world(world, "Given data", show=(:label,))
 plot!(robot_inputs.start; color=:green3, label="given start pose")
 plot!([pose.p[1] for pose in path_integrated], [pose.p[2] for pose in path_integrated];
       color=:green2, label="path from integrating controls", seriestype=:scatter, markersize=3, markerstrokewidth=0)
-savefig("imgs/given_data")
-the_plot
 
 # %% [markdown]
 # We can also visualize the behavior of the model of physical motion:
@@ -442,13 +502,6 @@ the_plot
 # ![](imgs_stable/physical_motion.gif)
 
 # %% [markdown]
-# ## Gen basics
-#
-# As said initially, we are uncertain about the true initial position and subsequent motion of the robot.  In order to reason about these, we now specify a model using `Gen`.
-#
-# Each piece of the model is declared as a *generative function* (GF).  The `Gen` library provides two DSLs for constructing GFs: the dynamic DSL using the decorator `@gen` on a function declaration, and the static DSL similarly decorated with `@gen (static)`.  The dynamic DSL allows a rather wide class of program structures, whereas the static DSL only allows those for which a certain static analysis may be performed.
-#
-# The library offers two basic constructs for use within these DSLs: primitive *distributions* such as "Bernoulli" and "normal", and the sampling operator `~`.  Recursively, GFs may sample from other GFs using `~`.
 # POSSIBLE VIZ GOAL: user can manipulate a whole path, now obeying walls.
 
 # %% [markdown]
@@ -485,25 +538,21 @@ pose_samples = [start_pose_prior(robot_inputs.start, motion_settings) for _ in 1
 
 std_devs_radius = 2.5 * motion_settings.p_noise
 
-the_plot = plot_world(world, "Start pose prior (samples)")
+plot_world(world, "Start pose prior (samples)")
 plot!(make_circle(robot_inputs.start.p, std_devs_radius);
       color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
 plot!(pose_samples; color=:red, label="start pose samples")
-savefig("imgs/start_prior")
-the_plot
 
 # %%
 N_samples = 50
 noiseless_step = robot_inputs.start.p + robot_inputs.controls[1].ds * robot_inputs.start.dp
 step_samples = [step_model(robot_inputs.start, robot_inputs.controls[1], world_inputs, motion_settings) for _ in 1:N_samples]
 
-the_plot = plot_world(world, "Motion step model model (samples)")
+plot_world(world, "Motion step model model (samples)")
 plot!(robot_inputs.start; color=:black, label="step from here")
 plot!(make_circle(noiseless_step, std_devs_radius);
       color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
 plot!(step_samples; color=:red, label="step samples")
-savefig("imgs/motion_step")
-the_plot
 
 # %% [markdown]
 # ### Traces: choice maps
@@ -663,7 +712,7 @@ get_selected(get_choices(trace), select((prefix_address(t, :pose) for t in 1:6).
 # As our truncation of the example trace above might suggest, visualization is an essential practice in ProbComp.  We could very well pass the output of the above `integrate_controls_noisy` to the `plot!` function to have a look at it.  However, we want to get started early in this notebook on a good habit: writing interpretive code for GFs in terms of their traces rather than their return values.  This enables the programmer include the parameters of the model in the display for clarity.
 
 # %%
-function frames_from_motion_trace(world, title, trace; show_clutters=false)
+function frames_from_motion_trace(world, title, trace; show=())
     T = get_args(trace)[1]
     robot_inputs = get_args(trace)[2]
     poses = get_path(trace)
@@ -672,7 +721,7 @@ function frames_from_motion_trace(world, title, trace; show_clutters=false)
     std_devs_radius = 2.5 * motion_settings.p_noise
     plots = Vector{Plots.Plot}(undef, T+1)
     for t in 1:(T+1)
-        frame_plot = plot_world(world, title; show_clutters=show_clutters)
+        frame_plot = plot_world(world, title; show=show)
         plot!(poses[1:t-1]; color=:black, label="past poses")
         plot!(make_circle(noiseless_steps[t], std_devs_radius);
               color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
@@ -710,11 +759,9 @@ gif(ani, "imgs/motion.gif", fps=2)
 trace = simulate(start_pose_prior, (robot_inputs.start, motion_settings))
 rotated_trace, rotated_trace_weight_diff, _, _ =
     update(trace, (robot_inputs.start, motion_settings), (NoChange(), NoChange()), choicemap((:hd, π/2.)))
-the_plot = plot_world(world, "Modifying a heading")
+plot_world(world, "Modifying a heading")
 plot!(get_retval(trace); color=:green, label="some pose")
 plot!(get_retval(rotated_trace); color=:red, label="with heading modified")
-savefig("imgs/modify_trace_1")
-the_plot
 
 # %% [markdown]
 # The original trace was typical under the pose prior model, whereas the modified one is rather less likely.  This is the log of how much unlikelier:
@@ -731,11 +778,9 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ =
     update(trace,
            (T, robot_inputs, world_inputs, motion_settings), (NoChange(), NoChange(), NoChange(), NoChange()),
            choicemap((:steps => 1 => :pose => :hd, π/2.)))
-the_plot = plot_world(world, "Modifying another heading")
+plot_world(world, "Modifying another heading")
 plot!(get_path(trace); color=:green, label="some path")
 plot!(get_path(rotated_first_step); color=:red, label="with heading at first step modified")
-savefig("imgs/modify_trace_1")
-the_plot
 
 # %% [markdown]
 # In the above picture, the green path is apparently missing, having been near-completely overdrawn by the red path.  This is because in the execution of the model, the only change in the stochastic choices took place where we specified.  In particular, the stochastic choice of pose at the second step was left unchanged.  This choice was typical relative to the first step's heading in the old trace, and while it is not impossible relative to the first step's heading in the new trace, it is *far unlikelier* under the mulitvariate normal distribution supporting it:
@@ -856,7 +901,7 @@ function frame_from_sensors_trace(world, title, poses, poses_color, poses_label,
                              show_clutters=show_clutters)
 end
 
-function frames_from_full_trace(world, title, trace; show_clutters=false)
+function frames_from_full_trace(world, title, trace; show=())
     T = get_args(trace)[1]
     robot_inputs = get_args(trace)[2]
     poses = get_path(trace)
@@ -866,7 +911,7 @@ function frames_from_full_trace(world, title, trace; show_clutters=false)
     sensor_readings = get_sensors(trace)
     plots = Vector{Plots.Plot}(undef, 2*(T+1))
     for t in 1:(T+1)
-        frame_plot = plot_world(world, title; show_clutters=show_clutters)
+        frame_plot = plot_world(world, title; show=show)
         plot!(poses[1:t-1]; color=:black, label="past poses")
         plot!(make_circle(noiseless_steps[t], std_devs_radius);
               color=:red, linecolor=:red, label="95% region", seriestype=:shape, alpha=0.25)
@@ -876,7 +921,7 @@ function frames_from_full_trace(world, title, trace; show_clutters=false)
             world, title,
             poses[1:t], :black, nothing,
             poses[t], sensor_readings[t], "sampled sensors",
-            settings.sensor_settings; show_clutters=show_clutters)
+            settings.sensor_settings; show=show)
     end
     return plots
 end;
@@ -1091,9 +1136,7 @@ traces_generated_high_deviation = [generate(full_model, (T, full_model_args...),
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_generated_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="high dev data, typical paths")
 
-the_plot = plot(hist_low_deviation, hist_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Log density of observations under the model")
-savefig("imgs/likelihoods")
-the_plot
+plot(hist_low_deviation, hist_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Log density of observations under the model")
 
 # %% [markdown]
 # ...than the log densities of data typically produced by the complete model run in its natural manner (*compare the scale at the bottom*):
@@ -1101,7 +1144,7 @@ the_plot
 # %%
 traces_typical = [simulate(full_model, (T, full_model_args...)) for _ in 1:N_samples]
 log_likelihoods_typical = [project(trace, selection) for trace in traces_typical]
-hist_typical = histogram(log_likelihoods_typical; label=nothing, bins=20, title="Log density of observations under the model\ntypical traces")
+histogram(log_likelihoods_typical; label=nothing, bins=20, title="Log density of observations under the model\ntypical traces")
 
 # %% [markdown]
 # ### Inference: demonstration
@@ -1119,8 +1162,8 @@ include("black_box.jl")
 # %%
 # Visualize distributions over traces.
 
-function frame_from_traces(world, title, path, path_label, traces, trace_label; show_clutters=false)
-    the_plot = plot_world(world, title; show_clutters=show_clutters)
+function frame_from_traces(world, title, path, path_label, traces, trace_label; show=())
+    the_plot = plot_world(world, title; show=show)
     if !isnothing(path); plot!(path; label=path_label, color=:brown) end
     for trace in traces
         poses = get_path(trace)
@@ -1150,9 +1193,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "posterior samples")
 
-the_plot = plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. approximate posteriors")
-savefig("imgs/prior_posterior")
-the_plot
+plot(prior_plot, posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1500,500), layout=grid(1,3), plot_title="Prior vs. approximate posteriors")
 
 # %% [markdown]
 # All of the traces thus produced have observations constrained to the data.  The log densities of the observations under their typical samples show some improvement:
@@ -1168,9 +1209,7 @@ traces_posterior_high_deviation = [BlackBox.black_box_inference(full_model, full
 log_likelihoods_high_deviation = [project(trace, selection) for trace in traces_posterior_high_deviation]
 hist_high_deviation = histogram(log_likelihoods_high_deviation; label=nothing, bins=20, title="typical data under posterior: high dev data")
 
-the_plot = plot(hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,2), plot_title="Log likelihood of observations")
-savefig("imgs/likelihoods")
-the_plot
+plot(hist_low_deviation, hist_high_deviation; size=(1500,500), layout=grid(1,2), plot_title="Log likelihood of observations")
 
 # %% [markdown]
 # ## Generic strategies for inference
@@ -1403,9 +1442,7 @@ traces = [sampling_importance_resampling(full_model, (T_short, full_model_args..
 t2 = now()
 println("Time elapsed per run (short path): $(value(t2 - t1) / N_samples) ms.")
 
-the_plot = frame_from_traces(world, "SIR (short path)", path_low_deviation[1:(T_short+1)], "path to fit", traces, "SIR samples")
-savefig("imgs/SIR_short")
-the_plot
+frame_from_traces(world, "SIR (short path)", path_low_deviation[1:(T_short+1)], "path to fit", traces, "SIR samples")
 
 # %% [markdown]
 # There are still problems with SIR.  SIR already do not provide high-quality traces on short paths.  For longer paths, the difficulty only grows, as one blindly searches for a needle in a high-dimensional haystack.  And if the proposal $Q$ is unlikely to generate typical samples from the target $P$, one would need a massive number of particles to get a good approximation; in fact, the rate of convergence of SIR towards the target can be super-exponentially slow in $N \to \infty$!
@@ -1421,9 +1458,7 @@ traces = [sampling_importance_resampling(full_model, (T, full_model_args...), me
 t2 = now()
 println("Time elapsed per run (low dev): $(value(t2 - t1) / N_samples) ms.")
 
-the_plot = frame_from_traces(world, "SIR (low dev)", path_low_deviation, "path to fit", traces, "SIR samples")
-savefig("imgs/SIR_final")
-the_plot
+frame_from_traces(world, "SIR (low dev)", path_low_deviation, "path to fit", traces, "SIR samples")
 
 # %% [markdown]
 # ## Sequential Monte Carlo (SMC) techniques
@@ -1496,8 +1531,8 @@ end;
 # Let's begin by picturing the step-by-step nature of SMC:
 
 # %%
-function frame_from_weighted_traces(world, title, path, path_label, traces, log_weights, trace_label; show_clutters=false, min_alpha=0.03)
-    the_plot = plot_world(world, title; show_clutters=show_clutters)
+function frame_from_weighted_traces(world, title, path, path_label, traces, log_weights, trace_label; show=(), min_alpha=0.03)
+    the_plot = plot_world(world, title; show=show)
 
     if !isnothing(path)
         plot!(path; label=path_label, color=:brown)
@@ -1518,9 +1553,9 @@ function frame_from_weighted_traces(world, title, path, path_label, traces, log_
     return the_plot
 end
 
-function frame_from_info(world, title, path, path_label, info, info_label; show_clutters=false, min_alpha=0.03)
+function frame_from_info(world, title, path, path_label, info, info_label; show=(), min_alpha=0.03)
     the_plot = frame_from_weighted_traces(world, title * "\nt=$(info.t)|" * info.label, path, path_label,
-                    info.traces, info.log_weights, info_label; show_clutters=show_clutters, min_alpha=min_alpha)
+                    info.traces, info.log_weights, info_label; show=show, min_alpha=min_alpha)
     if haskey(info, :vizs)
         viz_label = haskey(info.vizs[1].params, :label) ? info.vizs[1].params.label : nothing
         for viz in info.vizs
@@ -1644,9 +1679,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF+Bootstrap")
-savefig("imgs/PF_bootstrap")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF+Bootstrap")
 
 # %% [markdown]
 # The results are already more accurate than blind SIR for only a fraction of the work.
@@ -1925,9 +1958,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
-savefig("imgs/PF_SMCP3_grid")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
 
 # %% [markdown]
 # The speed of this approach is already perhaps an issue.  The performance is even worse (~15x slower) using the "exact" backwards kernel, with no discernible improvement in inference, as can be seen by uncommenting and running the code below.
@@ -1953,9 +1984,7 @@ the_plot
 # println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 # posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-# the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
-# savefig("imgs/PF_SMCP3_grid_2")
-# the_plot
+# plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid")
 
 # %% [markdown]
 # Because that our rejuvenation scheme improves sample quality, perhaps we do not even need to track many particles.  Let's try out *one* particle (and vacuous resampling):
@@ -1981,9 +2010,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (1pc)")
-savefig("imgs/PF_SMCP3_grid_1")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (1pc)")
 
 # %% [markdown]
 # Here we see some degredation in the inference quality.  But since there is one particle, maybe we can spend a little more effort in the grid search.
@@ -2009,9 +2036,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (1pc)")
-savefig("imgs/PF_SMCP3_grid_1_hard")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Grid (1pc)")
 
 # %%
 N_particles = 1
@@ -2116,9 +2141,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Drift")
-savefig("imgs/PF_SMCP3_drift")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + SMCP3/Drift")
 
 # %% [markdown]
 # We can compromise between the grid search and jiggling.  The idea is to perform a mere two-element search that compares the given point with the random one, or rather to immediately resample one from the pair.  This would have a chance of improving sample quality, without spending much time searching scrupulously for the improvement.
@@ -2185,9 +2208,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + Boltzmann/Drift")
-savefig("imgs/PF_boltzmann_drift")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + Boltzmann/Drift")
 
 # %% [markdown]
 # Similarly, here are a detailed run, followed by the aggregate behavior, using the MH rule:
@@ -2225,9 +2246,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + MH/Drift")
-savefig("imgs/PF_mh_drift")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + MH/Drift")
 
 # %% [markdown]
 # Thus we can recover most of inference performance to the grid search, at a fraction of the compute cost.
@@ -2253,9 +2272,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + MH/Drift (1pc)")
-savefig("imgs/PF_mh_drift_1")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="PF + MH/Drift (1pc)")
 
 # %% [markdown]
 # ### Reusable components
@@ -2411,9 +2428,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Controlled PF")
-savefig("imgs/PF_controller")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Controlled PF")
 
 # %% [markdown]
 # ### Backtracking
@@ -2627,9 +2642,7 @@ t2 = now()
 println("Time elapsed per run (high dev): $(value(t2 - t1) / N_samples) ms.")
 posterior_plot_high_deviation = frame_from_traces(world, "High dev observations", path_high_deviation, "path to be fit", traces, "samples")
 
-the_plot = plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Backtracking PF")
-savefig("imgs/PF_backtrack")
-the_plot
+plot(posterior_plot_low_deviation, posterior_plot_high_deviation; size=(1000,500), layout=grid(1,2), plot_title="Backtracking PF")
 
 # %% [markdown]
 # ## Improving robustness
@@ -2671,9 +2684,7 @@ t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_askew_start, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (askew start): $(value(t2 - t1) / N_samples) ms.")
-the_plot = frame_from_traces(world, "Askew start", path_askew_start, "path to be fit", traces, "samples")
-savefig("imgs/askew_start")
-the_plot
+frame_from_traces(world, "Askew start", path_askew_start, "path to be fit", traces, "samples")
 
 # %% [markdown]
 # Or how about if we "kidnapped" the robot: partway through the journey, the robot is paused, moved to another room, then resumed?
@@ -2723,9 +2734,7 @@ t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_kidnapped, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
-the_plot = frame_from_traces(world, "Kidnapped after t=4", path_kidnapped, "path to be fit", traces, "samples")
-savefig("imgs/backwards_start")
-the_plot
+frame_from_traces(world, "Kidnapped after t=4", path_kidnapped, "path to be fit", traces, "samples")
 
 # %% [markdown]
 # For another challenge, what if our map were modestly inaccurate?
@@ -2760,9 +2769,7 @@ t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_cluttered, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
-the_plot = frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", traces, "samples"; show_clutters=true)
-savefig("imgs/backwards_start")
-the_plot
+frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", traces, "samples"; show_clutters=true)
 
 # %% [markdown]
 # We take up the task of accommodating a wider range of phenomena in our modeling and inference.
