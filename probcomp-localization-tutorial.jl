@@ -251,6 +251,93 @@ gif(ani, "imgs/ideal_distances.gif", fps=1)
 # POSSIBLE VIZ GOAL: as user manipulates pose, sensors get updated.
 
 # %% [markdown]
+# ## First steps in modeling uncertainty using Gen
+#
+# The robot will need to reason about its possible location on the map using incomplete information—in a pun, it must nagivate the uncertainty.  The `Gen` system facilitates programming the required probabilistic logic.  We will introduce the features of Gen, starting with some simple features now, and bringing in more complex ones later.
+#
+# Each piece of the model is declared as a *generative function* (GF).  The `Gen` library provides two DSLs for constructing GFs: the dynamic DSL using the decorator `@gen` on a function declaration, and the static DSL similarly decorated with `@gen (static)`.  The dynamic DSL allows a rather wide class of program structures, whereas the static DSL only allows those for which a certain static analysis may be performed.
+#
+# The library offers primitive *distributions* such as "Bernoulli" and "normal", and these two DLSs offer the *sampling operator* `~`.  GFs may sample from distributions and, recursively, other GFs using `~`.  A generative function embodies the *joint distribution* over the latent choices indicated by the sampling operations.
+
+# %% [markdown]
+# ### Creating noisy measurements using `Gen.propose`
+#
+# We have on hand two kinds of things to model: the robot's pose (and possibly its motion), and its sensor data.  We tackle the sensor model first because it is simpler.
+#
+# Here is its declarative model in `Gen`:
+
+# %%
+@gen function sensor_model(pose, walls, sensor_settings)
+    for j in 1:sensor_settings.num_angles
+        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
+        {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
+    end
+end;
+
+# %% [markdown]
+# This model differs from `ideal_sensor` in the following ways.  The ideal sensor measurements themselves are no longer stored into an array, but are instead used as the means of Gaussian distributions (representing our uncertainty about them).  *Sampling* from these distributions, using the `~` operator, occurs at the addresses `j => :distance`.
+#
+# Moreover, the function returns no explicit value.  But there is no loss of information here: the model can be run with `Gen.propose` semantics, which performs the required draws from the sampling operations and organizes them according to their address, returning the corresponding *choice map* data structure.  The method is called with the GF plus a tuple of arguments.
+
+# %%
+sensor_settings = (sensor_settings..., s_noise = 0.10)
+cm, w = propose(sensor_model, (Pose([1., 1.], pi/2.), walls, sensor_settings))
+
+# For brevity, show just a subset of the choice map's addresses.
+get_selected(cm, select((1:5)...))
+# To instead see the whole trace, uncomment below:
+# cm
+
+# %% [markdown]
+# With a little wrapping, one gets a function of the same type as `ideal_sensor`.
+
+# %%
+function noisy_sensor(pose, walls, sensor_settings)
+    cm, _ = propose(sensor_model, (pose, walls, sensor_settings))
+    return [cm[j => :distance] for j in 1:sensor_settings.num_angles]
+end;
+
+# %% [markdown]
+# Let's get a picture of the distances returned by the model:
+
+# %%
+ani = Animation()
+for pose in path_integrated
+    frame_plot = frame_from_sensors(
+        world, "Sensor model (samples)",
+        path_integrated, :green2, "some path",
+        pose, noisy_sensor(pose, world.walls, sensor_settings), "noisy sensors",
+        sensor_settings)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/noisy_distances.gif", fps=1)
+
+# %% [markdown]
+# POSSIBLE VIZ GOAL: same sensor interactive as before, now with noisy sensors.
+
+# %% [markdown]
+# ### Weighing data with `Gen.assess`
+#
+# The mathematical picture is as follows.  Given the parameters of a pose $z$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(z, w, \nu)$ over certain choice maps.  The supporting choice maps are identified with vectors $o = o^{(1:J)} = (o^{(1)}, o^{(2)}, \ldots, o^{(J)})$, where $J := \nu_\text{num\_angles}$, each $o^{(j)}$ independently following a certain normal distribution (depending, notably, on a distance to a wall).  Thus the density of $o$ factors into a product of the form
+# $$
+# P_\text{sensor}(o) = \prod\nolimits_{j=1}^J P_\text{normal}(o^{(j)})
+# $$
+# where we begin a habit of omitting the parameters to distributions that are implied by the code.
+#
+# As `propose` draws a sample, it simultaneously computes this density or *score* and returns its logarithm:
+
+# %%
+exp(w)
+
+# %% [markdown]
+# There are many scenarios where one has on hand a full set of data, perhaps via observation, and seeks their score according to the model.  One could write a program by hand to do this—but one would simply recapitulate the code for `noisy_sensor`.  The difference is that the sampling operations would be replaced with density computations, and instead of storing them in a choice map it would compute their log product.
+#
+# The construction of a log density function is automated by the `Gen.assess` semantics for generative functions.  This method is passed the GF, a tuple of arguments, and a choice map.
+
+# %%
+exp(assess(sensor_model, (Pose([1., 1.], pi/2.), walls, sensor_settings), cm))
+
+# %% [markdown]
 # ### Robot programs
 #
 # We also assume given a description of a robot's movement via
@@ -711,62 +798,6 @@ function integrate_controls_noisy(robot_inputs, world_inputs, motion_settings)
 end;
 
 # %% [markdown]
-# ### Noisy sensors
-#
-# We assume that the sensor readings are themselves uncertain, say, the distances only knowable up to some noise.  We model this as follows.  (We satisfy ourselves with writing a loop in the dynamic DSL because we will have no need for incremental recomputation within this model.)
-
-# %%
-@gen function sensor_model(pose, walls, sensor_settings)
-    for j in 1:sensor_settings.num_angles
-        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
-        {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
-    end
-end
-
-function noisy_sensor(pose, walls, sensor_settings)
-    trace = simulate(sensor_model, (pose, walls, sensor_settings))
-    return [trace[j => :distance] for j in 1:sensor_settings.num_angles]
-end;
-
-# %% [markdown]
-# The trace contains many choices corresponding to directions of sensor reading from the input pose.  To reduce notebook clutter, here we just show a subset of 5 of them:
-
-# %%
-sensor_settings = (sensor_settings..., s_noise = 0.10)
-
-trace = simulate(sensor_model, (robot_inputs.start, world.walls, sensor_settings))
-get_selected(get_choices(trace), select((1:5)...))
-
-# %% [markdown]
-# The mathematical picture is as follows.  Given the parameters of a pose $y$, walls $w$, and settings $\nu$, one gets a distribution $\text{sensor}(y, w, \nu)$ over the traces of `sensor_model`, and when $z$ is a motion model trace we set $\text{sensor}(z, w, \nu) := \text{sensor}(\text{retval}(z), w, \nu)$.  Its samples are identified with vectors $o = (o^{(1)}, o^{(2)}, \ldots, o^{(J)})$, where $J := \nu_\text{num\_angles}$, each $o^{(j)}$ independently following a certain normal distribution (depending, notably, on the distance from the pose to the nearest wall).  Thus the density of $o$ factors into a product of the form
-# $$
-# P_\text{sensor}(o) = \prod\nolimits_{j=1}^J P_\text{normal}(o^{(j)})
-# $$
-# where we begin a habit of omitting the parameters to distributions that are implied by the code.
-#
-# Visualizing the traces of the model is probably more useful for orientation, so we do this now.
-
-# %%
-function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
-    readings = [trace[j => :distance] for j in 1:sensor_settings.num_angles]
-    return frame_from_sensors(world, title, poses, poses_color, poses_label, pose,
-                             readings, "trace sensors", get_args(trace)[3];
-                             show_clutters=show_clutters)
-end;
-
-# %%
-ani = Animation()
-for pose in path_integrated
-    trace = simulate(sensor_model, (pose, world.walls, sensor_settings))
-    frame_plot = frame_from_sensors_trace(
-        world, "Sensor model (samples)",
-        path_integrated, :green2, "some path",
-        pose, trace)
-    frame(ani, frame_plot)
-end
-gif(ani, "imgs/sensor_1.gif", fps=1)
-
-# %% [markdown]
 # ### Full model
 #
 # We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
@@ -818,6 +849,13 @@ get_selected(get_choices(trace), selection)
 # By this point, visualization is essential.
 
 # %%
+function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
+    readings = [trace[j => :distance] for j in 1:sensor_settings.num_angles]
+    return frame_from_sensors(world, title, poses, poses_color, poses_label, pose,
+                             readings, "trace sensors", get_args(trace)[3];
+                             show_clutters=show_clutters)
+end
+
 function frames_from_full_trace(world, title, trace; show_clutters=false)
     T = get_args(trace)[1]
     robot_inputs = get_args(trace)[2]
