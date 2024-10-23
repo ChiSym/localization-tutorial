@@ -38,7 +38,7 @@ using Gen
 mkpath("imgs");
 
 # %% [markdown]
-# ## Ojbects of reasoning
+# ## Sensing a robot's location on a map
 #
 # ### The map
 #
