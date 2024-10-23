@@ -128,6 +128,9 @@ end;
 plot_world(world, "Given data", show=(:label, :clutters=true))
 
 # %% [markdown]
+# POSSIBLE VIZ GOAL: user-editable map, clutters, etc.
+
+# %% [markdown]
 # ### Robot poses
 #
 # We will model the robot's physical state as a *pose* (or mathematically speaking a ray), defined to be a *position* (2D point relative to the map) plus a *heading* (angle from -$\pi$ to $\pi$).
@@ -155,6 +158,9 @@ the_plot = plot_world(world, "Given data")
 plot!(Pose([1., 1.], 0.); color=:green3, label="a pose")
 plot!(Pose([2., 3.], pi/2.); color=:green4, label="another pose")
 the_plot
+
+# %% [markdown]
+# POSSIBLE VIZ GOAL: user can manipulate a pose.  (Unconstrained vs. map for now.)
 
 # %% [markdown]
 # ### Ideal sensors
@@ -242,6 +248,9 @@ end
 gif(ani, "imgs/ideal_distances.gif", fps=1)
 
 # %% [markdown]
+# POSSIBLE VIZ GOAL: as user manipulates pose, sensors get updated.
+
+# %% [markdown]
 # ### Robot programs
 #
 # We also assume given a description of a robot's movement via
@@ -269,6 +278,9 @@ robot_inputs, T = load_program("robot_program.json")
 # Before we can visualize such a program, we will need to model robot motion.
 
 # %% [markdown]
+# POSSIBLE VIZ GOAL: user can manipulate a pose, and independently a control (vecor-like relative to it), with new pose in shadow.
+
+# %% [markdown]
 # ### Integrate a path from a starting pose and controls
 #
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
@@ -284,6 +296,9 @@ function integrate_controls_unphysical(robot_inputs)
     end
     return path
 end;
+
+# %% [markdown]
+# POSSIBLE VIZ GOAL: user can manipulate a whole path, still ignoring walls.
 
 # %% [markdown]
 # This code has the problem that it is **unphysical**: the walls in no way constrain the robot motion.
@@ -347,6 +362,7 @@ the_plot
 # Each piece of the model is declared as a *generative function* (GF).  The `Gen` library provides two DSLs for constructing GFs: the dynamic DSL using the decorator `@gen` on a function declaration, and the static DSL similarly decorated with `@gen (static)`.  The dynamic DSL allows a rather wide class of program structures, whereas the static DSL only allows those for which a certain static analysis may be performed.
 #
 # The library offers two basic constructs for use within these DSLs: primitive *distributions* such as "Bernoulli" and "normal", and the sampling operator `~`.  Recursively, GFs may sample from other GFs using `~`.
+# POSSIBLE VIZ GOAL: user can manipulate a whole path, now obeying walls.
 
 # %% [markdown]
 # ### Components of the motion model
