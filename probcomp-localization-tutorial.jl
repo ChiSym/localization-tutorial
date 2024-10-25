@@ -458,7 +458,7 @@ norm(v) = sqrt(sum(v.^2))
 
 function physical_step(p1, p2, hd, world_inputs)
     p21 = p2 - p1
-    step_pose = Pose(p1, atan2(p21[2], p21[1]))
+    step_pose = Pose(p1, atan(p21[2], p21[1]))
     s, i = findmin(w -> distance(step_pose, w), world_inputs.walls)
     if s > norm(p21)
         # Step succeeds without contact with walls.
