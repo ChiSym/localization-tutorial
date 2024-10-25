@@ -144,13 +144,10 @@ struct Pose
     dp :: Vector{Float64}
     Pose(p :: Vector{Float64}, hd :: Float64) = new(p, rem2pi(hd, RoundNearest), [cos(hd), sin(hd)])
 end
-Pose(p :: Vector{Float64}, dp :: Vector{Float64}) = Pose(p, atan(dp[2], dp[1]))
 Base.show(io :: IO, p :: Pose) = Base.show(io, "Pose($(p.p), $(p.hd))")
 
-step_along_pose(p, s) = p.p + s * p.dp
-rotate_pose(p, a) = Pose(p.p, p.hd + a)
 
-Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, step_along_pose(p, r)); arrow=true, args...)
+Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, p.p + r * p.dp); arrow=true, args...)
 Plots.plot!(ps :: Vector{Pose}; args...) = plot_list!(ps; args...);
 
 # %%
@@ -171,17 +168,17 @@ plot!(Pose([2., 3.], pi/2.); color=:green4, label="another pose")
 # %%
 # A general algorithm to find the interection of a ray and a line segment.
 
-norm(v) = sqrt(sum(v.^2))
+det2(u, v) = u[1] * v[2] - u[2] * v[1]
 
 # Return unique s, t such that p + s*u == q + t*v.
 function solve_lines(p, u, q, v; PARALLEL_TOL=1.0e-10)
-    det = u[1] * v[2] - u[2] * v[1]
+    det = det2(u, v)
     if abs(det) < PARALLEL_TOL
         return nothing, nothing
     else
         pq = p - q
-        s = (v[1] * pq[2] - v[2] * pq[1]) / det
-        t = (u[1] * pq[2] - u[2] * pq[1]) / det
+        s = det2(v, pq) / det
+        t = det2(u, pq) / det
         return s, t
     end
 end
@@ -207,16 +204,18 @@ sensor_angle(sensor_settings, j) =
 function ideal_sensor(pose, walls, sensor_settings)
     readings = Vector{Float64}(undef, sensor_settings.num_angles)
     for j in 1:sensor_settings.num_angles
-        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
+        sensor_pose = Pose(pose.p, pose.hd + sensor_angle(sensor_settings, j))
         readings[j] = sensor_distance(sensor_pose, walls, sensor_settings.box_size)
     end
     return readings
 end;
 
 # %%
+project_sensor(pose, angle, s) = let rotated = Pose(pose.p, pose.hd + angle); rotated.p + s * rotated.dp end
+
 function plot_sensors!(pose, color, readings, label, sensor_settings)
     plot!([pose.p[1]], [pose.p[2]]; color=color, label=nothing, seriestype=:scatter, markersize=3, markerstrokewidth=0)
-    projections = [step_along_pose(rotate_pose(pose, sensor_angle(sensor_settings, j)), s) for (j, s) in enumerate(readings)]
+    projections = [project_sensor(pose, sensor_angle(sensor_settings, j), s) for (j, s) in enumerate(readings)]
     plot!(first.(projections), last.(projections);
             color=:blue, label=label, seriestype=:scatter, markersize=3, markerstrokewidth=1, alpha=0.25)
     plot!([Segment(pose.p, pr) for pr in projections]; color=:blue, label=nothing, alpha=0.25)
@@ -270,7 +269,7 @@ gif(ani, "imgs/ideal_distances.gif", fps=1)
 # %%
 @gen function sensor_model(pose, walls, sensor_settings)
     for j in 1:sensor_settings.num_angles
-        sensor_pose = rotate_pose(pose, sensor_angle(sensor_settings, j))
+        sensor_pose = Pose(pose.p, pose.hd + sensor_angle(sensor_settings, j))
         {j => :distance} ~ normal(sensor_distance(sensor_pose, walls, sensor_settings.box_size), sensor_settings.s_noise)
     end
 end;
@@ -455,10 +454,13 @@ end;
 # We employ the following simple physics: when the robot's forward step through a control comes into contact with a wall, that step is interrupted and the robot instead "bounces" a fixed distance from the point of contact in the normal direction to the wall.
 
 # %%
+norm(v) = sqrt(sum(v.^2))
+
 function physical_step(p1, p2, hd, world_inputs)
-    step_pose = Pose(p1, p2 - p1)
-    (s, i) = findmin(w -> distance(step_pose, w), world_inputs.walls)
-    if s > norm(p2 - p1)
+    p21 = p2 - p1
+    step_pose = Pose(p1, atan2(p21[2], p21[1]))
+    s, i = findmin(w -> distance(step_pose, w), world_inputs.walls)
+    if s > norm(p21)
         # Step succeeds without contact with walls.
         return Pose(p2, hd)
     else
@@ -466,7 +468,7 @@ function physical_step(p1, p2, hd, world_inputs)
         unit_tangent = world_inputs.walls[i].dp / norm(world_inputs.walls[i].dp)
         unit_normal = [-unit_tangent[2], unit_tangent[1]]
         # Sign of 2D cross product determines orientation of bounce.
-        if step_pose.dp[1] * world_inputs.walls[i].dp[2] - step_pose.dp[2] * world_inputs.walls[i].dp[1] < 0.
+        if det2(step_pose.dp, world_inputs.walls[i].dp) < 0.
             unit_normal = -unit_normal
         end
         return Pose(contact_point + world_inputs.bounce * unit_normal, hd)
