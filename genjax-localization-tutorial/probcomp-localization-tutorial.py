@@ -31,7 +31,7 @@ if "google.colab" in sys.modules:
 #
 # Dependencies are specified in pyproject.toml.
 # %%
-# Global setup code
+# Global setup codef
 
 import json
 import genstudio.plot as Plot
@@ -473,23 +473,27 @@ clutters_plot = (
 #
 # We start with the two building blocks: the starting pose and individual steps of motion.
 # %%
-@genjax.gen
-def start_pose_prior(start, motion_settings):
-    p = genjax.mv_normal(start.p, motion_settings["p_noise"] ** 2.0 * jnp.eye(2)) @ "p"
-    hd = genjax.normal(start.hd, motion_settings["hd_noise"]) @ "hd"
-    return Pose(p, hd)
+# @genjax.gen
+# def start_pose_prior(motion_settings, start):
+#     p = genjax.mv_normal(start.p, motion_settings["p_noise"] ** 2 * jnp.eye(2)) @ "p"
+#     hd = genjax.normal(start.hd, motion_settings["hd_noise"]) @ "hd"
+#     return Pose(p, hd)
 
 @genjax.gen
-def step_model(start, c, motion_settings):
+def step_proposal(motion_settings, start, control):
     p = (
-        genjax.mv_normal(
-            start.p + c.ds * start.dp(), motion_settings["p_noise"] ** 2.0 * jnp.eye(2)
+        genjax.mv_normal_diag(
+            start.p + control.ds * start.dp(), motion_settings["p_noise"] * jnp.ones(2)
         )
         @ "p"
     )
-    hd = genjax.normal(start.hd + c.dhd, motion_settings["hd_noise"]) @ "hd"
+    hd = genjax.normal(start.hd + control.dhd, motion_settings["hd_noise"]) @ "hd"
+    print(f"gonna return: {start.p, p, hd} -> {physical_step(start.p, p, hd)}")
     return physical_step(start.p, p, hd)
 
+@genjax.gen
+def start_pose_prior(motion_settings, start):
+    return step_proposal.inline(motion_settings, start, noop_control)
 
 # Set the motion settings
 default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
@@ -500,7 +504,7 @@ default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 # %%
 key = jax.random.PRNGKey(0)
 start_pose_prior.simulate(
-    key, (robot_inputs["start"], default_motion_settings)
+    key, (default_motion_settings, robot_inputs["start"])
 ).get_retval()
 
 # %% [markdown]
@@ -524,12 +528,10 @@ def make_circle(p, r):
 # Generate N_samples of starting poses from the prior
 N_samples = 50
 key, sub_key = jax.random.split(key)
-# pose_samples = [start_pose_prior.simulate(k, (robot_inputs['start'], motion_settings)) for k in sub_keys]
-pose_samples = jax.vmap(step_model.simulate, in_axes=(0, None))(
+pose_samples = jax.vmap(step_proposal.simulate, in_axes=(0, None))(
     jax.random.split(sub_key, N_samples),
-    (robot_inputs["start"], robot_inputs["controls"][0], default_motion_settings),
+    (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
-
 
 def poses_to_plots(poses: Iterable[Pose], **plot_opts):
     return [
@@ -537,10 +539,7 @@ def poses_to_plots(poses: Iterable[Pose], **plot_opts):
         for pose in poses
     ]
 
-
 # Plot the world, starting pose samples, and 95% confidence region
-
-
 # Calculate the radius of the 95% confidence region
 def confidence_circle(pose: Pose, p_noise: float):
     # TODO
@@ -550,7 +549,6 @@ def confidence_circle(pose: Pose, p_noise: float):
         fill=Plot.constantly("95% confidence region"),
         r=2.5 * p_noise,
     ) + Plot.color_map({"95% confidence region": "rgba(255,0,0,0.25)"})
-
 
 (
     world_plot
@@ -574,7 +572,7 @@ def confidence_circle(pose: Pose, p_noise: float):
 # `simulate` takes the GF plus a tuple of args to pass to it.
 key, sub_key = jax.random.split(key)
 trace = start_pose_prior.simulate(
-    sub_key, (robot_inputs["start"], default_motion_settings)
+    sub_key, (default_motion_settings, robot_inputs["start"])
 )
 trace.get_choices()
 
@@ -643,7 +641,7 @@ trace.get_retval()
 #
 # A pose consists of a pair $z = (z_\text p, z_\text{hd})$ where $z_\text p$ is a position vector and $z_\text{hd}$ is an angle.  A control consists of a pair $(s, \eta)$ where $s$ is a distance of displacement and $\eta$ is a change in angle.  Write $u(\theta) = (\cos\theta, \sin\theta)$ for the unit vector in the direction $\theta$.  We are given a "world" $w$ and "motion settings" parameters $\nu = (\nu_\text p, \nu_\text{hd})$.
 #
-# The models `start_pose_prior` and `step_model` correspond to distributions over their traces, respectively written $\text{start}$ and $\text{step}$.  In both cases these traces consist of the choices at addresses `:p` and `:hd`, so they may be identified with poses $z$ as above.  The distributions are defined as follows, when $y$ is a pose:
+# The models and `step_proposal` correspond to distributions over their traces, respectively written $\text{start}$ and $\text{step}$.  In both cases these traces consist of the choices at addresses `:p` and `:hd`, so they may be identified with poses $z$ as above.  The distributions are defined as follows, when $y$ is a pose:
 # * $z \sim \text{start}(y, \nu)$ means that $z_\text p \sim \text{mvnormal}(y_\text p, \nu_\text p^2 I)$ and $z_\text{hd} \sim \text{normal}(y_\text{hd}, \nu_\text{hd})$ independently.
 # * $z \sim \text{step}(y, (s, \eta), w, \nu)$ means that $z_\text p \sim \text{mvnormal}(y_\text p + s\,u(y_\text{hd}), \nu_\text p^2 I)$ and $z_\text{hd} \sim \text{normal}(y_\text{hd} + \eta, \nu_\text {hd})$ independently.
 #
@@ -700,26 +698,19 @@ trace.project(key, S["p"] | S["hd"])
 
 @genjax.gen
 def path_model_start(robot_inputs, motion_settings):
-    return start_pose_prior(robot_inputs["start"], motion_settings) @ (
+    return start_pose_prior(motion_settings, robot_inputs["start"]) @ (
         "initial",
         "pose",
     )
 
 @genjax.gen
 def path_model_step(motion_settings, previous_pose, control):
-    return step_model(previous_pose, control, motion_settings) @ (
+    return step_proposal(motion_settings, previous_pose, control) @ (
         "steps",
         "pose",
     )
 
-
-def gen_partial(gen_fn, closed_over):
-    @genjax.gen
-    def inner(*args):
-        return gen_fn.inline(closed_over, *args)
-    return inner
-
-path_model = gen_partial(path_model_step, default_motion_settings).accumulate()
+path_model = path_model_step.partial_apply(default_motion_settings).accumulate()
 
 # TODO(colin,huebert): talk about accumulate, what it does, and _why_ from the point of view of acceleration. This is the flow control modification we were hinting at above, and it constrains the step function to have the two-argument signature that it does, which is why we reached for `partial` in the first place. Emphasize that this small bit of preparation allows massively parallel execution on a GPU and so it's worth the hassle.
 
@@ -727,14 +718,14 @@ key, sub_key1, sub_key2 = jax.random.split(key, 3)
 initial_pose = path_model_start.simulate(
     sub_key1, (robot_inputs, default_motion_settings)
 )
-step_model.simulate(
+step_proposal.simulate(
     sub_key2,
     (
+        default_motion_settings,
         initial_pose.get_retval(),
         robot_inputs["controls"][0],
-        default_motion_settings,
     ),
-)
+).get_choices()
 
 # %%
 
@@ -819,7 +810,7 @@ Plot.Frames(
 
 key, sub_key = jax.random.split(key)
 trace = start_pose_prior.simulate(
-    sub_key, (robot_inputs["start"], default_motion_settings)
+    sub_key, (default_motion_settings, robot_inputs["start"])
 )
 key, sub_key = jax.random.split(key)
 rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
@@ -922,7 +913,7 @@ def plot_sensors(pose: Pose, readings):
         pose.rotate(angle).step_along(s) for angle, s in zip(sensor_angles, readings)
     ]
 
-    return (
+    return [
         Plot.line(
             [(x, y, i) for i, p in enumerate(projections) for x, y in [pose.p, p.p]],
             stroke=Plot.constantly("sensor rays")
@@ -935,7 +926,7 @@ def plot_sensors(pose: Pose, readings):
             )
         ],
         Plot.color_map({"sensor rays": "rgba(0,0,0,0.1)", "sensor readings": "#f80"}),
-    )
+    ]
 
 
 world_plot + plot_sensors(
@@ -1027,32 +1018,27 @@ animate_path_with_sensor(path, readings)
 #
 # We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
 # %%
+@genjax.gen
+def full_model_initial(motion_settings):
+    pose = start_pose_prior(motion_settings, robot_inputs["start"]) @ "pose"
+    sensor_model(pose, sensor_angles) @ "sensor"
+    return pose
 
-def make_full_model(motion_settings):
-    @genjax.gen
-    def full_model_initial():
-        pose = start_pose_prior(robot_inputs["start"], motion_settings) @ "pose"
-        sensor_model(pose, sensor_angles) @ "sensor"
-        return pose
+@genjax.gen
+def full_model_kernel(motion_settings, state, control):
+    pose = step_proposal(motion_settings, state, control) @ "pose"
+    sensor_model(pose, sensor_angles) @ "sensor"
+    return pose, pose
 
-    @genjax.gen
-    def full_model_kernel(state, control):
-        pose = step_model(state, control, motion_settings) @ "pose"
-        sensor_model(pose, sensor_angles) @ "sensor"
-        return pose, pose
-
-    @genjax.gen
-    def full_model():
-        initial = full_model_initial() @ "initial"
-        return full_model_kernel.scan(n=T)(initial, robot_inputs["controls"]) @ "steps"
-
-    return full_model
+@genjax.gen
+def full_model(motion_settings):
+    initial = full_model_initial(motion_settings) @ "initial"
+    return full_model_kernel.partial_apply(motion_settings).scan(n=T)(initial, robot_inputs["controls"]) @ "steps"
 
 def get_path(trace):
     p = trace.get_subtrace(("initial",)).get_retval()
     ps = trace.get_retval()[1]
     return ps.prepend(p)
-
 
 def get_sensors(trace):
     ch = trace.get_choices()
@@ -1061,9 +1047,8 @@ def get_sensors(trace):
         ch["steps", ..., "sensor", ..., "distance"]
     ))
 
-default_full_model = make_full_model(default_motion_settings)
 key, sub_key = jax.random.split(key)
-tr = default_full_model.simulate(sub_key, ())
+tr = full_model.simulate(sub_key, (default_motion_settings,))
 
 pz.ts.display(tr)
 # %%
@@ -1083,7 +1068,7 @@ pz.ts.display(tr)
 # %%
 
 key, sub_key = jax.random.split(key)
-tr = default_full_model.simulate(sub_key, ())
+tr = full_model.simulate(sub_key, (default_motion_settings,))
 
 
 def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
@@ -1099,10 +1084,7 @@ def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
 def animate_full_trace(trace, frame_key=None):
     path = get_path(trace)
     readings = get_sensors(trace)
-    # since we use make_full_model to curry motion_settings around the scan combinator,
-    # that object will not be in the outer trace's argument list; but we can be a little
-    # crafty and find it at a lower level.
-    motion_settings = trace.get_subtrace(('initial',)).get_subtrace(('pose',)).get_args()[1]
+    motion_settings = trace.get_args()[0]
     return animate_path_and_sensors(path, readings, motion_settings, frame_key=frame_key)
 
 
@@ -1119,12 +1101,9 @@ motion_settings_low_deviation = {
 }
 key, k_low, k_high = jax.random.split(key, 3)
 
-low_deviation_model = make_full_model(motion_settings_low_deviation)
-trace_low_deviation = low_deviation_model.simulate(k_low, ())
-
+trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
 motion_settings_high_deviation = {"p_noise": 0.25, "hd_noise": 2 * jnp.pi / 360}
-high_deviation_model = make_full_model(motion_settings_high_deviation)
-trace_high_deviation = high_deviation_model.simulate(k_high, ())
+trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation,))
 
 animate_full_trace(trace_low_deviation)
 # %%
@@ -1167,9 +1146,8 @@ def animate_bare_sensors(path, plot_base=[]):
     def frame(pose, readings1, readings2):
         def plt(readings):
             return Plot.new(
-                plot_base,
+                plot_base or Plot.domain([0, 20]),
                 plot_sensors(pose, readings),
-                Plot.domain([0, 20]),
                 {"width": 400, "height": 400},
             )
 
@@ -1190,7 +1168,9 @@ animate_bare_sensors(itertools.repeat(world["center_point"]))
 # The path obtained by integrating the controls serves as a proposal for the true path, but it is unsatisfactory, especially in the high motion deviation case. The picture gives an intuitive sense of the fit:
 # %%
 
-animate_bare_sensors(path_integrated, walls_plot)
+animate_bare_sensors(path_integrated, world_plot)
+# %%
+world_plot + plot_sensors(robot_inputs['start'], observations_low_deviation[0])
 # %% [markdown]
 # It would seem that the fit is reasonable in low motion deviation, but really breaks down in high motion deviation.
 #
@@ -1204,16 +1184,15 @@ animate_bare_sensors(path_integrated, walls_plot)
 # Given a choice map of *constraints* that declare fixed values of some of the primitive choices, the operation `importance` proposes traces of the generative function that are consistent with these constraints.
 
 # %%
-low_deviation_importance = jax.jit(low_deviation_model.importance)
-high_deviation_importance = jax.jit(high_deviation_model.importance)
+model_importance = jax.jit(full_model.importance)
 
 key, sub_key = jax.random.split(key)
-sample, log_weight = low_deviation_importance(sub_key, constraints_low_deviation, ())
+sample, log_weight = model_importance(sub_key, constraints_low_deviation, (motion_settings_low_deviation,))
 
 animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # %%
 key, sub_key = jax.random.split(key)
-sample, log_weight = high_deviation_importance(sub_key, constraints_high_deviation, ())
+sample, log_weight = model_importance(sub_key, constraints_high_deviation, (motion_settings_high_deviation,))
 animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # %% [markdown]
 # A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key situational difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
@@ -1251,10 +1230,6 @@ animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # In words, the data are incongruously unlikely for the integrated path.  The (log) density of the measurement data, given the integrated path...
 
 # %%
-path_integrated
-sample.get_choices()
-constraints_path_integrated = C[""]
-
 def constraint_from_path(path):
 
     c_ps = jax.vmap(
@@ -1275,9 +1250,9 @@ constraints_path_integrated_observations_low_deviation = constraints_path_integr
 constraints_path_integrated_observations_high_deviation = constraints_path_integrated ^ constraints_high_deviation
 
 key, sub_key = jax.random.split(key)
-trace_path_integrated_observations_low_deviation, w_low = low_deviation_importance(sub_key, constraints_path_integrated_observations_low_deviation, ())
+trace_path_integrated_observations_low_deviation, w_low = model_importance(sub_key, constraints_path_integrated_observations_low_deviation, (motion_settings_low_deviation,))
 key, sub_key = jax.random.split(key)
-trace_path_integrated_observations_high_deviation, w_high = high_deviation_importance(sub_key, constraints_path_integrated_observations_high_deviation, ())
+trace_path_integrated_observations_high_deviation, w_high = model_importance(sub_key, constraints_path_integrated_observations_high_deviation, (motion_settings_high_deviation,))
 
 w_low, w_high
 # TODO: Jay then does two projections to compare the log-weights of these two things,
@@ -1309,9 +1284,9 @@ N_samples = 200
 
 key, sub_key = jax.random.split(key)
 
-traces_generated_low_deviation, low_weights = jax.vmap(low_deviation_importance, in_axes=(0, None, None))(jax.random.split(sub_key, N_samples), constraints_low_deviation, ())
+traces_generated_low_deviation, low_weights = jax.vmap(model_importance, in_axes=(0, None, None))(jax.random.split(sub_key, N_samples), constraints_low_deviation, (motion_settings_low_deviation,))
 
-traces_generated_high_deviation, high_weights = jax.vmap(high_deviation_importance, in_axes=(0, None, None))(jax.random.split(sub_key, N_samples), constraints_high_deviation, ())
+traces_generated_high_deviation, high_weights = jax.vmap(model_importance, in_axes=(0, None, None))(jax.random.split(sub_key, N_samples), constraints_high_deviation, (motion_settings_high_deviation,))
 
 # low_weights, high_weights
 # two histograms
@@ -1411,9 +1386,9 @@ Plot.new(world_plot,
 # %%
 categorical_sampler = jax.jit(genjax.categorical.sampler)
 
-def resample(key: PRNGKey, constraints: genjax.ChoiceMap, importance_model, N: int, K: int):
+def resample(key: PRNGKey, constraints: genjax.ChoiceMap, motion_settings, N: int, K: int):
     key1, key2 = jax.random.split(key)
-    samples, log_weights = jax.vmap(importance_model, in_axes=(0, None, None))(jax.random.split(key1, N*K), constraints, ())
+    samples, log_weights = jax.vmap(model_importance, in_axes=(0, None, None))(jax.random.split(key1, N*K), constraints, (motion_settings,))
     winners = jax.vmap(categorical_sampler)(jax.random.split(key2, K), jnp.reshape(log_weights, (K, N)))
     # indices returned are relative to the start of the K-segment from which they were drawn.
     # globalize the indices by adding back the index of the start of each segment.
@@ -1422,9 +1397,9 @@ def resample(key: PRNGKey, constraints: genjax.ChoiceMap, importance_model, N: i
     return selected
 
 key, sub_key = jax.random.split(key)
-low_posterior = resample(sub_key, constraints_low_deviation, low_deviation_importance, 2000, 20)
+low_posterior = resample(sub_key, constraints_low_deviation, motion_settings_low_deviation, 2000, 20)
 key, sub_key = jax.random.split(key)
-high_posterior = resample(sub_key, constraints_high_deviation, high_deviation_importance, 2000, 20)
+high_posterior = resample(sub_key, constraints_high_deviation, motion_settings_high_deviation, 2000, 20)
 
 # %%
 
@@ -1523,50 +1498,38 @@ plot_traces(drifted_traces)
 # %% [markdown]
 # We can see some improvement in the density of the paths selected. It's possible to imagine improving the search by repeating this drift process on all of the samples retured by the original importance sample. But we must face one important fact: we have used acceleration to improve what amounts to a brute-force search. The next inference step should take advantage of the information we have about the control steps, iteratively improving the path from the starting point, combining the control step and sensor data information to refine the selection of each step as it is made.
 
-# %%
-# Let's approach the problem step by step instead of trying to infer the whole path.
-# For each given pose, we will use the sensor data to propose a refinement.
-
-@genjax.gen
-def perturb_pose(pose: Pose, motion_settings):
-    d_p = jnp.array((
-        genjax.normal(0.0, motion_settings['p_noise']) @ 'd_x',
-        genjax.normal(0.0, motion_settings['p_noise']) @ 'd_y'
-    ))
-    d_hd = genjax.normal(0.0, motion_settings['hd_noise']) @ 'd_hd'
-    return Pose(pose.p + d_p, pose.hd + d_hd)
-
-@genjax.gen
-def perturb_model(pose: Pose, motion_settings):
-    p1 = perturb_pose(pose, motion_settings) @ 'pose'
-    _ = sensor_model(p1, sensor_angles) @ 'sensor'
-    return p1
-
 # %% [markdown]
+# Let's approach the problem step by step instead of trying to infer the whole path.
 # To get started we'll work with the initial point, and then improve it. Once that's done,
 # we can chain together such improved moves to hopefully get a better inference of the
 # actual path.
 
 # %%
 key, sub_key = jax.random.split(key)
-p0 = start_pose_prior.simulate(sub_key, (robot_inputs['start'], motion_settings_low_deviation))
+p0 = start_pose_prior.simulate(sub_key, (motion_settings_low_deviation, robot_inputs['start']))
 key, sub_key = jax.random.split(key)
-tr_p0 = jax.vmap(perturb_model.simulate, in_axes=(0, None))(jax.random.split(sub_key, 100), (p0.get_retval(), motion_settings_low_deviation))
+tr_p0 = jax.vmap(full_model_kernel.simulate, in_axes=(0, None))(
+    jax.random.split(sub_key, 100),
+    (motion_settings_low_deviation, p0.get_retval(), robot_inputs['controls'][0])
+)
 # %% [markdown]
 # Create a choicemap that will enforce the given sensor observation
 
-def observation_to_choicemap(observation):
-    return C['sensor', jnp.arange(len(observation)), 'distance'].set(observation)
+def observation_to_choicemap(observation, pose=None):
+    sensor_cm = C['sensor', jnp.arange(len(observation)), 'distance'].set(observation)
+    pose_cm = C['pose', 'p'].set(pose.p) + C['pose', 'hd'].set(pose.hd) if pose is not None else C.n()
+    return sensor_cm + pose_cm
+
 # %% [markdown]
 # The first thing we'll try is a Boltzmann update: generate a cloud of nearby points
 # using the generative function we wrote, and weightedly select a replacement from that.
 # First, let's generate the cloud and visualize it.
 # %%
-def boltzmann_sample(key: PRNGKey, N: int, pose: Pose, motion_settings, observations):
-    return jax.vmap(perturb_model.importance, in_axes=(0, None, None))(
+def boltzmann_sample(key: PRNGKey, N: int, gf, observation):
+    return jax.vmap(gf.importance, in_axes=(0, None, None))(
         jax.random.split(key, N),
-        observation_to_choicemap(observations),
-        (pose, motion_settings)
+        observation_to_choicemap(observation),
+        ()
     )
 
 def small_pose_plot(p: Pose, **opts):
@@ -1594,9 +1557,15 @@ def weighted_small_pose_plot(target, poses, ws):
                 "width": 400,
                 "aspectRatio": 1
             })
+# %% [markdown]
+# For the first step we use the full_model_initial generative function. Subsequent steps
+# will use the full_model_kernel. In the case of the initial step, we have:
+# - the true initial position of the robot in <span style="color:green;">green</span>
+# - the robot's belief about its initial position in <span style="color:red;">red</span>
+# - a cloud of possible updates conditioned on the sensor data in shades of <span style="color:purple;">purple</span>
 key, sub_key = jax.random.split(key)
-bs = boltzmann_sample(sub_key, 1000, p0.get_retval(), motion_settings_low_deviation, observations_low_deviation[0])
-weighted_small_pose_plot(p0.get_retval(), bs[0].get_retval(), bs[1])
+bs = boltzmann_sample(sub_key, 1000, full_model_initial(motion_settings_low_deviation), observations_low_deviation[0])
+weighted_small_pose_plot(path_low_deviation[0], bs[0].get_retval(), bs[1])
 # %% [markdown]
 # Develop a function which will produce a grid of evenly spaced nearby poses given
 # an initial pose. $n$ is the number of steps to take in each cardinal direction
@@ -1616,16 +1585,15 @@ def grid_of_nearby_poses(p, n, motion_settings):
     return Pose(jnp.repeat(p.p + grid, n_indices, axis=0), jnp.tile(p.hd + headings, n_indices * n_indices))
 # %%
 cube_step_size = 8
-pose_grid = grid_of_nearby_poses(p0.get_retval(), cube_step_size, motion_settings_low_deviation)
-@genjax.gen
-def assess_model(p):
-    sensor_model(p, sensor_angles) @ 'sensor'
-    return p
+pose_grid = grid_of_nearby_poses(path_low_deviation[0], cube_step_size, motion_settings_low_deviation)
 # %%
 key, sub_key = jax.random.split(key)
-model_assess = jax.jit(assess_model.assess)
-assess_scores, assess_retvals = jax.vmap(lambda k, p: model_assess(k, (p,)), in_axes=(None, 0))(observation_to_choicemap(observations_low_deviation[0]), pose_grid)
-#assess_scores, assess_retvals = jax.vmap(lambda p: sensor_model.assess(cm, (p, sensor_angles)))(pose_grid)
+assess_scores, assess_retvals = jax.vmap(
+    lambda p: full_model_initial.assess(
+        observation_to_choicemap(observations_low_deviation[0], path_low_deviation[0]),
+        (motion_settings_low_deviation, p, robot_inputs['controls'][0])
+    ))(pose_grid)
+
 # %%
 # Our grid of nearby poses is actually a cube when we take into consideration the
 # heading deltas. In order to get a 2d density, we decide to flatten the cube by
@@ -1644,21 +1612,13 @@ def flatten_pose_cube(n, poses, scores):
                 heading_groups[jnp.arange(len(heading_groups)), best]),
                 score_groups[jnp.arange(len(score_groups)), best])
 
-# %%
-#sensor_model.assess(cm, (pose_grid[0], sensor_angles))
-#sensor_model.simulate(sub_key, (pose_grid[0], sensor_angles))
-#sensor_model.importance(sub_key, observations_to_choicemap(observations_low_deviation, 0), (pose_grid[0], sensor_angles))
-
-# Since the above calls work...
-# I think this ought to work, but doesn't! TODO: find a minimal repro and file an issue
-#sensor_model.assess(cm, (pose_grid[0], sensor_angles))
 # %% [markdown]
 # Prepare a plot showing the density of nearby improvements available using the grid
 # search and importance sampling techniques.
 # %%
-assess_pose_plane, assess_score_plan = flatten_pose_cube(cube_step_size, assess_retvals, assess_scores)
-(weighted_small_pose_plot(p0.get_retval(), assess_retvals, assess_scores) &
- weighted_small_pose_plot(p0.get_retval(), bs[0].get_retval(), bs[1]))
+assess_pose_plane, assess_score_plan = flatten_pose_cube(cube_step_size, assess_retvals[0], assess_scores)
+(weighted_small_pose_plot(path_low_deviation[0], assess_retvals[0], assess_scores) &
+ weighted_small_pose_plot(path_low_deviation[0], bs[0].get_retval(), bs[1]))
 # %% [markdown]
 # Now let's try doing the whole path.  We want to produce something that is ultimately
 # scan-compatible, so it should have the form state -> update -> new_state. The state
@@ -1669,12 +1629,21 @@ def select_by_weight(key: PRNGKey, weights: FloatArray, things):
     chosen = jax.random.categorical(key, weights)
     return jax.tree.map(lambda v: v[chosen], things)
 
+# Step 1. retire assess_model and use full_model_kernel in both bz and grid improvers.
+# Step 2. add the [pose,weight] of `pose` to the vector sampled by select_by_weight in the bz case
+# Step 3. How is the weight computed for `pose` ?
+#         what we have now + correction term
+#         pose.weight = full_model_kernel.assess(p, (cm,))
+
 def improved_path(key: PRNGKey, motion_settings: dict, observations: FloatArray, mode: str):
 
     def boltzmann_improver(k: PRNGKey, pose, observation):
         k1, k2 = jax.random.split(k, 2)
         trs, ws = boltzmann_sample(k1, 1000, pose, motion_settings, observation)
-        return select_by_weight(k2, ws, trs.get_retval())
+        return select_by_weight(k2, ws ++ [pose.weight], trs.get_retval() ++ [pose])
+        # we need to have a possibility of rejecting the move and staying where we are
+        # that is proportional to the weight of the current position.
+        #
 
     def grid_search_improver(k: PRNGKey, pose, observation):
         choicemap = observation_to_choicemap(observation)
@@ -1690,7 +1659,7 @@ def improved_path(key: PRNGKey, motion_settings: dict, observations: FloatArray,
         improver = {"grid": grid_search_improver, "boltzmann": boltzmann_improver}[mode]
         p1 = improver(k1, pose, observation)
         # run the step model to advance one step
-        p2 = step_model.simulate(k2, (p1, control, motion_settings))
+        p2 = step_proposal.simulate(k2, (motion_settings, p1, control))
         return (p2.get_retval(), p1)
 
     # We have one fewer control than step, since no step got us to the initial position.
@@ -1700,10 +1669,10 @@ def improved_path(key: PRNGKey, motion_settings: dict, observations: FloatArray,
     controls = robot_inputs['controls'] + Control(jnp.array([0]), jnp.array([0]))
     n_steps = len(controls)
     sub_keys = jax.random.split(key, n_steps + 1)
-    p0 = start_pose_prior.simulate(sub_keys[0], (robot_inputs['start'], motion_settings)).get_retval()
+    p0 = start_pose_prior.simulate(sub_keys[0], (motion_settings, robot_inputs['start'])).get_retval()
     return jax.lax.scan(improve_pose_and_step, p0, (
-        observations,
-        controls,
+        observations, # observation at time t
+        controls,     # guides step from t to t+1
         sub_keys[1:]
     ))
 # %%
@@ -1738,3 +1707,45 @@ Plot.Row(
     animate_path_and_sensors(improved_high, observations_high_deviation, motion_settings_high_deviation, frame_key="frame"),
     animate_path_and_sensors(high_importance, observations_high_deviation, motion_settings_high_deviation, frame_key="frame")
 ) | Plot.Slider("frame", 0, T, fps=2)
+# %%
+@genjax.gen
+def f(params):
+    print(f'f({params})')
+    return genjax.normal(params['loc'], params['scale']) @ 'x'
+
+@genjax.gen
+def g(params):
+    print(f'g({params})')
+    return f(params) @ 'f'
+
+tr = f.simulate(key, ({'loc': 5.0, 'scale': 0.01},))
+# %%
+tr
+# %%
+key, sub_key = jax.random.split(key)
+tr.update(key, C['f','y'].set(99.0) + C['f','x'].set(5.05))
+# %%
+
+
+
+@genjax.gen
+def g(params, c, s):
+    dc = genjax.normal(c, params['s'] ** 2) @ 's'
+    return c + dc, None
+
+@genjax.gen
+def f(params):
+    return g.partial_apply(params).scan(n=3)(0.0, jnp.array([0.1, 0.2, 0.3])) @ "steps"
+
+key, sub_key = jax.random.split(key)
+args = ({'s': 10.0},)
+tr = f.simulate(sub_key, args) # works fine
+key, sub_key = jax.random.split(key)
+f.importance(sub_key, C['steps',1,'s'].set(99.0), args)  # works fine
+tr.update(sub_key, C['steps',1,'s'].set(99.0), genjax.Diff.no_change(args))
+
+
+
+
+
+# %%
