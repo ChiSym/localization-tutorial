@@ -2751,7 +2751,7 @@ observations_cluttered = get_sensors(trace_cluttered)
 constraints_cluttered = [constraint_from_sensors(o...) for o in enumerate(observations_cluttered)]
 
 ani = Animation()
-frames_cluttered = frames_from_full_trace(world, "Cluttered space", trace_cluttered; show_clutters=true)
+frames_cluttered = frames_from_full_trace(world, "Cluttered space", trace_cluttered; show=(:label, :clutters))
 for frame_plot in frames_cluttered[2:2:end]
     frame(ani, frame_plot)
 end
@@ -2771,7 +2771,7 @@ t1 = now()
 traces = [particle_filter_rejuv(full_model, T, full_model_args, constraints_cluttered, N_particles, ESS_threshold, drift_mh_kernel, drift_args_schedule) for _ in 1:N_samples]
 t2 = now()
 println("Time elapsed per run (backwards start): $(value(t2 - t1) / N_samples) ms.")
-frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", traces, "samples"; show_clutters=true)
+frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", traces, "samples"; show=(:clutters,))
 
 # %% [markdown]
 # We take up the task of accommodating a wider range of phenomena in our modeling and inference.
