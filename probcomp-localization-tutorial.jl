@@ -52,6 +52,7 @@ mkpath("imgs");
 struct Segment
     p1 :: Vector{Float64}
     p2 :: Vector{Float64}
+    # The quantity `p2-p1` is called upon in hot loops, so we cache it.
     dp :: Vector{Float64}
     Segment(p1 :: Vector{Float64}, p2 :: Vector{Float64}) = new(p1, p2, p2-p1)
 end
@@ -141,6 +142,7 @@ plot_world(world, "Given data", show=(:label, :clutters))
 struct Pose
     p  :: Vector{Float64}
     hd :: Float64
+    # The quantity `[cos(hd), sin(hd)]` is called upon in hot loops, so we cache it.
     dp :: Vector{Float64}
     Pose(p :: Vector{Float64}, hd :: Float64) = new(p, rem2pi(hd, RoundNearest), [cos(hd), sin(hd)])
 end
