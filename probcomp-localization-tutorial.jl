@@ -176,7 +176,7 @@ function solve_lines(p, u, q, v; PARALLEL_TOL=1.0e-10)
     if abs(det) < PARALLEL_TOL
         return nothing, nothing
     else
-        pq = p - q
+        pq = (p[1] - q[1], p[2] - q[2])
         s = det2(v, pq) / det
         t = det2(u, pq) / det
         return s, t
@@ -457,7 +457,7 @@ end;
 norm(v) = sqrt(sum(v.^2))
 
 function physical_step(p1, p2, hd, world_inputs)
-    p21 = p2 - p1
+    p21 = (p2[1] - p1[1], p2[2] - p1[2])
     step_pose = Pose(p1, atan(p21[2], p21[1]))
     s, i = findmin(w -> distance(step_pose, w), world_inputs.walls)
     if s > norm(p21)
