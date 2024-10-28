@@ -2394,8 +2394,8 @@ drift_args_schedule = [0.7^k for k=1:7]
 # Then try a more determined grid search.
 grid_n_points = [3, 3, 3]
 grid_sizes = [.5, .5, π/10]
-grid_args_schedule = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:3]
-grid_args_schedule_harder = [(grid_n_points, grid_sizes .* (2/3)^j) for j=0:6]
+grid_args_schedule = [(grid_n_points, grid_sizes * (2/3)^j) for j=0:3]
+grid_args_schedule_harder = [(grid_n_points, grid_sizes * (2/3)^j) for j=0:6]
 
 rejuv_schedule =
     [(drift_mh_kernel, drift_args_schedule),
