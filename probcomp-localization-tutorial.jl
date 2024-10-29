@@ -2797,3 +2797,32 @@ frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", tr
 # 4. Complete ignorance, embodied as a uniform distribution over the bounding box.
 #
 #
+
+# %% [markdown]
+# ## Goal inference
+#
+#
+
+# %% [markdown]
+# ### Discretization
+
+# %%
+function load_discretization(file_name)
+    data = parsefile(file_name)
+    rooms = Dict{String, Vector{Vector{Float64}}}(data["rooms"])
+    doorways = [(Tuple(sort(doorway["rooms"])), Vector{Float64}(doorway["p"])) for doorway in data["doorways"]]
+    return rooms, doorways
+end;
+
+# %%
+rooms, doorways = load_discretization("world_coarse.json");
+
+# %%
+the_plot = plot_world(world, "Discretization: rooms and doorways")
+for (i, (name, ps)) in enumerate(rooms)
+    plot!(Shape(first.(ps), last.(ps)); color=(i+1), label=nothing, markersize=3, markerstrokewidth=1)
+    midpoint = sum(ps)/length(ps)
+    annotate!(midpoint[1], midpoint[2], ("$name", :black))
+end
+plot!(first.(last.(doorways)), last.(last.(doorways)); seriestype=:scatter, color=:red, label=nothing, markersize=5, markerstrokewidth=1)
+the_plot
