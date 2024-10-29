@@ -2830,6 +2830,14 @@ for (task, (p, r)) in tasks
 end
 the_plot
 
+# %%
+@dist labeled_uniform(labels) = labels[uniform_discrete(1, length(labels))]
+@dist labeled_categorical(labels, probs) = labels[categorical(probs)]
+normalize_logprobs(lps) = lps .- logsumexp(lps);
+
+@gen goals_prior(goals) = {:goal} ~ labeled_uniform(goals)
+get_choices(simulate(goals_prior, (collect(keys(goals)),)))
+
 # %% [markdown]
 # ### Discretization
 
