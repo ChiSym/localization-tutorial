@@ -2804,6 +2804,33 @@ frame_from_traces(world, "Cluttered space", path_cluttered, "path to be fit", tr
 #
 
 # %% [markdown]
+# ### Goals
+
+# %%
+function load_goals(file_name)
+    data = parsefile(file_name)
+    tasks = Dict(
+        task => (Vector{Float64}(info["p"]), Float64(info["r"]))
+        for (task, info) in data["tasks"])
+    goals = Dict(
+        goal => Dict(
+            task => Set{String}(dependencies)
+            for (task, dependencies) in tasks)
+        for (goal, tasks) in data["goals"])
+    return tasks, goals
+end;
+
+# %%
+tasks, goals = load_goals("goals.json");
+
+# %%
+the_plot = plot_world(world, "Tasks")
+for (task, (p, r)) in tasks
+    plot!(make_circle(p, r); label=task, seriestype=:shape)
+end
+the_plot
+
+# %% [markdown]
 # ### Discretization
 
 # %%
