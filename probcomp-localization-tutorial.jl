@@ -2820,7 +2820,7 @@ rooms, doorways = load_discretization("world_coarse.json");
 # %%
 the_plot = plot_world(world, "Discretization: rooms and doorways")
 for (i, (name, ps)) in enumerate(rooms)
-    plot!(Shape(first.(ps), last.(ps)); color=(i+1), label=nothing, markersize=3, markerstrokewidth=1)
+    plot!(first.(ps), last.(ps); seriestype=:shape, color=(i+1), label=nothing, markersize=3, markerstrokewidth=1)
     midpoint = sum(ps)/length(ps)
     annotate!(midpoint[1], midpoint[2], ("$name", :black))
 end
