@@ -172,25 +172,19 @@ plot!(Pose([2., 3.], pi/2.); color=:green4, label="another pose")
 
 det2(u, v) = u[1] * v[2] - u[2] * v[1]
 
-# Return unique s, t such that p + s*u == q + t*v.
-function solve_lines(p, u, q, v; PARALLEL_TOL=1.0e-10)
-    det = det2(u, v)
-    if abs(det) < PARALLEL_TOL
-        return nothing, nothing
-    else
-        pq = (p[1] - q[1], p[2] - q[2])
-        s = det2(v, pq) / det
-        t = det2(u, pq) / det
-        return s, t
-    end
-end
+function distance(p :: Pose, seg :: Segment; PARALLEL_TOL=1.0e-10)
+    # Check if pose is parallel to segment.
+    det = det2(p.dp, seg.dp)
+    if abs(det) < PARALLEL_TOL; return Inf end
 
-function distance(p :: Pose, seg :: Segment)
-    s, t = solve_lines(p.p, p.dp, seg.p1, seg.dp)
-    # Solving failed (including, by fiat, if pose is parallel to segment) iff isnothing(s).
-    # Pose is oriented away from segment iff s < 0.
+    # Return unique s, t such that p.p + s * p.dp == seg.p1 + t * seg.dp.
+    pq = (p.p[1] - seg.p1[1], p.p[2] - seg.p1[2])
+    s = det2(seg.dp, pq) / det
+    t = det2(p.dp, pq) / det
+
+    # Pose is oriented towards from segment iff s >= 0.
     # Point of intersection lies on segment (as opposed to the infinite line) iff 0 <= t <= 1.
-    return (isnothing(s) || s < 0. || !(0. <= t <= 1.)) ? Inf : s
+    return (s >= 0. && 0. <= t <= 1.) ? s : Inf
 end;
 
 # %%
