@@ -2855,3 +2855,59 @@ for (i, (name, ps)) in enumerate(rooms)
 end
 plot!(first.(last.(doorways)), last.(last.(doorways)); seriestype=:scatter, color=:red, label=nothing, markersize=5, markerstrokewidth=1)
 the_plot
+
+# %%
+# Assumes the polygon is simple (no self-crossings).
+# Assumes `polygon` is an ordered list of points with first point repeated at the end.
+function point_in_polygon(point, polygon; PARALLEL_TOL=1.0e-10)
+    # Cast a ray from `point` in x-direction, and return whether ray intersects polygon exactly once.
+    crossed = 0
+    for (s1, s2) in zip(polygon[1:end-1], polygon[2:end])
+        det = s2[2] - s1[2]
+        s1p = (s1[1] - point[1], s1[2] - point[2])
+        s2p = (s2[1] - point[1], s2[2] - point[2])
+        if abs(det) < PARALLEL_TOL
+            # If segment is parallel to x-direction, check whether point lies on segment.
+            if (s1p[1] * s2p[1] <= 0) && (s1p[2] * s2p[2] <= 0); return true end
+        else
+            # Otherwise, test whether ray meets segment,
+            # and increment/decrement count according to crossing orientation.
+            s = det2(s1p, s2p) / det
+            t = -s1p[2] / det
+            if s >= 0. && (0 <= t <= 1.); crossed += (det > 0.) ? 1 : -1 end
+        end
+    end
+    return crossed == 1 || crossed == -1
+end
+
+function locate(p, rooms, doorways; DOORWAY_RADIUS=1.0)
+    for (name, ps) in rooms
+        if point_in_polygon(p, ps); return name end
+    end
+    nearest_doorway = argmin(((_, d),) -> sum((p - d).^2), doorways)
+    return norm(p - nearest_doorway[2]) < DOORWAY_RADIUS ? nearest_doorway : nothing
+end;
+
+# %%
+DOORWAY_RADIUS=1.0
+
+# some_poses = [Pose([uniform(world.bounding_box[1], world.bounding_box[2]),
+#                     uniform(world.bounding_box[3], world.bounding_box[4])],
+#                    uniform(-pi,pi))
+#               for _ in 1:20]
+
+ani = Animation()
+for (i, pose) in enumerate(some_poses)
+    frame_plot = plot_world(world, "Location discretization")
+    location = locate(pose.p, rooms, doorways; DOORWAY_RADIUS=DOORWAY_RADIUS)
+    if isnothing(location)
+        annotate!(world.center_point..., ("Not located", :red))
+    elseif isa(location, String)
+        plot!(first.(rooms[location]), last.(rooms[location]); seriestype=:shape, color=:green3, label="room $location", markersize=3, markerstrokewidth=1, alpha=0.25)
+    else
+        plot!(make_circle(location[2], DOORWAY_RADIUS); label="doorway between rooms $(location[1][1]) and $(location[1][2])", seriestype=:shape, alpha=0.25)
+    end
+    plot!(pose; label="pose $i", color=:green)
+    frame(ani, frame_plot)
+end
+gif(ani, "imgs/discretization.gif", fps=0.5)
