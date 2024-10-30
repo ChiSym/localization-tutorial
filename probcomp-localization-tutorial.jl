@@ -2891,13 +2891,8 @@ end;
 # %%
 DOORWAY_RADIUS=1.0
 
-# some_poses = [Pose([uniform(world.bounding_box[1], world.bounding_box[2]),
-#                     uniform(world.bounding_box[3], world.bounding_box[4])],
-#                    uniform(-pi,pi))
-#               for _ in 1:20]
-
 ani = Animation()
-for (i, pose) in enumerate(some_poses)
+for pose in some_poses
     frame_plot = plot_world(world, "Location discretization")
     location = locate(pose.p, rooms, doorways; DOORWAY_RADIUS=DOORWAY_RADIUS)
     if isnothing(location)
@@ -2907,7 +2902,7 @@ for (i, pose) in enumerate(some_poses)
     else
         plot!(make_circle(location[2], DOORWAY_RADIUS); label="doorway between rooms $(location[1][1]) and $(location[1][2])", seriestype=:shape, alpha=0.25)
     end
-    plot!(pose; label="pose $i", color=:green)
+    plot!(pose; label="pose", color=:green)
     frame(ani, frame_plot)
 end
 gif(ani, "imgs/discretization.gif", fps=0.5)
