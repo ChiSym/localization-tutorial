@@ -153,9 +153,15 @@ Plots.plot!(p :: Pose; r=0.5, args...) = plot!(Segment(p.p, p.p + r * p.dp); arr
 Plots.plot!(ps :: Vector{Pose}; args...) = plot_list!(ps; args...);
 
 # %%
+some_poses = [Pose([uniform(world.bounding_box[1], world.bounding_box[2]),
+                    uniform(world.bounding_box[3], world.bounding_box[4])],
+                   uniform(-pi,pi))
+              for _ in 1:20]
+
 plot_world(world, "Given data")
-plot!(Pose([1., 1.], 0.); color=:green3, label="a pose")
+plot!(Pose([1., 2.], 0.); color=:green3, label="a pose")
 plot!(Pose([2., 3.], pi/2.); color=:green4, label="another pose")
+plot!(some_poses; color=:brown, label="some poses")
 
 # %% [markdown]
 # POSSIBLE VIZ GOAL: user can manipulate a pose.  (Unconstrained vs. map for now.)
@@ -226,11 +232,6 @@ end;
 
 # %%
 sensor_settings = (fov = 2π*(2/3), num_angles = 41, box_size = world.box_size)
-
-some_poses = [Pose([uniform(world.bounding_box[1], world.bounding_box[2]),
-                    uniform(world.bounding_box[3], world.bounding_box[4])],
-                   uniform(-pi,pi))
-              for _ in 1:20]
 
 ani = Animation()
 for pose in some_poses
