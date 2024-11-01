@@ -2883,8 +2883,8 @@ function locate_discrete(p, rooms, doorways; DOORWAY_RADIUS=1.0)
     for (name, ps) in rooms
         if point_in_polygon(p, ps); return name end
     end
-    distance, i = findmin(((_, d),) -> norm(p - d), doorways)
-    return distance < DOORWAY_RADIUS ? doorways[i] : nothing
+    distance, door = findmin(v -> norm(p - v), doorways)
+    return distance < DOORWAY_RADIUS ? door : nothing
 end;
 
 # %%
