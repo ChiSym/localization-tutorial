@@ -94,6 +94,10 @@ world = load_world("world.json");
 # It is crucial to picture what we are doing at all times, so we develop plotting code early and often.
 
 # %%
+unit_circle_xs = [cos(t) for t in LinRange(0., 2pi, 500)]
+unit_circle_ys = [sin(t) for t in LinRange(0., 2pi, 500)]
+make_circle(p, r) = (p[1] .+ r * unit_circle_xs, p[2] .+ r * unit_circle_ys)
+
 function plot_list!(list; label=nothing, args...)
     if !isempty(list)
         plt = plot!(list[1]; label=label, args...)
@@ -523,11 +527,6 @@ end;
 
 # %% [markdown]
 # Returning to the code, we can call a GF like a normal function and it will just run stochastically:
-
-# %%
-unit_circle_xs = [cos(t) for t in LinRange(0., 2pi, 500)]
-unit_circle_ys = [sin(t) for t in LinRange(0., 2pi, 500)]
-make_circle(p, r) = (p[1] .+ r * unit_circle_xs, p[2] .+ r * unit_circle_ys);
 
 # %%
 motion_settings = (p_noise = 0.5, hd_noise = 2π / 360)
