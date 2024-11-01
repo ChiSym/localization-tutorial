@@ -2876,7 +2876,7 @@ function point_in_polygon(point, polygon; PARALLEL_TOL=1.0e-10)
             if s >= 0. && (0 <= t <= 1.); crossed += (det > 0.) ? 1 : -1 end
         end
     end
-    return crossed == 1 || crossed == -1
+    return crossed != 0
 end
 
 function locate(p, rooms, doorways; DOORWAY_RADIUS=1.0)
