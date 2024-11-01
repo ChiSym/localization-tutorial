@@ -892,11 +892,10 @@ get_selected(get_choices(trace), selection)
 # By this point, visualization is essential.
 
 # %%
-function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show_clutters=false)
+function frame_from_sensors_trace(world, title, poses, poses_color, poses_label, pose, trace; show=())
     readings = [trace[j => :distance] for j in 1:sensor_settings.num_angles]
     return frame_from_sensors(world, title, poses, poses_color, poses_label, pose,
-                             readings, "trace sensors", get_args(trace)[3];
-                             show_clutters=show_clutters)
+                             readings, "trace sensors", get_args(trace)[3]; show=show)
 end
 
 function frames_from_full_trace(world, title, trace; show=())
