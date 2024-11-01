@@ -2835,10 +2835,12 @@ get_choices(simulate(goals_prior, (collect(keys(goals)),)))
 # ### Discretization
 
 # %%
+sort2(a, b) = (a <= b) ? (a, b) : (b, a)
+
 function load_discretization(file_name)
     data = parsefile(file_name)
     rooms = Dict{String, Vector{Vector{Float64}}}(data["rooms"])
-    doorways = [(Tuple(sort(doorway["rooms"])), Vector{Float64}(doorway["p"])) for doorway in data["doorways"]]
+    doorways = Dict{Tuple{String, String}, Vector{Float64}}(sort2(doorway["rooms"]...) => Vector{Float64}(doorway["p"]) for doorway in data["doorways"])
     return rooms, doorways
 end;
 
@@ -2852,7 +2854,7 @@ for (i, (name, ps)) in enumerate(rooms)
     midpoint = sum(ps)/length(ps)
     annotate!(midpoint[1], midpoint[2], ("$name", :black))
 end
-plot!(first.(last.(doorways)), last.(last.(doorways)); seriestype=:scatter, color=:red, label=nothing, markersize=5, markerstrokewidth=1)
+plot!(first.(values(doorways)), last.(values(doorways)); seriestype=:scatter, color=:red, label=nothing, markersize=5, markerstrokewidth=1)
 the_plot
 
 # %%
@@ -2899,7 +2901,7 @@ for pose in some_poses
     elseif isa(location, String)
         plot!(first.(rooms[location]), last.(rooms[location]); seriestype=:shape, color=:green3, label="room $location", markersize=3, markerstrokewidth=1, alpha=0.25)
     else
-        plot!(make_circle(location[2], DOORWAY_RADIUS); label="doorway between rooms $(location[1][1]) and $(location[1][2])", seriestype=:shape, alpha=0.25)
+        plot!(make_circle(doorways[location], DOORWAY_RADIUS); label="doorway between rooms $(location[1]) and $(location[2])", seriestype=:shape, alpha=0.25)
     end
     plot!(pose; label="pose", color=:green)
     frame(ani, frame_plot)
