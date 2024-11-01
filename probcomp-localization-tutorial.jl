@@ -2884,8 +2884,8 @@ function locate(p, rooms, doorways; DOORWAY_RADIUS=1.0)
     for (name, ps) in rooms
         if point_in_polygon(p, ps); return name end
     end
-    nearest_doorway = argmin(((_, d),) -> sum((p - d).^2), doorways)
-    return norm(p - nearest_doorway[2]) < DOORWAY_RADIUS ? nearest_doorway : nothing
+    distance, i = findmin(((_, d),) -> norm(p - d), doorways)
+    return distance < DOORWAY_RADIUS ? doorways[i] : nothing
 end;
 
 # %%
