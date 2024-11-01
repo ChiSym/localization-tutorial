@@ -2906,4 +2906,4 @@ for pose in some_poses
     plot!(pose; label="pose", color=:green)
     frame(ani, frame_plot)
 end
-gif(ani, "imgs/discretization.gif", fps=0.5)
+gif(ani, "imgs/discretization.gif", fps=1)
