@@ -2879,7 +2879,7 @@ function point_in_polygon(point, polygon; PARALLEL_TOL=1.0e-10)
     return crossed != 0
 end
 
-function locate(p, rooms, doorways; DOORWAY_RADIUS=1.0)
+function locate_discrete(p, rooms, doorways; DOORWAY_RADIUS=1.0)
     for (name, ps) in rooms
         if point_in_polygon(p, ps); return name end
     end
@@ -2893,7 +2893,7 @@ DOORWAY_RADIUS=1.0
 ani = Animation()
 for pose in some_poses
     frame_plot = plot_world(world, "Location discretization")
-    location = locate(pose.p, rooms, doorways; DOORWAY_RADIUS=DOORWAY_RADIUS)
+    location = locate_discrete(pose.p, rooms, doorways; DOORWAY_RADIUS=DOORWAY_RADIUS)
     if isnothing(location)
         annotate!(world.center_point..., ("Not located", :red))
     elseif isa(location, String)
