@@ -2818,8 +2818,8 @@ tasks, goals = load_goals("goals.json");
 
 # %%
 the_plot = plot_world(world, "Tasks")
-for (task, (p, r)) in tasks
-    plot!(make_circle(p, r); label=task, seriestype=:shape)
+for (task, geom) in tasks
+    plot!(make_circle(geom...); label=task, seriestype=:shape)
 end
 the_plot
 
