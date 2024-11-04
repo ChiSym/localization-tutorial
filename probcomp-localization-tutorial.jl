@@ -2841,17 +2841,21 @@ function load_discretization(file_name)
     data = parsefile(file_name)
     rooms = Dict{String, Vector{Vector{Float64}}}(data["rooms"])
     doorways = Dict{Tuple{String, String}, Vector{Float64}}(sort2(doorway["rooms"]...) => Vector{Float64}(doorway["p"]) for doorway in data["doorways"])
-    return rooms, doorways
+    midpoints = Dict{Union{String, Tuple{String, String}}, Vector{Float64}}(doorways)
+    for (name, ps) in rooms
+        push!(midpoints, name => sum(ps)/length(ps))
+    end
+    return rooms, doorways, midpoints
 end;
 
 # %%
-rooms, doorways = load_discretization("world_coarse.json");
+rooms, doorways, midpoints = load_discretization("world_coarse.json");
 
 # %%
 the_plot = plot_world(world, "Discretization: rooms and doorways")
 for (i, (name, ps)) in enumerate(rooms)
     plot!(first.(ps), last.(ps); seriestype=:shape, color=(i+1), label=nothing, markersize=3, markerstrokewidth=1)
-    midpoint = sum(ps)/length(ps)
+    midpoint = midpoints[name]
     annotate!(midpoint[1], midpoint[2], ("$name", :black))
 end
 plot!(first.(values(doorways)), last.(values(doorways)); seriestype=:scatter, color=:red, label=nothing, markersize=5, markerstrokewidth=1)
