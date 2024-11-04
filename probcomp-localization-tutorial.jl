@@ -2921,70 +2921,61 @@ task_locations = Dict(
     for (task, (p, _)) in tasks)
 
 # %%
-function location_to_room(location, destination_room, rooms, doorways)
-    if isnothing(location)
-        return nothing
-    elseif isa(location, String)
-        # Breadth-first search for path
-        paths = [[location]]
-        visited = Set((location,))
-        while !isempty(paths)
-            found = findfirst(path -> path[end] == destination_room, paths)
-            if !isnothing(found); return paths[found] end
-            new_paths = []
-            for new_room in filter(!in(visited), keys(rooms))
-                for path in filter(path -> sort2(path[end], new_room) in keys(doorways), paths)
+function location_to_location(start, dest, rooms, doorways)
+    if isnothing(start) || isnothing(dest); return nothing end
+    if start == dest; return [start] end
+    # Breadth-first search for path
+    paths, visited = isa(start, String) ?
+        ( [[start]], Set((start,)) ) :
+        ( [[start, start[1]], [start, start[2]]], Set(start) )
+    dests = isa(dest, String) ? (dest,) : dest
+    while !isempty(paths)
+        found = findfirst(path -> path[end] in dests, paths)
+        if !isnothing(found)
+            return isa(dest, String) ? paths[found] : vcat(paths[found], dests)
+        end
+        new_paths = []
+        for new_room in filter(!in(visited), keys(rooms))
+            for path in paths
+                maybe_doorway = sort2(path[end], new_room)
+                if maybe_doorway in keys(doorways)
                     push!(visited, new_room)
-                    push!(new_paths, vcat(path, new_room))
+                    push!(new_paths, vcat(path, maybe_doorway, new_room))
                 end
             end
-            paths = new_paths
         end
-        return nothing
-    else
-        paths = [location_to_room(branch, destination_room, rooms, doorways) for branch in location]
-        return isnothing(paths[1]) && isnothing(paths[2]) ? nothing :
-               isnothing(paths[1]) ? vcat(location, paths[2]) :
-               isnothing(paths[2]) ? vcat(location, paths[1]) :
-               length(paths[1]) <= length(paths[2]) ?
-                    vcat(location, paths[1]) : vcat(location, paths[2])
+        paths = new_paths
     end
+    return nothing
 end;
 
 # %%
-location_to_room(task_locations["task1"], task_locations["task2"], rooms, doorways)
-
-# %%
 ani = Animation()
-for pose in some_poses
-    location = locate_discrete(pose.p, rooms, doorways)
-    if isnothing(location)
-        frame_plot = plot_world(world, "Location discretization")
-        annotate!(world.center_point..., ("Not located", :red))
-        plot!(pose; label="pose", color=:green)
+for (start, dest) in Iterators.product(some_poses, some_poses)
+    start_loc = locate_discrete(start.p, rooms, doorways)
+    dest_loc = locate_discrete(dest.p, rooms, doorways)
+    path = location_to_location(start_loc, dest_loc, rooms, doorways)
+    if isnothing(path)
+        frame_plot = plot_world(world, "Coarse planning")
+        annotate!(world.center_point..., ("Route not found", :red))
+        plot!([start, dest]; label="poses", color=:green)
         frame(ani, frame_plot)
-        else
-        for task in keys(tasks)
-            frame_plot = plot_world(world, "Location discretization")
-            path = location_to_room(location, task_locations[task], rooms, doorways)
-            if isnothing(path)
-                annotate!(world.center_point..., ("Routing fail", :red))
+    else
+        frame_plot = plot_world(world, "Coarse planning")
+        for node in path
+            if isa(node, String)
+                plot!(first.(rooms[node]), last.(rooms[node]); seriestype=:shape, color=:green3, label="room $node", markersize=3, markerstrokewidth=1, alpha=0.25)
             else
-                # annotate!(world.center_point..., ("$path", :blue))
-                for node in path
-                    if isa(node, String)
-                        plot!(first.(rooms[node]), last.(rooms[node]); seriestype=:shape, color=:green3, label="room $node", markersize=3, markerstrokewidth=1, alpha=0.25)
-                    else
-                        plot!([doorways[node][1]], [doorways[node][2]]; seriestype=:scatter, color=:red, label="doorway", markersize=5, markerstrokewidth=1)
-                    end
-                end
+                plot!([doorways[node][1]], [doorways[node][2]]; seriestype=:scatter, color=:red, label="doorway $node", markersize=5, markerstrokewidth=1)
             end
-            plot!(make_circle(tasks[task]...); label=task, seriestype=:shape)
-            plot!(pose; label="pose", color=:green)
-            frame(ani, frame_plot)
         end
+        plot!([start, dest]; label="poses", color=:green)
+        frame(ani, frame_plot)
     end
 end
-gif(ani, "imgs/discretization.gif", fps=1)
+gif(ani, "imgs/coarse_planning.gif", fps=2)
+
+# %% [markdown]
+# ### Fine planning
 
 # %%
