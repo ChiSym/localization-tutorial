@@ -1760,8 +1760,8 @@ def improved_path(
         # return values, to create the possibility of accepting the initial proposal
         # as well as any of the improvement candidates, as Bayesian inference requires
         weights, poses = improver(k2, gf, new_pose, observation)
-        #weights = jnp.append(weights, tr.get_score())
-        #poses = Pose(jnp.vstack(poses.p, new_pose.p), jnp.append(poses.hd, new_pose.hd))
+        # weights = jnp.append(weights, tr.get_score())
+        # poses = Pose(jnp.vstack(poses.p, new_pose.p), jnp.append(poses.hd, new_pose.hd))
         chosen_pose = select_by_weight(k3, weights, poses)
         return chosen_pose, chosen_pose
 
@@ -1781,6 +1781,7 @@ def improved_path(
             sub_keys[1:],
         ),
     )
+
 
 jit_improved_path = jax.jit(improved_path, static_argnums=0)
 
