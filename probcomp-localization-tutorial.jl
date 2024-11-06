@@ -2979,3 +2979,55 @@ gif(ani, "imgs/coarse_planning.gif", fps=2)
 # ### Fine planning
 
 # %%
+function next_step_to_point(pose, target, fine_planning_settings)
+    dv = target - pose.p
+    ds = norm(dv)
+    if ds < fine_planning_settings.arrival_radius; return Control(0.0, 0.0) end
+    dhd = acos(clamp(sum(dv .* pose.p)/ds, -1., 1.))
+    if dhd >= fine_planning_settings.good_dhd; return Control(0.0, min(dhd, fine_planning_settings.max_dhd)) end
+    return Control(min(ds, fine_planning_settings.max_ds), 0.0)
+end
+
+function next_step_along_path(pose, path, dest, midpoints, fine_planning_settings)
+    if isnothing(path); return nothing end
+    target = length(path) == 1 ? dest : midpoints[path[2]]
+    return next_step_to_point(pose, target, fine_planning_settings)
+end;
+
+# %%
+# Currently just a sketch!
+# * functions aren't real
+# * does not maintain traces of the full path and accumulated control sets
+
+function simulate_strategy(start_pose, dest,
+        rooms, doorways, midpoints,
+        motion_settings, sensor_settings, fine_planning_settings)
+    # sample true pose, observations (start)
+    pose_true, sensors = start_sensor_model(start_pose, motion_settings, sensor_settings)
+    # infer where you are (start)
+    pose_belief = start_pose_inference(start_pose, sensors)
+    # update plan (start)
+    pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
+    dest_discrete = locate_discrete(dest, rooms, doorways)
+    path = location_to_location(pose_belief_discrete, dest_discrete, rooms, doorways)
+    # while not at destination
+    while length(path <= 2) && norm(dest - pose_belief.p) < fine_planning_settings.arrival_radius
+        # extract action from plan
+        control = next_step_along_path(pose_belief, path, dest, midpoints, fine_planning_settings)
+        # apply action
+        pose_true, sensors = step_sensor_model(pose_true, control, world_inputs, sensor_settings)
+        # infer where you are (step)
+        pose_belief = step_pose_inference(pose_belief, control, sensors, world_inputs, sensor_settings)
+        # update plan (step)
+        pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
+        i = findfirst(==(pose_guess_discrete), path)
+        path = isnothing(i) ?
+            location_to_location(pose_guess_discrete, dest_discrete, rooms, doorways) :
+            path[i:end]
+    end
+end;
+
+# %%
+fine_planning_settings = (arrival_radius = 0.1, good_dhd = pi/20., max_dhd = pi/3., max_ds = 1.0)
+
+
