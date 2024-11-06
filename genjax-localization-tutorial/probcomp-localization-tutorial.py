@@ -169,6 +169,13 @@ def make_world(wall_verts, clutters_vec, start, controls):
     # How bouncy the walls are in this world.
     bounce = 0.1
 
+    # We prepend a zero-effect control step to the control array. This allows
+    # numerous simplifications in what follows: we can consider the initial
+    # pose uncertainty as well as each subsequent step to be the same function
+    # of current position and control step.
+    noop_control = Control(jnp.array(0.0), jnp.array(0.0))
+    controls = controls.prepend(noop_control)
+
     # Determine the total number of control steps
     T = len(controls.ds)
 
@@ -225,11 +232,8 @@ world, robot_inputs, T = load_world("../example_20_program.json")
 #
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path. Naïvely, this results in the following.
 
+
 # %%
-
-noop_control = Control(jnp.array(0.0), jnp.array(0.0))
-
-
 def integrate_controls_unphysical(robot_inputs):
     """
     Integrates the controls to generate a path from the starting pose.
@@ -249,8 +253,7 @@ def integrate_controls_unphysical(robot_inputs):
             pose.apply_control(control),
         ),
         robot_inputs["start"],
-        # Prepend a no-op control to include the first pose in the result
-        robot_inputs["controls"].prepend(noop_control),
+        robot_inputs["controls"],
     )[1]
 
 
@@ -376,7 +379,7 @@ def integrate_controls_physical(robot_inputs):
             new_pose,
         ),
         robot_inputs["start"],
-        robot_inputs["controls"].prepend(noop_control),
+        robot_inputs["controls"],
     )[1]
 
 
@@ -494,10 +497,6 @@ def step_proposal(motion_settings, start, control):
     return physical_step(start.p, p, hd)
 
 
-# @genjax.gen
-# def start_pose_prior(motion_settings, start):
-#     return step_proposal.inline(motion_settings, start, noop_control)
-
 # Set the motion settings
 default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 
@@ -507,7 +506,7 @@ default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 # %%
 key = jax.random.PRNGKey(0)
 step_proposal.simulate(
-    key, (default_motion_settings, robot_inputs["start"], noop_control)
+    key, (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0])
 ).get_retval()
 
 # %% [markdown]
@@ -575,7 +574,8 @@ def confidence_circle(pose: Pose, p_noise: float):
 # `simulate` takes the GF plus a tuple of args to pass to it.
 key, sub_key = jax.random.split(key)
 trace = step_proposal.simulate(
-    sub_key, (default_motion_settings, robot_inputs["start"], noop_control)
+    sub_key,
+    (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
 trace.get_choices()
 
@@ -699,34 +699,18 @@ trace.project(key, S["p"] | S["hd"])
 # (It is worth acknowledging two strange things in the code below: the use of the suffix `.accumulate()` in path_model and the use of that auxiliary function itself.
 # %%
 
-# @genjax.gen
-# def path_model_start(robot_inputs, motion_settings):
-#     return start_pose_prior(motion_settingsqw, robot_inputs["start"]) @ (
-#         "initial",
-#         "pose",
-#     )
-
-
-@genjax.gen
-def path_model_step(motion_settings, previous_pose, control):
-    return step_proposal(motion_settings, previous_pose, control) @ (
-        "steps",
-        "pose",
-    )
-
-
-path_model = path_model_step.partial_apply(default_motion_settings).accumulate()
+path_model = (
+    step_proposal.partial_apply(default_motion_settings).map(lambda r: (r, r)).scan()
+)
 
 
 # %%
 def generate_path_trace(key: PRNGKey) -> genjax.Trace:
-    return path_model.simulate(
-        key, (robot_inputs["start"], robot_inputs["controls"].prepend(noop_control))
-    )
+    return path_model.simulate(key, (robot_inputs["start"], robot_inputs["controls"]))
 
 
 def path_from_trace(tr: genjax.Trace) -> Pose:
-    return tr.get_retval()
+    return tr.get_retval()[1]
 
 
 def generate_path(key: PRNGKey) -> Pose:
@@ -794,7 +778,8 @@ Plot.Frames(
 
 key, sub_key = jax.random.split(key)
 trace = step_proposal.simulate(
-    sub_key, (default_motion_settings, robot_inputs["start"], noop_control)
+    sub_key,
+    (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
 key, sub_key = jax.random.split(key)
 rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
@@ -1002,11 +987,6 @@ animate_path_with_sensor(path, readings)
 #
 # We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
 # %%
-# @genjax.gen
-# def full_model_initial(motion_settings):
-#     pose = start_pose_prior(motion_settings, robot_inputs["start"]) @ "pose"
-#     sensor_model(pose, sensor_angles) @ "sensor"
-#     return pose
 
 
 @genjax.gen
@@ -1020,7 +1000,7 @@ def full_model_kernel(motion_settings, state, control):
 def full_model(motion_settings):
     return (
         full_model_kernel.partial_apply(motion_settings).scan()(
-            robot_inputs["start"], robot_inputs["controls"].prepend(noop_control)
+            robot_inputs["start"], robot_inputs["controls"]
         )
         @ "steps"
     )
@@ -1029,7 +1009,6 @@ def full_model(motion_settings):
 def get_path(trace):
     # p = trace.get_subtrace(("initial",)).get_retval()
     ps = trace.get_retval()[1]
-    # return ps.prepend(p)
     return ps
 
 
@@ -1112,7 +1091,7 @@ animate_full_trace(trace_high_deviation)
 # Since we imagine these data as having been recorded from the real world, keep only their extracted data, *discarding* the traces that produced them.
 # %%
 
-# These are are what we hope to recover...
+# These are what we hope to recover...
 path_low_deviation = get_path(trace_low_deviation)
 path_high_deviation = get_path(trace_high_deviation)
 
@@ -1127,9 +1106,9 @@ def constraint_from_sensors(readings):
     angle_indices = jnp.arange(len(sensor_angles))
     return jax.vmap(
         lambda ix, v: C["steps", ix, "sensor", angle_indices, "distance"].set(v)
-    )(jnp.arange(T), readings[1:]) + C[
-        "initial", "sensor", angle_indices, "distance"
-    ].set(readings[0])
+    )(jnp.arange(T), readings) + C["initial", "sensor", angle_indices, "distance"].set(
+        readings[0]
+    )
 
 
 constraints_low_deviation = constraint_from_sensors(observations_low_deviation)
@@ -1233,20 +1212,14 @@ animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # %%
 
 
-# TODO(colin): if we prepended the noop-control once and for all, we could set T = len(controls)
-# and get rid of this excess arithmetic
 def constraint_from_path(path):
     c_ps = jax.vmap(lambda ix, p: C["steps", ix, "pose", "p"].set(p))(
-        jnp.arange(T + 1), path.p
+        jnp.arange(T), path.p
     )
 
     c_hds = jax.vmap(lambda ix, hd: C["steps", ix, "pose", "hd"].set(hd))(
-        jnp.arange(T + 1), path.hd
+        jnp.arange(T), path.hd
     )
-
-    # c_p = C["initial", "pose", "p"].set(path.p[0])
-    # c_hd = C["initial", "pose", "hd"].set(path.hd[0])
-
     return c_ps + c_hds  # + c_p + c_hd
 
 
@@ -1587,7 +1560,9 @@ bs = boltzmann_sample(
     sub_key,
     1000,
     full_model_kernel(
-        motion_settings_low_deviation, robot_inputs["start"], noop_control
+        motion_settings_low_deviation,
+        robot_inputs["start"],
+        robot_inputs["controls"][0],
     ),
     observations_low_deviation[0],
 )
@@ -1654,7 +1629,9 @@ def initial_pose_chart(key):
     )
     score_grid = grid_sample(
         full_model_kernel(
-            motion_settings_low_deviation, robot_inputs["start"], noop_control
+            motion_settings_low_deviation,
+            robot_inputs["start"],
+            robot_inputs["controls"][0],
         ),
         pose_grid,
         observations_low_deviation[0],
@@ -1758,7 +1735,7 @@ def improved_path(
     # Our scan step starts at the initial step and applies a control input each time.
     # To make things balance, we need to add a zero step to the end of the control input
     # array, so that when we arrive at the final step, no more control input is given.
-    controls = robot_inputs["controls"].prepend(noop_control)
+    controls = robot_inputs["controls"]
     n_steps = len(controls)
     sub_keys = jax.random.split(key, n_steps + 1)
     return jax.lax.scan(
@@ -1831,3 +1808,4 @@ Plot.Row(
         frame_key="frame",
     ),
 ) | Plot.Slider("frame", 0, T, fps=2)
+# %%
