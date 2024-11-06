@@ -2996,35 +2996,45 @@ end;
 
 # %%
 # Currently just a sketch!
-# * functions aren't real
-# * does not maintain traces of the full path and accumulated control sets
+# Needs: start_sensor_model, start_pose_inference, step_sensor_model, step_pose_inference
 
 function simulate_strategy(start_pose, dest,
         rooms, doorways, midpoints,
         motion_settings, sensor_settings, fine_planning_settings)
     # sample true pose, observations (start)
     pose_true, sensors = start_sensor_model(start_pose, motion_settings, sensor_settings)
+    poses_true = [pose_true]
     # infer where you are (start)
-    pose_belief = start_pose_inference(start_pose, sensors)
+    beliefs, debugs = start_pose_inference(start_pose, sensors, sensor_settings)
+    pose_belief = beliefs[:initial => :pose]
     # update plan (start)
-    pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
     dest_discrete = locate_discrete(dest, rooms, doorways)
+    pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
     path = location_to_location(pose_belief_discrete, dest_discrete, rooms, doorways)
+    push!(debugs, (; type = :update_plan, pose_belief_discrete, path))
+    if isnothing(path); return poses_true, beliefs, debugs end
     # while not at destination
     while length(path <= 2) && norm(dest - pose_belief.p) < fine_planning_settings.arrival_radius
         # extract action from plan
         control = next_step_along_path(pose_belief, path, dest, midpoints, fine_planning_settings)
         # apply action
         pose_true, sensors = step_sensor_model(pose_true, control, world_inputs, sensor_settings)
+        push!(poses_true, pose_true)
         # infer where you are (step)
-        pose_belief = step_pose_inference(pose_belief, control, sensors, world_inputs, sensor_settings)
+        push!(get_args(beliefs)[2].controls, control)
+        beliefs, debugs_new = step_pose_inference(beliefs, control, sensors, world_inputs, sensor_settings)
+        pose_belief = beliefs[:step => get_args(beliefs)[1] => :pose]
+        append!(debugs, debugs_new)
         # update plan (step)
         pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
         i = findfirst(==(pose_guess_discrete), path)
         path = isnothing(i) ?
             location_to_location(pose_guess_discrete, dest_discrete, rooms, doorways) :
             path[i:end]
+        push!(debugs, (; type = :update_plan, pose_belief_discrete, path))
+        if isnothing(path); return poses_true, beliefs, debugs end
     end
+    return poses_true, beliefs, debugs
 end;
 
 # %%
