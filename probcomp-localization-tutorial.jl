@@ -3005,8 +3005,7 @@ function simulate_strategy(start_pose, dest,
     pose_true, sensors = start_sensor_model(start_pose, motion_settings, sensor_settings)
     poses_true = [pose_true]
     # infer where you are (start)
-    beliefs, debugs = start_pose_inference(start_pose, sensors, sensor_settings)
-    pose_belief = beliefs[:initial => :pose]
+    pose_belief, beliefs, debugs = start_pose_inference(start_pose, sensors, sensor_settings)
     # update plan (start)
     dest_discrete = locate_discrete(dest, rooms, doorways)
     pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
@@ -3021,8 +3020,7 @@ function simulate_strategy(start_pose, dest,
         push!(poses_true, pose_true)
         # infer where you are (step)
         push!(get_args(beliefs)[2].controls, control)
-        beliefs, debugs_new = step_pose_inference(beliefs, control, sensors, world_inputs, sensor_settings)
-        pose_belief = beliefs[:step => get_args(beliefs)[1] => :pose]
+        pose_belief, beliefs, debugs_new = step_pose_inference(beliefs, control, sensors, world_inputs, sensor_settings)
         append!(debugs, debugs_new)
         # update plan (step)
         pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
