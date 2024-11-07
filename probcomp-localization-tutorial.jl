@@ -3024,10 +3024,10 @@ function simulate_strategy(start_pose, dest,
         append!(debugs, debugs_new)
         # update plan (step)
         pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
-        i = findfirst(==(pose_guess_discrete), path)
-        path = isnothing(i) ?
-            location_to_location(pose_guess_discrete, dest_discrete, rooms, doorways) :
-            path[i:end]
+        i = findfirst(==(pose_belief_discrete), path)
+        path = !isnothing(i) ?
+            path[i:end] :
+            location_to_location(pose_belief_discrete, dest_discrete, rooms, doorways)
         push!(debugs, (; type = :update_plan, path))
     end
     return poses_true, beliefs, debugs
