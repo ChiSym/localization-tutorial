@@ -1485,6 +1485,7 @@ def animate_path_as_line(path, **options):
 # earlier.
 
 
+# %%
 def select_by_weight(key: PRNGKey, weights: FloatArray, things):
     chosen = jax.random.categorical(key, weights)
     return jax.tree.map(lambda v: v[chosen], things)
@@ -1494,6 +1495,7 @@ def select_by_weight(key: PRNGKey, weights: FloatArray, things):
 # Select an importance sample by weight in both the low and high deviation settings. It will be handy
 # to have one path to work with to test our improvements.
 
+# %%
 key, k1, k2 = jax.random.split(key, 3)
 low_deviation_path = select_by_weight(k1, low_weights, low_deviation_paths)
 high_deviation_path = select_by_weight(k2, high_weights, high_deviation_paths)
@@ -1502,6 +1504,7 @@ high_deviation_path = select_by_weight(k2, high_weights, high_deviation_paths)
 # Create a choicemap that will enforce the given sensor observation
 
 
+# %%
 def observation_to_choicemap(observation, pose=None):
     sensor_cm = C["sensor", jnp.arange(len(observation)), "distance"].set(observation)
     pose_cm = (
@@ -1558,6 +1561,7 @@ def weighted_small_pose_plot(proposal, truth, poses, ws):
 # - the true initial position of the robot in <span style="color:green;">green</span>
 # - the robot's belief about its initial position in <span style="color:red;">red</span>
 # - a cloud of possible updates conditioned on the sensor data in shades of <span style="color:purple;">purple</span>
+# %%
 key, sub_key = jax.random.split(key)
 bs = boltzmann_sample(
     sub_key,
@@ -1651,8 +1655,10 @@ key, sub_key = jax.random.split(key)
 initial_pose_chart(sub_key)
 
 
-# %% [markdown]
+# %%
 # See if this works for other points in the path
+
+
 def improvements_at_step(key, path, k):
     gf = full_model_kernel(
         motion_settings_low_deviation, path[k - 1], robot_inputs["controls"][k - 1]
@@ -1704,6 +1710,7 @@ Plot.Frames(
 #         pose.weight = full_model_kernel.assess(p, (cm,))
 
 
+# %%
 def improved_path(
     mode: str, key: PRNGKey, motion_settings: dict, observations: FloatArray
 ):
