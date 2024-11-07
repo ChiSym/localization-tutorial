@@ -3011,7 +3011,7 @@ function simulate_strategy(start_pose, dest,
     dest_discrete = locate_discrete(dest, rooms, doorways)
     pose_belief_discrete = locate_discrete(pose_belief.p, rooms, doorways)
     path = location_to_location(pose_belief_discrete, dest_discrete, rooms, doorways)
-    push!(debugs, (; type = :update_plan, pose_belief_discrete, path))
+    push!(debugs, (; type = :update_plan, path))
     # while not at destination
     while !isnothing(path) && !(length(path <= 2) && norm(dest - pose_belief.p) < fine_planning_settings.arrival_radius)
         # extract action from plan
@@ -3030,7 +3030,7 @@ function simulate_strategy(start_pose, dest,
         path = isnothing(i) ?
             location_to_location(pose_guess_discrete, dest_discrete, rooms, doorways) :
             path[i:end]
-        push!(debugs, (; type = :update_plan, pose_belief_discrete, path))
+        push!(debugs, (; type = :update_plan, path))
     end
     return poses_true, beliefs, debugs
 end;
