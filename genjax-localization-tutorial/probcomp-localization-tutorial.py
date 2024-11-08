@@ -797,7 +797,7 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
         + Plot.color_map({"some pose": "green", "with heading modified": "red"})
         + Plot.title("Modifying a heading")
     )
-    | html("span.tc", f"score ratio: {rotated_trace_weight_diff}")
+    | html(["span.tc", f"score ratio: {rotated_trace_weight_diff}"])
 )
 
 # %% [markdown]
@@ -824,7 +824,7 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
         for pose in path_from_trace(trace)
     ]
     + Plot.color_map({"some path": "green", "with heading modified": "red"})
-) | html("span.tc", f"score ratio: {rotated_first_step_weight_diff}")
+) | html(["span.tc", f"score ratio: {rotated_first_step_weight_diff}"])
 
 # %% [markdown]
 # ### Ideal sensors
@@ -1161,13 +1161,13 @@ key, sub_key = jax.random.split(key)
 sample, log_weight = model_importance(
     sub_key, constraints_low_deviation, (motion_settings_low_deviation,)
 )
-animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
+animate_full_trace(sample) | html(["span.tc", f"log_weight: {log_weight}"])
 # %%
 key, sub_key = jax.random.split(key)
 sample, log_weight = model_importance(
     sub_key, constraints_high_deviation, (motion_settings_high_deviation,)
 )
-animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
+animate_full_trace(sample) | html(["span.tc", f"log_weight: {log_weight}"])
 # %% [markdown]
 # A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key situational difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
 #
@@ -1248,9 +1248,9 @@ w_low, w_high
 Plot.Row(
     *[
         (
-            html("div.f3.b.tc", title)
+            html(["div.f3.b.tc", title])
             | animate_full_trace(trace, frame_key="frame")
-            | html("span.tc", f"score: {score:,.2f}")
+            | html(["span.tc", f"score: {score:,.2f}"])
         )
         for (title, trace, motion_settings, score) in [
             [
@@ -1267,7 +1267,7 @@ Plot.Row(
             ],
         ]
     ]
-) | Plot.Slider("frame", 0, T, fps=2)
+) | Plot.Slider("frame", 0, T-1, fps=2)
 
 # %% [markdown]
 # ...more closely resembles the density of these data back-fitted onto any other typical (random) paths of the model...
@@ -1748,7 +1748,7 @@ Plot.Row(
         motion_settings_high_deviation,
         frame_key="frame",
     ),
-) | Plot.Slider("frame", 0, T - 1, fps=2)
+) | Plot.Slider("frame", 0, T, fps=2)
 
 
 # %%
