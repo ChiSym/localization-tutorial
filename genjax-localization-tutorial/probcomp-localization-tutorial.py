@@ -1267,7 +1267,7 @@ Plot.Row(
             ],
         ]
     ]
-) | Plot.Slider("frame", 0, T - 1, fps=2)
+) | Plot.Slider("frame", 0, T, fps=2)
 
 # %% [markdown]
 # ...more closely resembles the density of these data back-fitted onto any other typical (random) paths of the model...
