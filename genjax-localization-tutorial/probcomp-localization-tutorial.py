@@ -415,7 +415,7 @@ def pose_plot(p, fill: str | Any = "black", **opts):
     )
 
     # Draw center dot
-    dot = Plot.ellipse([center], fill=fill, **({'r': r} | opts))
+    dot = Plot.ellipse([center], fill=fill, **({"r": r} | opts))
 
     return wings + dot
 
@@ -1404,6 +1404,7 @@ Plot.new(
 
 # %%
 
+
 def resample(
     key: PRNGKey, constraints: genjax.ChoiceMap, motion_settings, N: int, K: int
 ):
@@ -1420,7 +1421,8 @@ def resample(
     selected = jax.tree.map(lambda x: x[winners], samples)
     return selected
 
-jit_resample = jax.jit(resample, static_argnums=(3,4))
+
+jit_resample = jax.jit(resample, static_argnums=(3, 4))
 
 key, sub_key = jax.random.split(key)
 low_posterior = jit_resample(
@@ -1497,6 +1499,8 @@ def select_by_weight(key: PRNGKey, weights: FloatArray, things):
 key, k1, k2 = jax.random.split(key, 3)
 low_deviation_path, _ = select_by_weight(k1, low_weights, low_deviation_paths)
 high_deviation_path, _ = select_by_weight(k2, high_weights, high_deviation_paths)
+
+
 # %% [markdown]
 # Create a choicemap that will enforce the given sensor observation
 # %%
@@ -1658,9 +1662,7 @@ first_step_chart(sub_key)
 
 
 # %%
-def improved_path(
-    key: PRNGKey, motion_settings: dict, observations: FloatArray
-):
+def improved_path(key: PRNGKey, motion_settings: dict, observations: FloatArray):
     cube_step_size = 8
 
     def grid_search_step(k: PRNGKey, gf, center_pose, observation):
@@ -1688,7 +1690,7 @@ def improved_path(
         robot_inputs["start"],
         (
             observations,  # observation at time t
-            robot_inputs['controls'],  # guides step from t to t+1
+            robot_inputs["controls"],  # guides step from t to t+1
             sub_keys[1:],
         ),
     )
@@ -1705,6 +1707,8 @@ key, sub_key = jax.random.split(key)
 _, improved_high = jit_improved_path(
     sub_key, motion_settings_high_deviation, observations_high_deviation
 )
+
+
 # %%
 def path_comparison_plot(*plots):
     types = ["improved", "integrated", "importance", "true"]
@@ -1722,6 +1726,8 @@ def path_comparison_plot(*plots):
             "importance": "red",
         }
     )
+
+
 # %%
 path_comparison_plot(
     improved_low[0], path_integrated, low_deviation_path, path_low_deviation
@@ -1748,7 +1754,9 @@ Plot.Row(
         motion_settings_high_deviation,
         frame_key="frame",
     ),
-) | Plot.Slider("frame", 0, T-1, fps=2)
+) | Plot.Slider("frame", 0, T - 1, fps=2)
+
+
 # %%
 # Finishing touch: weave together the improved plot and the improvement steps
 # into a slider animation
@@ -1758,18 +1766,20 @@ Plot.Row(
 # %%
 def wsp_frame(k):
     return path_comparison_plot(
-        improved_high[0][:k+1],
-        path_integrated[:k+1],
-        high_deviation_path[:k+1],
-        path_high_deviation[:k+1]
+        improved_high[0][: k + 1],
+        path_integrated[: k + 1],
+        high_deviation_path[: k + 1],
+        path_high_deviation[: k + 1],
     ) & weighted_small_pose_plot(
         improved_high[1][k],
         path_high_deviation[k],
         improved_high[2][k],
         improved_high[3][k],
-        zoom=4
+        zoom=4,
     )
+
+
 # %%
-Plot.Frames([wsp_frame(k) for k in range(1,6)])
+Plot.Frames([wsp_frame(k) for k in range(1, 6)])
 
 # %%
