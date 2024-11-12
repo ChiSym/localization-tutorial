@@ -3012,7 +3012,7 @@ function simulate_strategy(start_pose, dest,
     path = location_to_location(pose_belief_discrete, dest_discrete, rooms, doorways)
     push!(debugs, (; type = :update_plan, path))
     # while not at destination
-    while !isnothing(path) && !(length(path <= 2) && norm(dest - pose_belief.p) < fine_planning_settings.arrival_radius)
+    while !isnothing(path) && !(length(path) <= 2 && norm(dest - pose_belief.p) < fine_planning_settings.arrival_radius)
         # extract action from plan
         control = next_step_along_path(pose_belief, path, dest, midpoints, fine_planning_settings)
         # apply action
