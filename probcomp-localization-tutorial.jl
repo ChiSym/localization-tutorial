@@ -2997,10 +2997,10 @@ end;
 # %%
 # Currently just a sketch!
 # Needs:
-# start_sensor_model(start_pose, motion_settings, sensor_settings)
-# start_pose_inference(start_pose, sensors, sensor_settings)
-# step_sensor_model(pose_true, control, world_inputs, sensor_settings)
-# step_pose_inference(beliefs, controls, sensors, world_inputs, sensor_settings)
+# pose_true, sensors = start_sensor_model(start_pose, motion_settings, sensor_settings)
+# pose_belief, beliefs, debugs = start_pose_inference(start_pose, sensors, sensor_settings)
+# pose_true, sensors = step_sensor_model(pose_true, control, world_inputs, motion_settings, sensor_settings)
+# pose_belief, beliefs, debugs = step_pose_inference(beliefs, controls, sensors, world_inputs, sensor_settings)
 
 function simulate_strategy(start_pose, dest,
         rooms, doorways, midpoints,
@@ -3020,11 +3020,11 @@ function simulate_strategy(start_pose, dest,
     while !isnothing(path) && !(length(path) <= 2 && norm(dest - pose_belief.p) < fine_planning_settings.arrival_radius)
         # extract action from plan
         control = next_step_along_path(pose_belief, path, dest, midpoints, fine_planning_settings)
-        push!(controls, control)
         # create true pose (by applying action) and observations
-        pose_true, sensors = step_sensor_model(pose_true, control, world_inputs, sensor_settings)
+        pose_true, sensors = step_sensor_model(pose_true, control, world_inputs, motion_settings, sensor_settings)
         push!(poses_true, pose_true)
         # infer where you are
+        push!(controls, control)
         pose_belief, beliefs, debugs_new = step_pose_inference(beliefs, controls, sensors, world_inputs, sensor_settings)
         append!(debugs, debugs_new)
         # update plan
