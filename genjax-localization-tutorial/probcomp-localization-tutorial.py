@@ -498,7 +498,6 @@ def step_proposal(motion_settings, start, control):
     hd = genjax.normal(start.hd + control.dhd, motion_settings["hd_noise"]) @ "hd"
     return physical_step(start.p, p, hd)
 
-
 # Set the motion settings
 default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 
@@ -702,8 +701,6 @@ path_model = (
     step_proposal.partial_apply(default_motion_settings).map(lambda r: (r, r)).scan()
 )
 
-
-
 # result[0] ~~ robot_inputs['start'] + control_step[0] (which is zero) + noise
 # %%
 def generate_path_trace(key: PRNGKey) -> genjax.Trace:
@@ -731,7 +728,6 @@ Plot.Grid(*[walls_plot + poses_to_plots(path) for path in sample_paths_v])
 # %%
 # Animation showing a single path with confidence circles
 
-
 # TODO: is there an off-by-one here possibly as a result of the zero initial step?
 # TODO: how about plot the control vector?
 def plot_path_with_confidence(path: Pose, step: int, p_noise: float):
@@ -744,7 +740,7 @@ def plot_path_with_confidence(path: Pose, step: int, p_noise: float):
         plot += [
             confidence_circle(
                 # for a given index, step[index] is current pose, controls[index] is what was applied to prev pose
-                path[step].apply_control(robot_inputs["controls"][step + 1]),
+                path[step].apply_control(robot_inputs["controls"][step+1]),
                 p_noise,
             ),
             pose_plot(path[step + 1], fill=Plot.constantly("next pose")),
