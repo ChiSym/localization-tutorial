@@ -809,7 +809,7 @@ trace = generate_path_trace(sub_key)
 key, sub_key = jax.random.split(key)
 
 rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
-    sub_key, C[0, "steps", "pose", "hd"].set(jnp.pi / 2.0)
+    sub_key, C[0, "hd"].set(jnp.pi / 2.0)
 )
 
 # %%
