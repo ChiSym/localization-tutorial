@@ -16,30 +16,36 @@
 # ---
 
 # %% [markdown]
-# # Robot Localization: Why is it Hard?
+# # Robot Localization: A Robot's Perspective
 #
-# Imagine you have a robot in a building and want it to know where it is. You give it:
-# 1. A map of walls and obstacles
-# 2. Wheels that can move it around
-# 3. Distance sensors that measure how far away walls are
+# Imagine you're a robot. You have:
+# 1. A map of walls in your environment
+# 2. A plan of where to go ("move forward 1m, turn right 30°")
+# 3. Distance sensors that measure how far walls are
 #
-# Seems simple, right? Just track the wheel movements and use sensors to confirm position.
+# **Your Challenge**: Figure out where you actually are!
 #
-# ## The Problem
+# ## Why is this Hard?
 #
-# In the real world:
+# You can't just follow your plan perfectly because:
 # - Wheels slip and drift
-# - Sensors are noisy
-# - Small errors compound over time
+# - Sensors give noisy readings
+# - Small errors add up over time
 #
-# Try it yourself:
-# 1. Add some walls by clicking
-# 2. Move the robot around
-# 3. Adjust the noise levels to see how they affect:
-#    - Sensor readings (red lines)
-#    - Motion uncertainty (blue cloud)
+# ## Try It Yourself
 #
-# Notice how quickly uncertainty grows when noise is present!
+# 1. First, create the environment:
+#    - Draw some walls by clicking
+#
+# 2. Then, plan the robot's path:
+#    - Draw where you want the robot to go
+#    - This becomes a series of movement commands
+#
+# 3. Watch what happens:
+#    - Blue line: What the robot THINKS it's doing (following commands perfectly)
+#    - Red rays: What the robot actually SEES (sensor readings)
+#    - Blue cloud: Where the robot MIGHT be (uncertainty)
+#    - Green line: Where the robot figures it ACTUALLY is
 
 # %%
 # pyright: reportUnusedExpression=false
@@ -57,14 +63,7 @@ WALL_WIDTH=6
 PATH_WIDTH=6
 
 def gensym(prefix: str = "g") -> str:
-    """Generate a unique symbol with an optional prefix, similar to Clojure's gensym.
-    
-    Args:
-        prefix: Optional string prefix for the generated symbol. Defaults to "g".
-        
-    Returns:
-        A unique string combining the prefix and a counter.
-    """
+    """Generate a unique symbol with an optional prefix, similar to Clojure's gensym."""
     global _gensym_counter
     _gensym_counter += 1
     return f"{prefix}{_gensym_counter}"
@@ -96,6 +95,7 @@ def drawing_system(on_complete):
         "onDrawEnd": js(f"""(e) => {{
             if ($state.{key}.length > 1) {{
                 // Simplify line by keeping only every 3rd point
+                // keep this, we may re-enable later
                 //const simplified = $state.{key}.filter((_, i) => i % 3 === 0);
                 %1($state.{key})
             }}
@@ -103,8 +103,6 @@ def drawing_system(on_complete):
         }}""", on_complete)
     })
     return line + events 
-
-
 
 sliders = (
      Plot.Slider(
@@ -128,7 +126,10 @@ initial_state = Plot.initialState({
         "motion_noise": 0.1,
         "show_sensors": True,
         "selected_tool": "walls",
-        "robot_path": []
+        "robot_path": [],  # The planned path
+        "estimated_pose": None,  # Robot's best guess of current position
+        "sensor_readings": [],  # Current sensor readings
+        "show_uncertainty": True  # Whether to show position uncertainty cloud
     })
 
 canvas = (
@@ -139,8 +140,9 @@ canvas = (
                 strokeWidth=WALL_WIDTH,
                 z="2", 
                 render=Plot.renderChildEvents({"onClick": js("""(e) => {
-                    const z = $state.walls[e.index][2]
-                    $state.walls = $state.walls.filter(([x, y, z]) => z === e.index)
+                    const zs = new Set($state.walls.map(w => w[2]));
+                    const targetZ = [...zs][e.index];
+                    $state.walls = $state.walls.filter(([x, y, z]) => z !== targetZ)
                     }""")})
             )
             # Draw current line being drawn
