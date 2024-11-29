@@ -48,11 +48,19 @@ class Reality:
     - Cannot access _true_pose directly
     """
 
-    def __init__(self, walls: List[Tuple[float, float]], motion_noise: float, sensor_noise: float):
+    def __init__(self, walls: jnp.ndarray, motion_noise: float, sensor_noise: float, 
+                 initial_pose: Optional[Pose] = None):
+        """
+        Args:
+            walls: JAX array of shape (N, 2, 2) containing wall segments
+            motion_noise: Standard deviation of noise added to motion
+            sensor_noise: Standard deviation of noise added to sensor readings
+            initial_pose: Optional starting pose, defaults to (0.5, 0.5, 0.0)
+        """
         self.walls = walls
         self.motion_noise = motion_noise
         self.sensor_noise = sensor_noise
-        self._true_pose = Pose(jnp.array([0.5, 0.5]), 0.0)
+        self._true_pose = initial_pose if initial_pose is not None else Pose(jnp.array([0.5, 0.5]), 0.0)
         self._key = PRNGKey(0)
     
     def execute_control(self, control: Tuple[float, float]):
@@ -72,9 +80,9 @@ class Reality:
         # Return only sensor readings
         return self.get_sensor_readings()
     
-    def get_sensor_readings(self) -> List[float]:
+    def get_sensor_readings(self) -> jnp.ndarray:
         """Return noisy distance readings to walls"""
-        angles = jnp.linspace(0, 2*jnp.pi, 8)  # 8 sensors around robot
+        angles = jnp.linspace(0, 2*jnp.pi, 8, endpoint=False)  # 8 evenly spaced sensors
         keys = jax.random.split(self._key, 8)
         self._key = keys[0]
         
@@ -82,38 +90,36 @@ class Reality:
             true_dist = self._compute_distance_to_wall(angle)
             return true_dist + jax.random.normal(key) * self.sensor_noise
         
-        readings = jax.vmap(get_reading)(keys[1:], angles)
-        return readings.tolist()
+        readings = jax.vmap(get_reading)(keys[1:], angles[:-1])
+        return readings
     
-    def _compute_distance_to_wall(self, sensor_angle: float) -> float:
-        """Compute true distance to nearest wall along sensor ray"""
-        # Ray starts at robot position
+    def _compute_distance_to_wall(self, sensor_angle: float) -> jax.Array:
+        """Compute true distance to nearest wall along sensor ray using fast 2D ray-segment intersection"""
         ray_start = self._true_pose.p
-        # Ray direction based on robot heading plus sensor angle
         ray_angle = self._true_pose.hd + sensor_angle
         ray_dir = jnp.array([jnp.cos(ray_angle), jnp.sin(ray_angle)])
         
-        def check_wall_intersection(min_dist, i):
-            p1 = jnp.array(self.walls[i])
-            p2 = jnp.array(self.walls[i+1])
-            
-            # Wall vector
-            wall = p2 - p1
-            # Vector from wall start to ray start
-            s = ray_start - p1
-            
-            # Compute intersection using parametric equations
-            # Ray: ray_start + t*ray_dir
-            # Wall: p1 + u*wall
-            wall_norm = wall/jnp.linalg.norm(wall)
-            denom = jnp.cross(ray_dir, wall_norm)
-            
-            t = jnp.cross(wall_norm, s) / (denom + 1e-10)
-            u = jnp.cross(ray_dir, s) / (denom + 1e-10)
-            
-            # Check if intersection is valid (in front of ray and within wall segment)
-            is_valid = (jnp.abs(denom) > 1e-10) & (t >= 0) & (u >= 0) & (u <= 1)
-            return jnp.where(is_valid, jnp.minimum(min_dist, t), min_dist)
+        # Vectorized computation for all walls at once
+        p1 = self.walls[:, 0]  # Shape: (N, 2)
+        p2 = self.walls[:, 1]  # Shape: (N, 2)
         
-        min_dist = lax.fori_loop(0, len(self.walls)-1, check_wall_intersection, jnp.inf)
-        return float(jnp.where(jnp.isinf(min_dist), 100.0, min_dist).item())
+        # Wall direction vectors
+        wall_vec = p2 - p1  # Shape: (N, 2)
+        
+        # Vector from wall start to ray start
+        to_start = ray_start - p1  # Shape: (N, 2)
+        
+        # Compute determinant (cross product in 2D)
+        # This tells us if ray and wall are parallel and their relative orientation
+        det = wall_vec[:, 0] * (-ray_dir[1]) - wall_vec[:, 1] * (-ray_dir[0])
+        
+        # Compute intersection parameters
+        u = (to_start[:, 0] * (-ray_dir[1]) - to_start[:, 1] * (-ray_dir[0])) / (det + 1e-10)
+        t = (wall_vec[:, 0] * to_start[:, 1] - wall_vec[:, 1] * to_start[:, 0]) / (det + 1e-10)
+        
+        # Valid intersections: not parallel, in front of ray, within wall segment
+        is_valid = (jnp.abs(det) > 1e-10) & (t >= 0) & (u >= 0) & (u <= 1)
+        
+        # Find minimum valid distance
+        min_dist = jnp.min(jnp.where(is_valid, t, jnp.inf))
+        return jnp.where(jnp.isinf(min_dist), 10.0, min_dist)
