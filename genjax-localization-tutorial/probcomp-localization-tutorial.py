@@ -138,7 +138,11 @@ def create_segments(points):
     return jnp.stack([points, jnp.roll(points, shift=-1, axis=0)], axis=1)
 
 
-def make_world(wall_verts, clutters_vec, start, controls):
+def make_world(wall_verts, clutters_vec, start, controls) -> tuple[
+    dict[str, FloatArray | tuple[float, float, float, float] | float | Pose], 
+    dict[str, Control | Pose],
+    int
+]:
     """
     Constructs the world by creating segments for walls and clutters, calculates the bounding box, and prepares the simulation parameters.
 
@@ -1479,7 +1483,7 @@ def resample(
     )
     winners = jax.vmap(genjax.categorical.sampler)(
         jax.random.split(key2, K), jnp.reshape(log_weights, (K, N))
-    # indices returned are relative to the start of the K-segment from which they were drawn.
+    ) # indices returned are relative to the start of the K-segment from which they were drawn.
     # globalize the indices by adding back the index of the start of each segment.
     winners += jnp.arange(0, N * K, N)
     selected = jax.tree.map(lambda x: x[winners], samples)

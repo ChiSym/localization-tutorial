@@ -718,26 +718,23 @@ reference = "gcp"
 
 [[package]]
 name = "genstudio"
-version = "2024.11.21"
+version = "2024.11.021"
 description = ""
 optional = false
 python-versions = ">=3.10,<3.13"
-files = [
-    {file = "genstudio-2024.11.21-py3-none-any.whl", hash = "sha256:ea605c426b4ea05eede61d23c353a10e97b2fe31c75891a727602da60ec2b058"},
-    {file = "genstudio-2024.11.21.tar.gz", hash = "sha256:db49a1803dbd7b83b664847f2e5559c94aded11b9743cace405c4e2437f79e84"},
-]
+files = []
+develop = true
 
 [package.dependencies]
-anywidget = ">=0.9.10,<0.10.0"
-html2image = ">=2.0.4.3,<3.0.0.0"
-orjson = ">=3.10.6,<4.0.0"
-pillow = ">=10.4.0,<11.0.0"
-traitlets = ">=5.14.3,<6.0.0"
+anywidget = "^0.9.10"
+html2image = "^2.0.4.3"
+orjson = "^3.10.6"
+pillow = "^10.4.0"
+traitlets = "^5.14.3"
 
 [package.source]
-type = "legacy"
-url = "https://us-west1-python.pkg.dev/probcomp-caliban/probcomp/simple"
-reference = "gcp"
+type = "directory"
+url = "../genstudio"
 
 [[package]]
 name = "html2image"
@@ -2670,4 +2667,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "f42ce43d1cf6c2ef821809e15ed6a88b5a6e0e7ce88acdace00c68cd53bebb48"
+content-hash = "d19e145cafa2c3ee01389b29b5d62dd1b24815544100caa27e6ffe5404af31cb"
