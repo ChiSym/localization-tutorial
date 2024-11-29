@@ -57,6 +57,8 @@ import numpy as np
 import jax.numpy as jnp
 from typing import TypedDict, List, Tuple, Any 
 
+import robot_2.reality as reality
+
 _gensym_counter = 0
 
 WALL_WIDTH=6
@@ -180,15 +182,14 @@ canvas = (
 
 toolbar = Plot.html("Select tool:") | ["div", {"class": "flex gap-2 h-10"},
             ["button", {
-                "class": js("$state.selected_tool === 'walls' ? 'px-3 py-1 rounded bg-gray-400 hover:bg-gray-500 active:bg-gray-600' : 'px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400'"),
+                "class": js("$state.selected_tool === 'walls' ? 'px-3 py-1 rounded bg-gray-300 hover:bg-gray-400 active:bg-gray-500 focus:outline-none' : 'px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400 focus:outline-none'"),
                 "onClick": js("() => $state.selected_tool = 'walls'")
             }, "Draw Walls"],
             ["button", {
-                "class": js("$state.selected_tool === 'path' ? 'px-3 py-1 rounded bg-gray-400 hover:bg-gray-500 active:bg-gray-600' : 'px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400'"),
+                "class": js("$state.selected_tool === 'path' ? 'px-3 py-1 rounded bg-gray-300 hover:bg-gray-400 active:bg-gray-500 focus:outline-none' : 'px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400 focus:outline-none'"),
                 "onClick": js("() => $state.selected_tool = 'path'")
             }, "Draw Robot Path"]
         ]
-
 instructions = Plot.md("""
 1. Draw walls
 2. Draw a robot path
