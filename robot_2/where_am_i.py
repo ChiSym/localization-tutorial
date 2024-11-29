@@ -111,13 +111,17 @@ sliders = (
             "sensor_noise",
             range=[0, 1],
             step=0.05,
-            label="Sensor Noise"
+            init=0.1,
+            label="Sensor Noise:", 
+            showValue=True
         )
      & Plot.Slider(
             "motion_noise",
             range=[0, 1],
             step=0.05,
-            label="Motion Noise"
+            init=0.1,
+            label="Motion Noise:",
+            showValue=True
         )
 )
 
@@ -316,6 +320,11 @@ def debug_reality(widget, e):
         "show_debug": True,
         "debug_message": f"Executed {len(controls)} controls\nFinal readings: {readings[-1] if readings else []}"
     })
+    
+def clear_state(w, _):
+    w.state.update(initial_state)
+    
+        
 
 # Add debug button to toolbar
 toolbar = Plot.html("Select tool:") | ["div", {"class": "flex gap-2 h-10"},
@@ -333,7 +342,7 @@ toolbar = Plot.html("Select tool:") | ["div", {"class": "flex gap-2 h-10"},
             }, "Debug Reality"],
             ["button", {
                 "class": "px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400",
-                "onClick": lambda w, e: w.state.update(initial_state | {"walls": initial_walls()})
+                "onClick": clear_state
             }, "Clear"]
         ]
 instructions = Plot.md("""

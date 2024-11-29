@@ -63,21 +63,29 @@ class Reality:
         self._true_pose = initial_pose if initial_pose is not None else Pose(jnp.array([0.5, 0.5]), 0.0)
         self._key = PRNGKey(0)
     
-    def execute_control(self, control: Tuple[float, float]):
-        """
-        Execute a control command with noise
-        control: (forward_dist, rotation_angle)
-        """
+    def execute_control(self, control: Tuple[float, float]) -> List[float]:
+        """Execute a control command with noise, stopping if we hit a wall"""
         dist, angle = control
         # Add noise to motion
-        self._key, k1, k2 = jax.random.split(self._key, 3)
-        noisy_dist = dist + jax.random.normal(k1) * self.motion_noise
-        noisy_angle = angle + jax.random.normal(k2) * self.motion_noise
+        noisy_dist = dist + jax.random.normal(self._key) * self.motion_noise
+        noisy_angle = angle + jax.random.normal(self._key) * self.motion_noise
         
-        # Update true pose
-        self._true_pose = self._true_pose.step_along(float(noisy_dist)).rotate(float(noisy_angle))
+        # First rotate (can always rotate)
+        self._true_pose = self._true_pose.rotate(noisy_angle)
         
-        # Return only sensor readings
+        # Then try to move forward, checking for collisions
+        ray_dir = jnp.array([jnp.cos(self._true_pose.hd), jnp.sin(self._true_pose.hd)])
+        
+        # Use our existing ray-casting to check distance to nearest wall
+        min_dist = self._compute_distance_to_wall(0.0)  # 0 angle = forward
+        
+        # Only move as far as we can before hitting a wall (minus small safety margin)
+        safe_dist = jnp.minimum(noisy_dist, min_dist - 0.1)
+        safe_dist = jnp.maximum(safe_dist, 0)  # Don't move backwards
+        
+        self._true_pose = self._true_pose.step_along(safe_dist)
+        
+        # Return sensor readings from new position
         return self.get_sensor_readings()
     
     def get_sensor_readings(self) -> jnp.ndarray:
