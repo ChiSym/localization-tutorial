@@ -1,11 +1,13 @@
 [tool.poetry]
-name = "genjax-localization-tutorial"
+name = "genjax_localization_tutorial"
 version = "0.1.0"
 description = ""
 authors = ["Matthew Huebert <mhuebert@gmail.com>"]
 readme = "README.md"
 
-package-mode = false
+packages = [
+    { include = "robot_2" }
+]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
