@@ -58,6 +58,87 @@ import jax.numpy as jnp
 from typing import TypedDict, List, Tuple, Any 
 
 import robot_2.reality as reality
+import jax
+import jax.numpy as jnp
+import genjax
+from genjax import normal, mv_normal_diag
+from penzai import pz  # Import penzai for pytree dataclasses
+from typing import List, Tuple
+
+@pz.pytree_dataclass
+class MotionSettings(genjax.PythonicPytree):
+    """Settings for motion uncertainty"""
+    p_noise: float = 0.1  # Position noise
+    hd_noise: float = 0.1  # Heading noise
+
+@pz.pytree_dataclass
+class Pose(genjax.PythonicPytree):
+    """Robot pose with position and heading"""
+    p: jax.Array  # [x, y]
+    hd: float     # heading in radians
+    
+    def dp(self):
+        """Get direction vector from heading"""
+        return jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
+        
+    def step_along(self, s: float) -> "Pose":
+        """Move forward by distance s"""
+        return Pose(self.p + s * self.dp(), self.hd)
+    
+    def rotate(self, angle: float) -> "Pose":
+        """Rotate by angle (in radians)"""
+        return Pose(self.p, self.hd + angle)
+
+@genjax.gen
+def step_proposal(motion_settings: MotionSettings, start_pose: Pose, control: Tuple[float, float]) -> Pose:
+    """Generate a noisy next pose given current pose and control"""
+    dist, angle = control
+    
+    # Sample noisy position after moving
+    intended_p = start_pose.p + dist * start_pose.dp()
+    p = mv_normal_diag(
+        intended_p, 
+        motion_settings.p_noise * jnp.ones(2)
+    ) @ "p"
+    
+    # Sample noisy heading
+    hd = normal(
+        start_pose.hd + angle, 
+        motion_settings.hd_noise
+    ) @ "hd"
+    
+    return Pose(p, hd)
+
+@genjax.gen
+def generate_path(motion_settings: MotionSettings, start_pose: Pose, controls: List[Tuple[float, float]]):
+    """Generate a complete path by sampling noisy steps"""
+    pose = start_pose
+    path = [pose]
+    
+    for control in controls:
+        pose = step_proposal(motion_settings, pose, control) @ f"step_{len(path)}"
+        path.append(pose)
+    
+    return path
+
+def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, robot_path: List[List[float]]):
+    """Generate n possible paths given the planned path"""
+    controls = path_to_controls(robot_path)
+    start_point = robot_path[0]
+    start_pose = Pose(jnp.array(start_point[:2]), 0.0)
+    settings = MotionSettings()
+    
+    # Split key for multiple samples
+    keys = jax.random.split(key, n_paths)
+    
+    # Sample paths using GenJAX
+    def sample_single_path(k):
+        trace = generate_path.simulate(k, (settings, start_pose, controls))
+        poses = trace.get_retval()
+        return jnp.stack([pose.p for pose in poses])
+    
+    paths = jax.vmap(sample_single_path)(keys)
+    return paths
 
 _gensym_counter = 0
 
@@ -138,7 +219,7 @@ initial_state = {
         "sensor_noise": 0.1,
         "motion_noise": 0.1,
         "show_sensors": True,
-        "selected_tool": "walls",
+        "selected_tool": "path",
         "robot_path": [],  # The planned path
         "estimated_pose": None,  # Robot's best guess of current position
         "sensor_readings": [],  # Current sensor readings
@@ -220,6 +301,16 @@ canvas = (
                 stroke="red",
                 strokeWidth=1
             )
+            + Plot.line(
+        js("""
+           if (!$state.show_debug || !$state.possible_paths) {return [];};
+           return $state.possible_paths.flatMap((path, pathIdx) => 
+               path.map(([x, y]) => [x, y, pathIdx])
+           )
+        """, expression=False),
+        stroke="blue",
+        strokeOpacity=0.2
+    )
             + Plot.clip()
             + Plot.colorMap({
                 "Walls": "#666",
@@ -287,7 +378,7 @@ def debug_reality(widget, e):
         
     # Get initial pose from start of path
     start_point = widget.state.robot_path[0]
-    initial_pose = reality.Pose(jnp.array([start_point[0], start_point[1]]), 0.0)
+    initial_pose = Pose(jnp.array([start_point[0], start_point[1]]), 0.0)
     
     walls = convert_walls_to_jax(widget.state.walls)
     world = reality.Reality(walls, 
@@ -306,6 +397,11 @@ def debug_reality(widget, e):
         # Record position after each control
         true_path.append([float(world._true_pose.p[0]), float(world._true_pose.p[1])])
     
+    # Generate possible paths
+    key = jax.random.PRNGKey(0)
+    possible_paths = sample_possible_paths(key, 20, widget.state.robot_path)
+        
+    
     # Update state with final readings, pose, and full path
     widget.state.update({
         "robot_pose": {
@@ -313,6 +409,7 @@ def debug_reality(widget, e):
             "y": float(world._true_pose.p[1]),
             "heading": float(world._true_pose.hd)
         },
+        "possible_paths": possible_paths,
         "sensor_readings": readings[-1] if readings else [],
         "true_path": true_path,
         "show_debug": True
