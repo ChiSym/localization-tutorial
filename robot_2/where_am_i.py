@@ -111,7 +111,6 @@ sliders = (
             "sensor_noise",
             range=[0, 1],
             step=0.05,
-            init=0.1,
             label="Sensor Noise:", 
             showValue=True
         )
@@ -119,7 +118,6 @@ sliders = (
             "motion_noise",
             range=[0, 1],
             step=0.05,
-            init=0.1,
             label="Motion Noise:",
             showValue=True
         )
@@ -317,8 +315,7 @@ def debug_reality(widget, e):
         },
         "sensor_readings": readings[-1] if readings else [],
         "true_path": true_path,
-        "show_debug": True,
-        "debug_message": f"Executed {len(controls)} controls\nFinal readings: {readings[-1] if readings else []}"
+        "show_debug": True
     })
     
 def clear_state(w, _):
@@ -357,4 +354,8 @@ instructions = Plot.md("""
     canvas & 
     (toolbar | instructions | sliders) 
     | Plot.initialState(initial_state, sync=True)
-    | Plot.onChange({"robot_path": debug_reality}))
+    | Plot.onChange({
+        "robot_path": debug_reality,
+        "sensor_noise": debug_reality,
+        "motion_noise": debug_reality
+    }))
