@@ -90,50 +90,77 @@ class Pose(genjax.PythonicPytree):
         return Pose(self.p, self.hd + angle)
 
 @genjax.gen
-def step_proposal(motion_settings: MotionSettings, start_pose: Pose, control: Tuple[float, float]) -> Pose:
-    """Generate a noisy next pose given current pose and control"""
+def step_proposal(motion_settings: MotionSettings, start_pose: Pose, control: Tuple[float, float], walls: jnp.ndarray) -> Pose:
+    """Generate a noisy next pose given current pose and control, respecting walls"""
     dist, angle = control
     
-    # Sample noisy position after moving
-    intended_p = start_pose.p + dist * start_pose.dp()
-    p = mv_normal_diag(
-        intended_p, 
-        motion_settings.p_noise * jnp.ones(2)
-    ) @ "p"
-    
-    # Sample noisy heading
+    # Sample noisy heading first
     hd = normal(
         start_pose.hd + angle, 
         motion_settings.hd_noise
     ) @ "hd"
     
+    # Calculate noisy forward distance
+    noisy_dist = normal(
+        dist,
+        motion_settings.p_noise
+    ) @ "dist"
+    
+    # Simplified collision check using just the wall segments
+    ray_start = start_pose.p
+    ray_dir = jnp.array([jnp.cos(hd), jnp.sin(hd)])
+    
+    # Vectorized ray-wall intersection (copied from Reality class)
+    p1 = walls[:, 0]  # Shape: (N, 2)
+    p2 = walls[:, 1]  # Shape: (N, 2)
+    wall_vec = p2 - p1
+    to_start = ray_start - p1
+    
+    det = wall_vec[:, 0] * (-ray_dir[1]) - wall_vec[:, 1] * (-ray_dir[0])
+    u = (to_start[:, 0] * (-ray_dir[1]) - to_start[:, 1] * (-ray_dir[0])) / (det + 1e-10)
+    t = (wall_vec[:, 0] * to_start[:, 1] - wall_vec[:, 1] * to_start[:, 0]) / (det + 1e-10)
+    
+    is_valid = (jnp.abs(det) > 1e-10) & (t >= 0) & (u >= 0) & (u <= 1)
+    min_dist = jnp.min(jnp.where(is_valid, t, jnp.inf))
+    min_dist = jnp.where(jnp.isinf(min_dist), 10.0, min_dist)
+    
+    # Limit distance to avoid wall collision
+    safe_dist = jnp.minimum(noisy_dist, min_dist - 0.1)
+    safe_dist = jnp.maximum(safe_dist, 0)  # Don't move backwards
+    
+    # Calculate final position
+    p = start_pose.p + safe_dist * ray_dir
+    
     return Pose(p, hd)
 
 @genjax.gen
-def generate_path(motion_settings: MotionSettings, start_pose: Pose, controls: List[Tuple[float, float]]):
-    """Generate a complete path by sampling noisy steps"""
+def generate_path(motion_settings: MotionSettings, start_pose: Pose, controls: List[Tuple[float, float]], walls: jnp.ndarray):
+    """Generate a complete path by sampling noisy steps, respecting walls"""
     pose = start_pose
     path = [pose]
     
     for control in controls:
-        pose = step_proposal(motion_settings, pose, control) @ f"step_{len(path)}"
+        pose = step_proposal(motion_settings, pose, control, walls) @ f"step_{len(path)}"
         path.append(pose)
     
     return path
 
-def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, robot_path: List[List[float]]):
-    """Generate n possible paths given the planned path"""
+def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, robot_path: List[List[float]], walls: List[List[float]]):
+    """Generate n possible paths given the planned path, respecting walls"""
     controls = path_to_controls(robot_path)
     start_point = robot_path[0]
     start_pose = Pose(jnp.array(start_point[:2]), 0.0)
     settings = MotionSettings()
+    
+    # Convert walls to JAX array format
+    wall_segments = convert_walls_to_jax(walls)
     
     # Split key for multiple samples
     keys = jax.random.split(key, n_paths)
     
     # Sample paths using GenJAX
     def sample_single_path(k):
-        trace = generate_path.simulate(k, (settings, start_pose, controls))
+        trace = generate_path.simulate(k, (settings, start_pose, controls, wall_segments))
         poses = trace.get_retval()
         return jnp.stack([pose.p for pose in poses])
     
@@ -220,14 +247,42 @@ initial_state = {
         "motion_noise": 0.1,
         "show_sensors": True,
         "selected_tool": "path",
-        "robot_path": [],  # The planned path
-        "estimated_pose": None,  # Robot's best guess of current position
-        "sensor_readings": [],  # Current sensor readings
-        "show_uncertainty": True , # Whether to show position uncertainty cloud
-        "debug_message": "",
-        "show_debug": False
+        "robot_path": [],
+        "estimated_pose": None,
+        "sensor_readings": [],
+        "show_uncertainty": True,
+        "show_true_position": True  # New flag for toggling true position visibility
     }
 
+sensor_rays = Plot.line(
+                js("""
+                   Array.from($state.sensor_readings).flatMap((r, i) => {
+                    const heading = $state.robot_pose.heading || 0;
+                    const angle = heading + (i * Math.PI * 2) / 8;
+                    const x = $state.robot_pose.x;
+                    const y = $state.robot_pose.y;
+                    return [
+                        [x, y, i],
+                        [x + r * Math.cos(angle), 
+                         y + r * Math.sin(angle), i]
+                    ]
+                })
+                   """),
+                z="2",
+                stroke="red",
+                strokeWidth=1
+            )
+
+true_path = Plot.line(
+                js("$state.true_path"),
+                stroke=Plot.constantly("True Path"),
+                strokeWidth=2
+            )
+
+planned_path = Plot.line(
+                    js("$state.robot_path"),
+                    stroke=Plot.constantly("Robot Path"),
+                    strokeWidth=PATH_WIDTH),
 
 canvas = (
             # Draw completed walls
@@ -250,57 +305,32 @@ canvas = (
                     $state.update(['robot_path', 'reset', line]);
                 }
                 }"""))
-            # Draw robot path
-            + Plot.line(
-                js("$state.robot_path"),
-                stroke=Plot.constantly("Robot Path"),
-                strokeWidth=PATH_WIDTH
-            )
-            # Draw true path when in debug mode
-            + Plot.line(
-                js("$state.show_debug ? $state.true_path : []"),
-                stroke=Plot.constantly("True Path"),
-                strokeWidth=2
-            )
+            + planned_path
+            
             # Draw robot
-            + Plot.text(
-                js("[[$state.robot_pose.x, $state.robot_pose.y]]"),
-                text=Plot.constantly("🤖"),
-                fontSize=30,
-                fill=Plot.constantly("Robot"),
-                title="Robot",
-                rotate=js("$state.robot_pose.heading * 180 / Math.PI")  # Convert radians to degrees
-            )
+            + Plot.cond(
+                js("$state.show_true_position"), 
+                [Plot.text(
+                    js("[[$state.robot_pose.x, $state.robot_pose.y]]"),
+                    text=Plot.constantly("🤖"),
+                    fontSize=30,
+                    textAnchor="middle",
+                    dy="-0.35em",
+                    rotate=js("$state.robot_pose.heading * 180 / Math.PI")), 
+                    true_path,
+                sensor_rays
+                ]
+                )
             + Plot.domain([0, 10], [0, 10])
             + Plot.grid()
             + Plot.aspectRatio(1)
             + Plot.colorMap({
                 "Walls": "#666",
-                "Drawing": "#999",
+                "Sensor Rays": "red",
+                "True Path": "green",
                 "Robot Path": "blue",
-                "Robot": "blue"
             })
             + Plot.colorLegend()
-            # Add sensor rays when show_debug is true
-            + Plot.line(
-                js("""
-                $state.show_debug && $state.sensor_readings ? 
-                Array.from($state.sensor_readings).flatMap((r, i) => {
-                    const heading = $state.robot_pose.heading || 0;
-                    const angle = heading + (i * Math.PI * 2) / 8;
-                    const x = $state.robot_pose.x;
-                    const y = $state.robot_pose.y;
-                    return [
-                        [x, y, i],
-                        [x + r * Math.cos(angle), 
-                         y + r * Math.sin(angle), i]
-                    ]
-                }) : []
-                """),
-                z="2",
-                stroke="red",
-                strokeWidth=1
-            )
             + Plot.line(
         js("""
            if (!$state.show_debug || !$state.possible_paths) {return [];};
@@ -312,12 +342,6 @@ canvas = (
         strokeOpacity=0.2
     )
             + Plot.clip()
-            + Plot.colorMap({
-                "Walls": "#666",
-                "Robot": "blue",
-                "Sensor Rays": "red",
-                "True Path": "green"
-            })
         )
 
 
@@ -399,7 +423,7 @@ def debug_reality(widget, e):
     
     # Generate possible paths
     key = jax.random.PRNGKey(0)
-    possible_paths = sample_possible_paths(key, 20, widget.state.robot_path)
+    possible_paths = sample_possible_paths(key, 20, widget.state.robot_path, widget.state.walls)
         
     
     # Update state with final readings, pose, and full path
@@ -432,27 +456,27 @@ toolbar = Plot.html("Select tool:") | ["div", {"class": "flex gap-2 h-10"},
             }, "Draw Robot Path"],
             ["button", {
                 "class": "px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400",
-                "onClick": debug_reality
-            }, "Debug Reality"],
-            ["button", {
-                "class": "px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400",
                 "onClick": clear_state
             }, "Clear"]
         ]
-instructions = Plot.md("""
-1. Draw walls
-2. Draw a robot path
-3. Adjust noise levels to see how they affect:
-   - Sensor readings
-   - Motion uncertainty
-        """) | ["div", js("$state.debug_message")]
 
+
+reality_toggle = Plot.html("") | ["label.flex.items-center.gap-2.p-2", 
+                                  "Show true position:",
+                                  ["input", {
+        "type": "checkbox", 
+        "checked": js("$state.show_true_position"),
+        "onChange": js("(e) => $state.show_true_position = e.target.checked")
+    }]]
+
+# Modify the onChange handlers at the bottom
 (
     canvas & 
-    (toolbar | instructions | sliders) 
+    (toolbar | sliders | reality_toggle | sensor_rays + {"height": 200}) 
     | Plot.initialState(initial_state, sync=True)
     | Plot.onChange({
         "robot_path": debug_reality,
         "sensor_noise": debug_reality,
-        "motion_noise": debug_reality
+        "motion_noise": debug_reality,
+        "walls": debug_reality
     }))
