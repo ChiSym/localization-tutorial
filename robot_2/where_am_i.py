@@ -145,12 +145,13 @@ def generate_path(motion_settings: MotionSettings, start_pose: Pose, controls: L
     
     return path
 
-def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, robot_path: List[List[float]], walls: List[List[float]]):
+def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, robot_path: List[List[float]], walls: List[List[float]], motion_noise: float):
     """Generate n possible paths given the planned path, respecting walls"""
     controls = path_to_controls(robot_path)
     start_point = robot_path[0]
-    start_pose = Pose(jnp.array(start_point[:2]), 0.0)
-    settings = MotionSettings()
+    start_pose = Pose(jnp.array(start_point[:2], dtype=jnp.float32), 0.0)
+    motion_noise = jnp.float32(motion_noise)
+    settings = MotionSettings(p_noise=motion_noise, hd_noise=motion_noise)
     
     # Convert walls to JAX array format
     wall_segments = convert_walls_to_jax(walls)
@@ -272,7 +273,8 @@ sensor_rays = Plot.line(
                    """),
                 z="2",
                 stroke="red",
-                strokeWidth=1
+                strokeWidth=1,
+                marker="circle"
             )
 
 true_path = Plot.line(
@@ -427,7 +429,7 @@ def debug_reality(widget, e):
     
     # Generate possible paths
     key = jax.random.PRNGKey(0)
-    possible_paths = sample_possible_paths(key, 20, widget.state.robot_path, widget.state.walls)
+    possible_paths = sample_possible_paths(key, 20, widget.state.robot_path, widget.state.walls, widget.state.motion_noise)
         
     
     # Update state with final readings, pose, and full path
