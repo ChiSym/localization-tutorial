@@ -197,13 +197,15 @@ def drawing_system(on_complete):
                 const dx = e.x - last[0];
                 const dy = e.y - last[1];
                 // Only add point if moved more than threshold distance
-                if (Math.sqrt(dx*dx + dy*dy) > 0.2) {{
+                if (Math.sqrt(dx*dx + dy*dy) >= 1) {{
                     $state.update(['{key}', 'append', [e.x, e.y, e.startTime]]);
                 }}
             }}
         }}"""),
         "onDrawEnd": js(f"""(e) => {{
             if ($state.{key}.length > 1) {{
+                const points = [...$state.{key}, [e.x, e.y, e.startTime]] 
+                
                 // Simplify line by keeping only every 3rd point
                 // keep this, we may re-enable later
                 //const simplified = $state.{key}.filter((_, i) => i % 3 === 0);
@@ -282,7 +284,9 @@ true_path = Plot.line(
 planned_path = Plot.line(
                     js("$state.robot_path"),
                     stroke=Plot.constantly("Robot Path"),
-                    strokeWidth=PATH_WIDTH),
+                    strokeWidth=2,
+                    r=3,
+                    marker="circle"),
 
 canvas = (
             # Draw completed walls
@@ -339,7 +343,8 @@ canvas = (
            )
         """, expression=False),
         stroke="blue",
-        strokeOpacity=0.2
+        strokeOpacity=0.2,
+        z="2"
     )
             + Plot.clip()
         )
@@ -365,8 +370,7 @@ def convert_walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
 
 def create_reality(walls_list: List[List[float]], motion_noise: float, sensor_noise: float) -> reality.Reality:
     """Create Reality instance with proper JAX arrays"""
-    walls = convert_walls_to_jax(walls_list)
-    return reality.Reality(walls, motion_noise, sensor_noise)
+    return reality.Reality(convert_walls_to_jax(walls_list), motion_noise, sensor_noise)
 
 def path_to_controls(path_points: List[List[float]]) -> List[Tuple[float, float]]:
     """Convert a series of points into (distance, angle) control pairs
