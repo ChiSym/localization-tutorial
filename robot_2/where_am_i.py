@@ -64,6 +64,7 @@ import genjax
 from genjax import normal, mv_normal_diag
 from penzai import pz  # Import penzai for pytree dataclasses
 from typing import List, Tuple
+from robot_2.reality import Pose
 
 @pz.pytree_dataclass
 class MotionSettings(genjax.PythonicPytree):
@@ -150,20 +151,28 @@ def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, robot_path: Lis
     controls = path_to_controls(robot_path)
     start_point = robot_path[0]
     start_pose = Pose(jnp.array(start_point[:2], dtype=jnp.float32), 0.0)
-    motion_noise = jnp.float32(motion_noise)
-    settings = MotionSettings(p_noise=motion_noise, hd_noise=motion_noise)
-    
-    # Convert walls to JAX array format
-    wall_segments = convert_walls_to_jax(walls)
+    walls = convert_walls_to_jax(walls)
     
     # Split key for multiple samples
     keys = jax.random.split(key, n_paths)
     
-    # Sample paths using GenJAX
+    # Sample paths using execute_control
     def sample_single_path(k):
-        trace = generate_path.simulate(k, (settings, start_pose, controls, wall_segments))
-        poses = trace.get_retval()
-        return jnp.stack([pose.p for pose in poses])
+        pose = start_pose
+        path = [pose.p]
+        
+        for control in controls:
+            pose, _, k = reality.execute_control(
+                walls=walls,
+                motion_noise=motion_noise,
+                sensor_noise=0.0,  # Don't need sensor readings for path sampling
+                current_pose=pose,
+                control=control,
+                key=k
+            )
+            path.append(pose.p)
+            
+        return jnp.stack(path)
     
     paths = jax.vmap(sample_single_path)(keys)
     return paths
@@ -322,7 +331,7 @@ canvas = (
                     fontSize=30,
                     textAnchor="middle",
                     dy="-0.35em",
-                    rotate=js("$state.robot_pose.heading * 180 / Math.PI")), 
+                    rotate=js("(-$state.robot_pose.heading + Math.PI/2) * 180 / Math.PI")), 
                     true_path,
                 sensor_rays
                 ]
@@ -370,10 +379,6 @@ def convert_walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
     segments = jnp.stack([p1[mask][:, :2], p2[mask][:, :2]], axis=1)
     return segments
 
-def create_reality(walls_list: List[List[float]], motion_noise: float, sensor_noise: float) -> reality.Reality:
-    """Create Reality instance with proper JAX arrays"""
-    return reality.Reality(convert_walls_to_jax(walls_list), motion_noise, sensor_noise)
-
 def path_to_controls(path_points: List[List[float]]) -> List[Tuple[float, float]]:
     """Convert a series of points into (distance, angle) control pairs
     Returns: List of (forward_dist, rotation_angle) controls
@@ -402,49 +407,46 @@ def path_to_controls(path_points: List[List[float]]) -> List[Tuple[float, float]
     return controls
 
 def debug_reality(widget, e):
-    """Quick visual check of Reality class"""
     if not widget.state.robot_path:
-        return  # Need a path to get initial pose
+        return
         
-    # Get initial pose from start of path
-    start_point = widget.state.robot_path[0]
-    initial_pose = Pose(jnp.array([start_point[0], start_point[1]]), 0.0)
-    
     walls = convert_walls_to_jax(widget.state.walls)
-    world = reality.Reality(walls, 
-                   motion_noise=widget.state.motion_noise,
-                   sensor_noise=widget.state.sensor_noise,
-                   initial_pose=initial_pose)
+    key = jax.random.PRNGKey(0)
+    current_pose = Pose(jnp.array(widget.state.robot_path[0][:2]), 0.0)
     
-    # Convert path to controls and execute them
     controls = path_to_controls(widget.state.robot_path)
     readings = []
-    true_path = [[float(world._true_pose.p[0]), float(world._true_pose.p[1])]]  # Start position
+    true_path = [[float(current_pose.p[0]), float(current_pose.p[1])]]
     
     for control in controls:
-        reading = world.execute_control(control)
+        current_pose, reading, key = reality.execute_control(
+            walls=walls,
+            motion_noise=widget.state.motion_noise,
+            sensor_noise=widget.state.sensor_noise,
+            current_pose=current_pose,
+            control=control,
+            key=key
+        )
         readings.append(reading)
-        # Record position after each control
-        true_path.append([float(world._true_pose.p[0]), float(world._true_pose.p[1])])
+        true_path.append([float(current_pose.p[0]), float(current_pose.p[1])])
     
     # Generate possible paths
     key = jax.random.PRNGKey(0)
     possible_paths = sample_possible_paths(key, 20, widget.state.robot_path, widget.state.walls, widget.state.motion_noise)
-        
     
     # Update state with final readings, pose, and full path
     widget.state.update({
         "robot_pose": {
-            "x": float(world._true_pose.p[0]),
-            "y": float(world._true_pose.p[1]),
-            "heading": float(world._true_pose.hd)
+            "x": float(current_pose.p[0]),
+            "y": float(current_pose.p[1]),
+            "heading": float(current_pose.hd)
         },
         "possible_paths": possible_paths,
         "sensor_readings": readings[-1] if readings else [],
         "true_path": true_path,
         "show_debug": True
     })
-    
+
 def clear_state(w, _):
     w.state.update(initial_state)
     
