@@ -109,7 +109,7 @@ def sample_single_path(carry, control, walls, n_sensors, settings):
     )
     return (pose, key), pose.p
 
-@partial(jax.jit, static_argnums=(1, 2))  # n_paths and n_sensors are static
+@partial(jax.jit, static_argnums=(1))  # n_paths is static
 def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, n_sensors: int,
                          robot_path: jnp.ndarray, walls: jnp.ndarray, 
                          settings: RobotSettings):
@@ -369,7 +369,7 @@ def path_to_controls(path_points: List[List[float]]) -> jnp.ndarray:
     angle_changes = jnp.diff(angles, prepend=0.0)
     return jnp.stack([distances, angle_changes], axis=1)
 
-@partial(jax.jit, static_argnums=(1,))
+@jax.jit
 def simulate_robot_path(start_pose: Pose, n_sensors: int, controls: jnp.ndarray, 
                        walls: jnp.ndarray, settings: RobotSettings, key: jax.random.PRNGKey):
     """Jitted pure function for simulating robot path"""

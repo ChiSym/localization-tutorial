@@ -37,7 +37,7 @@ class Pose:
         """Rotate by angle (in radians)"""
         return Pose(self.p, self.hd + angle)
 
-@partial(jax.jit, static_argnums=(1,))
+@jax.jit
 def execute_control(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings",
                    current_pose: Pose, control: Tuple[float, float], 
                    key: PRNGKey) -> Tuple[Pose, jnp.ndarray, PRNGKey]:
@@ -66,19 +66,28 @@ def execute_control(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings
     
     return new_pose, readings, k4
 
-@partial(jax.jit, static_argnums=(1,))
+@jax.jit
 def get_sensor_readings(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings",
                        pose: Pose, key: PRNGKey) -> Tuple[jnp.ndarray, PRNGKey]:
     """Return noisy distance readings to walls from given pose"""
+    MAX_SENSORS = 32  # Fixed maximum
     key, subkey = jax.random.split(key)
-    angles = jnp.linspace(0, 2*jnp.pi, n_sensors, endpoint=False)
-    noise = jax.random.normal(subkey, (n_sensors,)) * settings.sensor_noise
     
-    # Compute all distances at once
+    # Calculate angles based on n_sensors, but generate MAX_SENSORS of them
+    angle_step = 2 * jnp.pi / n_sensors
+    angles = jnp.arange(MAX_SENSORS) * angle_step
+    noise = jax.random.normal(subkey, (MAX_SENSORS,)) * settings.sensor_noise
+    
     readings = jax.vmap(lambda a: compute_distance_to_wall(
         walls, pose, a, settings.sensor_range))(angles)
     
-    return readings + noise, key
+    # Create a mask for the first n_sensors elements
+    mask = jnp.arange(MAX_SENSORS) < n_sensors
+    
+    # Apply mask and pad with zeros
+    readings = (readings + noise) * mask
+    
+    return readings, key
 
 @jax.jit
 def compute_distance_to_wall(walls: jnp.ndarray, pose: Pose, 
