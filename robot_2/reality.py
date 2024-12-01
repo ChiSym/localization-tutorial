@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import List, Tuple, final, Optional
 import jax.random
 from jax.random import PRNGKey
+from functools import partial
 
 @dataclass
 class Pose:
@@ -36,35 +37,23 @@ class Pose:
         """Rotate by angle (in radians)"""
         return Pose(self.p, self.hd + angle)
 
-@jax.jit
-def execute_control(walls: jnp.ndarray, motion_noise: float, sensor_noise: float, 
+@partial(jax.jit, static_argnums=(1,))
+def execute_control(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings",
                    current_pose: Pose, control: Tuple[float, float], 
                    key: PRNGKey) -> Tuple[Pose, jnp.ndarray, PRNGKey]:
-    """Execute a control command with noise, stopping if we hit a wall
-    
-    Args:
-        walls: JAX array of shape (N, 2, 2) containing wall segments
-        motion_noise: Standard deviation of noise added to motion
-        sensor_noise: Standard deviation of noise added to sensor readings
-        current_pose: The pose to start from
-        control: (distance, angle) tuple of motion command
-        key: JAX random key for noise generation
-        
-    Returns:
-        (new_pose, sensor_readings, new_key) tuple
-    """
+    """Execute a control command with noise, stopping if we hit a wall"""
     dist, angle = control
     k1, k2, k3 = jax.random.split(key, 3)
     
     # Add noise to motion
-    noisy_dist = dist + jax.random.normal(k1) * motion_noise
-    noisy_angle = angle + jax.random.normal(k2) * motion_noise
+    noisy_dist = dist + jax.random.normal(k1) * settings.p_noise
+    noisy_angle = angle + jax.random.normal(k2) * settings.hd_noise
     
     # First rotate (can always rotate)
     new_pose = current_pose.rotate(noisy_angle)
     
     # Then try to move forward, checking for collisions
-    min_dist = compute_distance_to_wall(walls, new_pose, 0.0)  # 0 angle = forward
+    min_dist = compute_distance_to_wall(walls, new_pose, 0.0, settings.sensor_range)
     
     # Only move as far as we can before hitting a wall
     safe_dist = jnp.minimum(noisy_dist, min_dist - 0.1)
@@ -73,29 +62,30 @@ def execute_control(walls: jnp.ndarray, motion_noise: float, sensor_noise: float
     new_pose = new_pose.step_along(safe_dist)
     
     # Get sensor readings from new position
-    readings, k4 = get_sensor_readings(walls, sensor_noise, new_pose, k3)
+    readings, k4 = get_sensor_readings(walls, n_sensors, settings, new_pose, k3)
     
     return new_pose, readings, k4
 
-@jax.jit
-def get_sensor_readings(walls: jnp.ndarray, sensor_noise: float, 
+@partial(jax.jit, static_argnums=(1,))
+def get_sensor_readings(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings",
                        pose: Pose, key: PRNGKey) -> Tuple[jnp.ndarray, PRNGKey]:
     """Return noisy distance readings to walls from given pose"""
-    n_sensors = 8
     key, subkey = jax.random.split(key)
     angles = jnp.linspace(0, 2*jnp.pi, n_sensors, endpoint=False)
-    noise = jax.random.normal(subkey, (n_sensors,)) * sensor_noise
+    noise = jax.random.normal(subkey, (n_sensors,)) * settings.sensor_noise
     
     # Compute all distances at once
-    readings = jax.vmap(lambda a: compute_distance_to_wall(walls, pose, a))(angles)
+    readings = jax.vmap(lambda a: compute_distance_to_wall(
+        walls, pose, a, settings.sensor_range))(angles)
     
     return readings + noise, key
 
 @jax.jit
-def compute_distance_to_wall(walls: jnp.ndarray, pose: Pose, sensor_angle: float) -> float:
+def compute_distance_to_wall(walls: jnp.ndarray, pose: Pose, 
+                           sensor_angle: float, sensor_range: float) -> float:
     """Compute true distance to nearest wall along sensor ray"""
     if walls.shape[0] == 0:  # No walls
-        return 10.0  # Return max sensor range
+        return sensor_range
         
     ray_start = pose.p
     ray_dir = jnp.array([
@@ -114,7 +104,6 @@ def compute_distance_to_wall(walls: jnp.ndarray, pose: Pose, sensor_angle: float
     to_start = ray_start - p1  # Shape: (N, 2)
     
     # Compute determinant (cross product in 2D)
-    # This tells us if ray and wall are parallel and their relative orientation
     det = wall_vec[:, 0] * (-ray_dir[1]) - wall_vec[:, 1] * (-ray_dir[0])
     
     # Compute intersection parameters
@@ -126,4 +115,4 @@ def compute_distance_to_wall(walls: jnp.ndarray, pose: Pose, sensor_angle: float
     
     # Find minimum valid distance
     min_dist = jnp.min(jnp.where(is_valid, t, jnp.inf))
-    return jnp.where(jnp.isinf(min_dist), 10.0, min_dist)
+    return jnp.where(jnp.isinf(min_dist), sensor_range, min_dist)
