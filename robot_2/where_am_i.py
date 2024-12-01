@@ -234,7 +234,7 @@ sliders = (
             label="Sensor Noise:", 
             showValue=True
         )
-     & Plot.Slider(
+     | Plot.Slider(
             "motion_noise",
             range=[0, 1],
             step=0.05,
@@ -451,39 +451,39 @@ def debug_reality(widget, e):
     })
 
 def clear_state(w, _):
-    w.state.update(initial_state)
+    w.state.update(initial_state | {"selected_tool": w.state.selected_tool})
     
-        
 
+selectable_button = "button.px-3.py-1.rounded.bg-gray-100.hover:bg-gray-300.data-[selected=true]:bg-gray-300"
+        
 # Add debug button to toolbar
-toolbar = Plot.html("Select tool:") | ["div", {"class": "flex gap-2 h-10"},
-            ["button", {
-                "class": js("$state.selected_tool === 'walls' ? 'px-3 py-1 rounded bg-gray-300 hover:bg-gray-400 active:bg-gray-500 focus:outline-none' : 'px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400 focus:outline-none'"),
-                "onClick": js("() => $state.selected_tool = 'walls'")
-            }, "Draw Walls"],
-            ["button", {
-                "class": js("$state.selected_tool === 'path' ? 'px-3 py-1 rounded bg-gray-300 hover:bg-gray-400 active:bg-gray-500 focus:outline-none' : 'px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400 focus:outline-none'"),
+toolbar = Plot.html("Select tool:") | ["div.flex.gap-2",
+            [selectable_button, {
+                "data-selected": js("$state.selected_tool === 'path'"),
                 "onClick": js("() => $state.selected_tool = 'path'")
-            }, "Draw Robot Path"],
-            ["button", {
-                "class": "px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 active:bg-gray-400",
+            }, "🤖 Path"],
+            [selectable_button, {
+                "data-selected": js("$state.selected_tool === 'walls'"),
+                "onClick": js("() => $state.selected_tool = 'walls'")
+            }, "✏️ Walls"],
+            [selectable_button, {
                 "onClick": clear_state
             }, "Clear"]
         ]
 
 
-reality_toggle = Plot.html("") | ["label.flex.items-center.gap-2.p-2", 
-                                  "Show true position:",
+reality_toggle = Plot.html("") | ["label.flex.items-center.gap-2.p-2.bg-gray-100.rounded.hover:bg-gray-300", 
                                   ["input", {
         "type": "checkbox", 
         "checked": js("$state.show_true_position"),
         "onChange": js("(e) => $state.show_true_position = e.target.checked")
-    }]]
+    }], "Show true position"]
 
 # Modify the onChange handlers at the bottom
 (
     canvas & 
-    (toolbar | sliders | reality_toggle | sensor_rays + {"height": 200}) 
+    (sliders | toolbar | reality_toggle | sensor_rays + {"height": 200}) 
+    & {"widths": ["400px", 1]}
     | Plot.initialState(initial_state, sync=True)
     | Plot.onChange({
         "robot_path": debug_reality,
