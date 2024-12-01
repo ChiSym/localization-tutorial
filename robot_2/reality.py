@@ -91,9 +91,14 @@ def get_sensor_readings(walls: jnp.ndarray, sensor_noise: float,
 
 def compute_distance_to_wall(walls: jnp.ndarray, pose: Pose, sensor_angle: float) -> float:
     """Compute true distance to nearest wall along sensor ray"""
+    if walls.shape[0] == 0:  # No walls
+        return 10.0  # Return max sensor range
+        
     ray_start = pose.p
-    ray_angle = pose.hd + sensor_angle
-    ray_dir = jnp.array([jnp.cos(ray_angle), jnp.sin(ray_angle)])
+    ray_dir = jnp.array([
+        jnp.cos(pose.hd + sensor_angle),
+        jnp.sin(pose.hd + sensor_angle)
+    ])
     
     # Vectorized computation for all walls at once
     p1 = walls[:, 0]  # Shape: (N, 2)

@@ -260,10 +260,11 @@ initial_state = {
         "show_sensors": True,
         "selected_tool": "path",
         "robot_path": [],
+        "possible_paths": [],
         "estimated_pose": None,
         "sensor_readings": [],
         "show_uncertainty": True,
-        "show_true_position": True  # New flag for toggling true position visibility
+        "show_true_position": False
     }
 
 sensor_rays = Plot.line(
@@ -368,6 +369,8 @@ def convert_walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
         First 2 = start/end point
         Second 2 = x,y coordinates
     """
+    if not walls_list:
+        return jnp.array([]).reshape((0, 2, 2))  # Empty array with shape (0,2,2)
     # Convert to array and reshape to (N,3) where columns are x,y,timestamp
     points = jnp.array(walls_list).reshape(-1, 3)
     # Get consecutive pairs of points
