@@ -65,6 +65,7 @@ from genjax import normal, mv_normal_diag
 from penzai import pz  # Import penzai for pytree dataclasses
 from typing import List, Tuple
 from robot_2.reality import Pose
+from functools import partial
 
 @pz.pytree_dataclass
 class MotionSettings(genjax.PythonicPytree):
@@ -146,41 +147,52 @@ def generate_path(motion_settings: MotionSettings, start_pose: Pose, controls: L
     
     return path
 
-def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, robot_path: List[List[float]], walls: List[List[float]], motion_noise: float):
+def sample_single_path(carry, control, walls, motion_noise):
+    """Single step of path sampling that can be used with scan"""
+    pose, key = carry
+    dist, angle = control
+    pose, _, key = reality.execute_control(
+        walls=walls,
+        motion_noise=motion_noise,
+        sensor_noise=0.0,  # Don't need sensor readings for path sampling
+        current_pose=pose,
+        control=(dist, angle),
+        key=key
+    )
+    return (pose, key), pose.p
+
+@partial(jax.jit, static_argnums=(1,))
+def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, 
+                         robot_path: jnp.ndarray, walls: jnp.ndarray, 
+                         motion_noise: float):
     """Generate n possible paths given the planned path, respecting walls"""
-    controls = path_to_controls(robot_path)
-    start_point = robot_path[0]
-    start_pose = Pose(jnp.array(start_point[:2], dtype=jnp.float32), 0.0)
-    walls = convert_walls_to_jax(walls)
+    # Extract just x,y coordinates from path
+    path_points = robot_path[:, :2]  # Shape: (N, 2)
+    controls = path_to_controls(path_points)
+    
+    start_point = path_points[0]
+    start_pose = Pose(jnp.array(start_point, dtype=jnp.float32), 0.0)
     
     # Split key for multiple samples
     keys = jax.random.split(key, n_paths)
     
-    # Sample paths using execute_control
-    def sample_single_path(k):
-        pose = start_pose
-        path = [pose.p]
-        
-        for control in controls:
-            pose, _, k = reality.execute_control(
-                walls=walls,
-                motion_noise=motion_noise,
-                sensor_noise=0.0,  # Don't need sensor readings for path sampling
-                current_pose=pose,
-                control=control,
-                key=k
-            )
-            path.append(pose.p)
-            
-        return jnp.stack(path)
+    def sample_path_scan(key):
+        init_carry = (start_pose, key)
+        (final_pose, final_key), path_points = jax.lax.scan(
+            lambda carry, control: sample_single_path(carry, control, walls, motion_noise),
+            init_carry,
+            controls
+        )
+        return jnp.concatenate([start_pose.p[None, :], path_points], axis=0)
     
-    paths = jax.vmap(sample_single_path)(keys)
+    paths = jax.vmap(sample_path_scan)(keys)
     return paths
 
 _gensym_counter = 0
 
 WALL_WIDTH=6
 PATH_WIDTH=6
+SEGMENT_THRESHOLD=0.5
 
 def gensym(prefix: str = "g") -> str:
     """Generate a unique symbol with an optional prefix, similar to Clojure's gensym."""
@@ -207,7 +219,7 @@ def drawing_system(on_complete):
                 const dx = e.x - last[0];
                 const dy = e.y - last[1];
                 // Only add point if moved more than threshold distance
-                if (Math.sqrt(dx*dx + dy*dy) >= 1) {{
+                if (Math.sqrt(dx*dx + dy*dy) >= {SEGMENT_THRESHOLD}) {{
                     $state.update(['{key}', 'append', [e.x, e.y, e.startTime]]);
                 }}
             }}
@@ -370,83 +382,93 @@ def convert_walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
         Second 2 = x,y coordinates
     """
     if not walls_list:
-        return jnp.array([]).reshape((0, 2, 2))  # Empty array with shape (0,2,2)
-    # Convert to array and reshape to (N,3) where columns are x,y,timestamp
-    points = jnp.array(walls_list).reshape(-1, 3)
-    # Get consecutive pairs of points
-    p1 = points[:-1]  # All points except last
-    p2 = points[1:]   # All points except first
-    # Keep only pairs with matching timestamps
-    mask = p1[:, 2] == p2[:, 2]
-    # Stack the x,y coordinates into wall segments
-    segments = jnp.stack([p1[mask][:, :2], p2[mask][:, :2]], axis=1)
-    return segments
-
-def path_to_controls(path_points: List[List[float]]) -> List[Tuple[float, float]]:
-    """Convert a series of points into (distance, angle) control pairs
-    Returns: List of (forward_dist, rotation_angle) controls
-    """
-    controls = []
-    for i in range(len(path_points) - 1):
-        p1 = jnp.array(path_points[i][:2])  # current point [x,y]
-        p2 = jnp.array(path_points[i+1][:2])  # next point [x,y]
-        
-        # Calculate distance and angle to next point
-        delta = p2 - p1
-        distance = jnp.linalg.norm(delta)
-        target_angle = jnp.arctan2(delta[1], delta[0])
-        
-        # If not first point, need to rotate from previous heading
-        if i > 0:
-            prev_delta = p1 - jnp.array(path_points[i-1][:2])
-            prev_angle = jnp.arctan2(prev_delta[1], prev_delta[0])
-            rotation = target_angle - prev_angle
-        else:
-            # For first point, rotate from initial heading (0)
-            rotation = target_angle
-            
-        controls.append((float(distance), float(rotation)))
+        return jnp.array([]).reshape((0, 2, 2))
     
-    return controls
+    # Convert everything to JAX at once, using float32 for timestamps
+    points = jnp.array(walls_list, dtype=jnp.float32)  # Shape: (N, 3)
+    
+    # Get consecutive pairs of points
+    p1 = points[:-1]   # Shape: (N-1, 3)
+    p2 = points[1:]    # Shape: (N-1, 3)
+    
+    # Create wall segments array
+    segments = jnp.stack([
+        p1[:, :2],     # x,y coordinates of start points
+        p2[:, :2]      # x,y coordinates of end points
+    ], axis=1)         # Shape: (N-1, 2, 2)
+    
+    # Use timestamps to mask valid segments
+    valid_mask = p1[:, 2] == p2[:, 2]
+    
+    # Return masked segments
+    return segments * valid_mask[:, None, None]
+
+def path_to_controls(path_points: List[List[float]]) -> jnp.ndarray:
+    """Convert a series of points into (distance, angle) control pairs
+    Returns: JAX array of shape (N,2) containing (forward_dist, rotation_angle) controls
+    """
+    points = jnp.array([p[:2] for p in path_points])
+    deltas = points[1:] - points[:-1]
+    distances = jnp.linalg.norm(deltas, axis=1)
+    angles = jnp.arctan2(deltas[:, 1], deltas[:, 0])
+    # Calculate angle changes
+    angle_changes = jnp.diff(angles, prepend=0.0)
+    return jnp.stack([distances, angle_changes], axis=1)
+
+@jax.jit
+def simulate_robot_path(start_pose: Pose, controls: jnp.ndarray, walls: jnp.ndarray, 
+                       motion_noise: float, sensor_noise: float, key: jax.random.PRNGKey):
+    """Jitted pure function for simulating robot path"""
+    def step_fn(carry, control):
+        pose, k = carry
+        new_pose, readings, new_key = reality.execute_control(
+            walls=walls,
+            motion_noise=motion_noise,
+            sensor_noise=sensor_noise,
+            current_pose=pose,
+            control=control,
+            key=k
+        )
+        return (new_pose, new_key), (new_pose, readings)
+    
+    return jax.lax.scan(step_fn, (start_pose, key), controls)
 
 def debug_reality(widget, e):
     if not widget.state.robot_path:
         return
         
+    # Handle data conversion at the boundary
+    path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
     walls = convert_walls_to_jax(widget.state.walls)
+    
+    start_pose = Pose(path[0, :2], 0.0)
+    controls = path_to_controls(path)
     key = jax.random.PRNGKey(0)
-    current_pose = Pose(jnp.array(widget.state.robot_path[0][:2]), 0.0)
     
-    controls = path_to_controls(widget.state.robot_path)
-    readings = []
-    true_path = [[float(current_pose.p[0]), float(current_pose.p[1])]]
+    # Use jitted function for core computation
+    (final_pose, _), (poses, readings) = simulate_robot_path(
+        start_pose, controls, walls,
+        widget.state.motion_noise, widget.state.sensor_noise, key
+    )
     
-    for control in controls:
-        current_pose, reading, key = reality.execute_control(
-            walls=walls,
-            motion_noise=widget.state.motion_noise,
-            sensor_noise=widget.state.sensor_noise,
-            current_pose=current_pose,
-            control=control,
-            key=key
-        )
-        readings.append(reading)
-        true_path.append([float(current_pose.p[0]), float(current_pose.p[1])])
+    # Convert poses to path
+    true_path = jnp.concatenate([start_pose.p[None, :], jax.vmap(lambda p: p.p)(poses)])
     
     # Generate possible paths
-    key = jax.random.PRNGKey(0)
-    possible_paths = sample_possible_paths(key, 20, widget.state.robot_path, widget.state.walls, widget.state.motion_noise)
+    possible_paths = sample_possible_paths(
+        key, 20, path, walls, widget.state.motion_noise
+    )
     
-    # Update state with final readings, pose, and full path
+    # Update widget state
     widget.state.update({
         "robot_pose": {
-            "x": float(current_pose.p[0]),
-            "y": float(current_pose.p[1]),
-            "heading": float(current_pose.hd)
+            "x": float(final_pose.p[0]),
+            "y": float(final_pose.p[1]),
+            "heading": float(final_pose.hd)
         },
         "possible_paths": possible_paths,
-        "sensor_readings": readings[-1] if readings else [],
-        "true_path": true_path,
+        "sensor_readings": readings[-1] if len(readings) > 0 else [],
+        "true_path": [[float(x), float(y)] for x, y in true_path],
         "show_debug": True
     })
 
