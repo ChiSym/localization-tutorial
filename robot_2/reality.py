@@ -36,6 +36,7 @@ class Pose:
         """Rotate by angle (in radians)"""
         return Pose(self.p, self.hd + angle)
 
+@jax.jit
 def execute_control(walls: jnp.ndarray, motion_noise: float, sensor_noise: float, 
                    current_pose: Pose, control: Tuple[float, float], 
                    key: PRNGKey) -> Tuple[Pose, jnp.ndarray, PRNGKey]:
@@ -76,19 +77,21 @@ def execute_control(walls: jnp.ndarray, motion_noise: float, sensor_noise: float
     
     return new_pose, readings, k4
 
+@jax.jit
 def get_sensor_readings(walls: jnp.ndarray, sensor_noise: float, 
                        pose: Pose, key: PRNGKey) -> Tuple[jnp.ndarray, PRNGKey]:
     """Return noisy distance readings to walls from given pose"""
-    angles = jnp.linspace(0, 2*jnp.pi, 8, endpoint=False)
-    keys = jax.random.split(key, 8)
+    n_sensors = 8
+    key, subkey = jax.random.split(key)
+    angles = jnp.linspace(0, 2*jnp.pi, n_sensors, endpoint=False)
+    noise = jax.random.normal(subkey, (n_sensors,)) * sensor_noise
     
-    def get_reading(key, angle):
-        true_dist = compute_distance_to_wall(walls, pose, angle)
-        return true_dist + jax.random.normal(key) * sensor_noise
+    # Compute all distances at once
+    readings = jax.vmap(lambda a: compute_distance_to_wall(walls, pose, a))(angles)
     
-    readings = jax.vmap(get_reading)(keys[1:], angles[:-1])
-    return readings, keys[0]
+    return readings + noise, key
 
+@jax.jit
 def compute_distance_to_wall(walls: jnp.ndarray, pose: Pose, sensor_angle: float) -> float:
     """Compute true distance to nearest wall along sensor ray"""
     if walls.shape[0] == 0:  # No walls
