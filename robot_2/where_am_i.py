@@ -67,11 +67,16 @@ from typing import List, Tuple
 from robot_2.reality import Pose
 from functools import partial
 
+WALL_WIDTH=6
+PATH_WIDTH=6
+SEGMENT_THRESHOLD=0.25
 @pz.pytree_dataclass
-class MotionSettings(genjax.PythonicPytree):
-    """Settings for motion uncertainty"""
-    p_noise: float = 0.1  # Position noise
-    hd_noise: float = 0.1  # Heading noise
+class RobotSettings(genjax.PythonicPytree):
+    """Robot configuration and uncertainty settings"""
+    p_noise: float = 0.1        # Position noise
+    hd_noise: float = 0.1       # Heading noise
+    sensor_noise: float = 0.1   # Sensor noise
+    sensor_range: float = 10.0  # Maximum sensor range
 
 @pz.pytree_dataclass
 class Pose(genjax.PythonicPytree):
@@ -91,80 +96,23 @@ class Pose(genjax.PythonicPytree):
         """Rotate by angle (in radians)"""
         return Pose(self.p, self.hd + angle)
 
-@genjax.gen
-def step_proposal(motion_settings: MotionSettings, start_pose: Pose, control: Tuple[float, float], walls: jnp.ndarray) -> Pose:
-    """Generate a noisy next pose given current pose and control, respecting walls"""
-    dist, angle = control
-    
-    # Sample noisy heading first
-    hd = normal(
-        start_pose.hd + angle, 
-        motion_settings.hd_noise
-    ) @ "hd"
-    
-    # Calculate noisy forward distance
-    noisy_dist = normal(
-        dist,
-        motion_settings.p_noise
-    ) @ "dist"
-    
-    # Simplified collision check using just the wall segments
-    ray_start = start_pose.p
-    ray_dir = jnp.array([jnp.cos(hd), jnp.sin(hd)])
-    
-    # Vectorized ray-wall intersection (copied from Reality class)
-    p1 = walls[:, 0]  # Shape: (N, 2)
-    p2 = walls[:, 1]  # Shape: (N, 2)
-    wall_vec = p2 - p1
-    to_start = ray_start - p1
-    
-    det = wall_vec[:, 0] * (-ray_dir[1]) - wall_vec[:, 1] * (-ray_dir[0])
-    u = (to_start[:, 0] * (-ray_dir[1]) - to_start[:, 1] * (-ray_dir[0])) / (det + 1e-10)
-    t = (wall_vec[:, 0] * to_start[:, 1] - wall_vec[:, 1] * to_start[:, 0]) / (det + 1e-10)
-    
-    is_valid = (jnp.abs(det) > 1e-10) & (t >= 0) & (u >= 0) & (u <= 1)
-    min_dist = jnp.min(jnp.where(is_valid, t, jnp.inf))
-    min_dist = jnp.where(jnp.isinf(min_dist), 10.0, min_dist)
-    
-    # Limit distance to avoid wall collision
-    safe_dist = jnp.minimum(noisy_dist, min_dist - 0.1)
-    safe_dist = jnp.maximum(safe_dist, 0)  # Don't move backwards
-    
-    # Calculate final position
-    p = start_pose.p + safe_dist * ray_dir
-    
-    return Pose(p, hd)
-
-@genjax.gen
-def generate_path(motion_settings: MotionSettings, start_pose: Pose, controls: List[Tuple[float, float]], walls: jnp.ndarray):
-    """Generate a complete path by sampling noisy steps, respecting walls"""
-    pose = start_pose
-    path = [pose]
-    
-    for control in controls:
-        pose = step_proposal(motion_settings, pose, control, walls) @ f"step_{len(path)}"
-        path.append(pose)
-    
-    return path
-
-def sample_single_path(carry, control, walls, motion_noise):
+def sample_single_path(carry, control, walls, n_sensors, settings):
     """Single step of path sampling that can be used with scan"""
     pose, key = carry
-    dist, angle = control
     pose, _, key = reality.execute_control(
         walls=walls,
-        motion_noise=motion_noise,
-        sensor_noise=0.0,  # Don't need sensor readings for path sampling
+        n_sensors=n_sensors,
+        settings=settings,
         current_pose=pose,
-        control=(dist, angle),
+        control=control,
         key=key
     )
     return (pose, key), pose.p
 
-@partial(jax.jit, static_argnums=(1,))
-def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, 
+@partial(jax.jit, static_argnums=(1, 2))  # n_paths and n_sensors are static
+def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int, n_sensors: int,
                          robot_path: jnp.ndarray, walls: jnp.ndarray, 
-                         motion_noise: float):
+                         settings: RobotSettings):
     """Generate n possible paths given the planned path, respecting walls"""
     # Extract just x,y coordinates from path
     path_points = robot_path[:, :2]  # Shape: (N, 2)
@@ -179,7 +127,7 @@ def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int,
     def sample_path_scan(key):
         init_carry = (start_pose, key)
         (final_pose, final_key), path_points = jax.lax.scan(
-            lambda carry, control: sample_single_path(carry, control, walls, motion_noise),
+            lambda carry, control: sample_single_path(carry, control, walls, n_sensors, settings),
             init_carry,
             controls
         )
@@ -190,9 +138,6 @@ def sample_possible_paths(key: jax.random.PRNGKey, n_paths: int,
 
 _gensym_counter = 0
 
-WALL_WIDTH=6
-PATH_WIDTH=6
-SEGMENT_THRESHOLD=0.5
 
 def gensym(prefix: str = "g") -> str:
     """Generate a unique symbol with an optional prefix, similar to Clojure's gensym."""
@@ -242,15 +187,22 @@ sliders = (
      Plot.Slider(
             "sensor_noise",
             range=[0, 1],
-            step=0.05,
+            step=0.02,
             label="Sensor Noise:", 
             showValue=True
         )
      | Plot.Slider(
             "motion_noise",
             range=[0, 1],
-            step=0.05,
+            step=0.02,
             label="Motion Noise:",
+            showValue=True
+        )
+     | Plot.Slider(
+            "n_sensors",
+            range=[4, 32],
+            step=1,
+            label="Number of Sensors:",
             showValue=True
         )
 )
@@ -269,6 +221,7 @@ initial_state = {
         "robot_pose": {"x": 0.5, "y": 0.5, "heading": 0},
         "sensor_noise": 0.1,
         "motion_noise": 0.1,
+        "n_sensors": 8,
         "show_sensors": True,
         "selected_tool": "path",
         "robot_path": [],
@@ -280,24 +233,25 @@ initial_state = {
     }
 
 sensor_rays = Plot.line(
-                js("""
-                   Array.from($state.sensor_readings).flatMap((r, i) => {
-                    const heading = $state.robot_pose.heading || 0;
-                    const angle = heading + (i * Math.PI * 2) / 8;
-                    const x = $state.robot_pose.x;
-                    const y = $state.robot_pose.y;
-                    return [
-                        [x, y, i],
-                        [x + r * Math.cos(angle), 
-                         y + r * Math.sin(angle), i]
-                    ]
-                })
-                   """),
-                z="2",
-                stroke="red",
-                strokeWidth=1,
-                marker="circle"
-            )
+    js("""
+       Array.from($state.sensor_readings).map((r, i) => {
+        const heading = $state.robot_pose.heading || 0;
+        const n_sensors = $state.n_sensors;
+        const angle = heading + (i * Math.PI * 2) / n_sensors;
+        const x = $state.robot_pose.x;
+        const y = $state.robot_pose.y;
+        return [
+            [x, y, i],
+            [x + r * Math.cos(angle), 
+             y + r * Math.sin(angle), i]
+        ]
+       }).flat()
+       """),
+    z="2",
+    stroke="red",
+    strokeWidth=1,
+    marker="circle"
+)
 
 true_path = Plot.line(
                 js("$state.true_path"),
@@ -415,16 +369,16 @@ def path_to_controls(path_points: List[List[float]]) -> jnp.ndarray:
     angle_changes = jnp.diff(angles, prepend=0.0)
     return jnp.stack([distances, angle_changes], axis=1)
 
-@jax.jit
-def simulate_robot_path(start_pose: Pose, controls: jnp.ndarray, walls: jnp.ndarray, 
-                       motion_noise: float, sensor_noise: float, key: jax.random.PRNGKey):
+@partial(jax.jit, static_argnums=(1,))
+def simulate_robot_path(start_pose: Pose, n_sensors: int, controls: jnp.ndarray, 
+                       walls: jnp.ndarray, settings: RobotSettings, key: jax.random.PRNGKey):
     """Jitted pure function for simulating robot path"""
     def step_fn(carry, control):
         pose, k = carry
         new_pose, readings, new_key = reality.execute_control(
             walls=walls,
-            motion_noise=motion_noise,
-            sensor_noise=sensor_noise,
+            n_sensors=n_sensors, 
+            settings=settings,
             current_pose=pose,
             control=control,
             key=k
@@ -437,9 +391,17 @@ def debug_reality(widget, e):
     if not widget.state.robot_path:
         return
         
+    # Create settings object
+    settings = RobotSettings(
+        p_noise=widget.state.motion_noise,
+        hd_noise=widget.state.motion_noise,
+        sensor_noise=widget.state.sensor_noise,
+    )
+    
     # Handle data conversion at the boundary
     path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
     walls = convert_walls_to_jax(widget.state.walls)
+    n_sensors = int(widget.state.n_sensors)  # Convert to int explicitly
     
     start_pose = Pose(path[0, :2], 0.0)
     controls = path_to_controls(path)
@@ -447,8 +409,7 @@ def debug_reality(widget, e):
     
     # Use jitted function for core computation
     (final_pose, _), (poses, readings) = simulate_robot_path(
-        start_pose, controls, walls,
-        widget.state.motion_noise, widget.state.sensor_noise, key
+        start_pose, n_sensors, controls, walls, settings, key
     )
     
     # Convert poses to path
@@ -456,7 +417,7 @@ def debug_reality(widget, e):
     
     # Generate possible paths
     possible_paths = sample_possible_paths(
-        key, 20, path, walls, widget.state.motion_noise
+        key, 20, n_sensors, path, walls, settings  # Pass n_sensors separately
     )
     
     # Update widget state
@@ -511,5 +472,6 @@ reality_toggle = Plot.html("") | ["label.flex.items-center.gap-2.p-2.bg-gray-100
         "robot_path": debug_reality,
         "sensor_noise": debug_reality,
         "motion_noise": debug_reality,
+        "n_sensors": debug_reality,
         "walls": debug_reality
     }))
