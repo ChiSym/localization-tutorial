@@ -79,15 +79,13 @@ def convert_walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
     valid_mask = p1[:, 2] == p2[:, 2]
     return segments * valid_mask[:, None, None]
 
-def debug_reality(widget, e, refresh=False):
+def debug_reality(widget, e, subkey=None):
     """Handle updates to robot simulation"""
     if not widget.state.robot_path:
         return
     
+    current_key = subkey if subkey is not None else key
     
-    global key
-    if refresh:
-        key, subkey = jax.random.split(key)
         
     settings = robot.RobotSettings(
         p_noise=widget.state.motion_noise,
@@ -102,7 +100,7 @@ def debug_reality(widget, e, refresh=False):
     start_pose = robot.Pose(path[0, :2], 0.0)
     controls = robot.path_to_controls(path)
     
-    key_true, key_possible = jax.random.split(key)
+    key_true, key_possible = jax.random.split(current_key)
     
     (final_pose, _), (poses, readings) = robot.simulate_robot_path(
         start_pose, n_sensors, controls, walls, settings, key_true
@@ -122,7 +120,8 @@ def debug_reality(widget, e, refresh=False):
         "possible_paths": possible_paths,
         "sensor_readings": readings[-1] if len(readings) > 0 else [],
         "true_path": [[float(x), float(y)] for x, y in true_path],
-        "show_debug": True
+        "show_debug": True,
+        "current_key": current_key[0]  # Send current key to frontend
     })
 
 
@@ -139,20 +138,61 @@ canvas = v.create_robot_canvas(Plot.js("""({points, simplify}) => {
 sliders = v.create_sliders()
 toolbar = v.create_toolbar()
 reality_toggle = v.create_reality_toggle()
-
+    
     
 key_refresh = (
-    ["div.rounded-lg.p-2.bg-[repeating-linear-gradient(45deg,#86efac,#86efac_10px,#bbf7d0_10px,#bbf7d0_20px)]", 
-     {"onMouseMove": lambda w, e: debug_reality(w, e, refresh=True)}, 
-     "Key Refresh"]
+    [Plot.js("""
+             ({children}) => {
+                 const [inside, setInside] = React.useState(false)
+                 const [waiting, setWaiting] = React.useState(false)
+                 const [paused, setPaused] = React.useState(false)
+                 
+                 const text = paused 
+                     ? 'Click to Start'
+                     : inside 
+                         ? 'Click to Pause'
+                         : 'Fresh Keys'
+                 
+                 const onMouseMove = React.useCallback(async (e) => {
+                         if (paused || waiting) return null;
+                         const rect = e.currentTarget.getBoundingClientRect();
+                         const x = e.clientX - rect.left;
+                         const stripeIndex = Math.floor(x / stripeWidth);
+                         setWaiting(true)
+                         await %1({key: $state.current_key, index: stripeIndex});
+                         setWaiting(false)
+                     })
+                 
+                 const stripeWidth = 4; // Width of each stripe in pixels
+                 
+                 return html(["div.rounded-lg.p-2.delay-100", {
+                     "style": {
+                         background: paused
+                             ? 'repeating-linear-gradient(90deg,#aaa,#aaa 4px,#ddd 4px,#ddd 8px)'
+                             : 'repeating-linear-gradient(90deg,#86efac,#86efac 4px,#bbf7d0 4px,#bbf7d0 8px)',
+                         position: 'relative',
+                         opacity: waiting ? 0.5 : 1,
+                         transition: 'opacity 0.3s ease'
+                     },
+                     "onMouseEnter": () => !paused && setInside(true),
+                     "onMouseLeave": () => setInside(false),
+                     "onClick": () => setPaused(!paused),
+                     "onMouseMove": onMouseMove
+                 }, text])
+             }
+             """, lambda w, e: debug_reality(w, e, subkey=jax.random.split(jax.random.PRNGKey(e.key), e.index + 1)[e.index])
+             
+             )]
 )
+
+# 
 
 # Combine all components
 (
     canvas & 
-    (sliders | toolbar | reality_toggle | key_refresh) 
+    (sliders | toolbar | reality_toggle | key_refresh | Plot.js("$state.current_key")) 
     & {"widths": ["400px", 1]}
-    | Plot.initialState(v.create_initial_state(), sync=True)
+    | Plot.initialState(v.create_initial_state(key[0]), sync=True)
     | Plot.onChange({
         "robot_path": debug_reality,
         "sensor_noise": debug_reality,

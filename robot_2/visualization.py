@@ -1,6 +1,7 @@
 from genstudio.plot import js
 import genstudio.plot as Plot
 from robot_2.emoji import robot, pencil
+from typing import Dict, List, Union, Any
 
 WALL_WIDTH = 6
 PATH_WIDTH = 6
@@ -17,20 +18,19 @@ def drawing_system(key, on_complete):
     events = Plot.events({
         "_initialState": Plot.initialState({key: []}),
         "onDrawStart": js(f"""(e) => {{
-            $state.{key} = [[e.x, e.y, e.startTime]];
+            $state.{key} = [[e.x, e.y, e.key]];
         }}"""),
         "onDraw": js(f"""(e) => {{
             if ($state.{key}.length > 0) {{
                 const last = $state.{key}[$state.{key}.length - 1];
                 const dx = e.x - last[0];
                 const dy = e.y - last[1];
-                $state.update(['{key}', 'append', [e.x, e.y, e.startTime]]);
+                $state.update(['{key}', 'append', [e.x, e.y, e.key]]);
             }}
         }}"""),
         "onDrawEnd": js(f"""(e) => {{
             if ($state.{key}.length > 1) {{
-                const points = [...$state.{key}, [e.x, e.y, e.startTime]];
-                console.log("onDrawEnd", %1)
+                const points = [...$state.{key}, [e.x, e.y, e.key]];
                 const ret = {{
                     points: points,
                     simplify: (threshold=0) => {{
@@ -59,6 +59,7 @@ def drawing_system(key, on_complete):
         }}""", on_complete)
     })
     return line + events
+
 def create_sliders():
     """Create control sliders for robot parameters"""
     return (
@@ -87,7 +88,7 @@ def create_sliders():
     
 def clear_state(w, _):
     """Reset visualization state"""
-    w.state.update(v.create_initial_state() | {"selected_tool": w.state.selected_tool})
+    w.state.update(create_initial_state(w.state.current_key) | {"selected_tool": w.state.selected_tool})
     
 
 def create_toolbar():
@@ -209,7 +210,7 @@ def create_robot_canvas(drawing_system_handler):
         + Plot.clip()
     )
 
-def create_initial_state():
+def create_initial_state(key) -> Dict[str, Any]:
     """Create initial state for visualization"""
     return {
         "walls": [
@@ -231,6 +232,7 @@ def create_initial_state():
         "sensor_readings": [],
         "show_uncertainty": True,
         "show_true_position": False, 
-        "current_line": []
+        "current_line": [],
+        "current_key": key
     }
 
