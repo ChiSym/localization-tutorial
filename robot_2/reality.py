@@ -22,25 +22,12 @@ import jax.random
 from jax.random import PRNGKey
 from functools import partial
 
-@dataclass
-class Pose:
-    """Represents a robot's position (x,y) and heading (radians)"""
-    p: jnp.ndarray  # position [x, y]
-    hd: float       # heading in radians
-
-    def step_along(self, s: float) -> "Pose":
-        """Move forward by distance s"""
-        dp = jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
-        return Pose(self.p + s * dp, self.hd)
-    
-    def rotate(self, angle: float) -> "Pose":
-        """Rotate by angle (in radians)"""
-        return Pose(self.p, self.hd + angle)
+WALL_COLLISION_THRESHOLD = 0.01
 
 @jax.jit
 def execute_control(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings",
-                   current_pose: Pose, control: Tuple[float, float], 
-                   key: PRNGKey) -> Tuple[Pose, jnp.ndarray, PRNGKey]:
+                   current_pose: "Pose", control: Tuple[float, float], 
+                   key: PRNGKey) -> Tuple["Pose", jnp.ndarray, PRNGKey]:
     """Execute a control command with noise, stopping if we hit a wall"""
     dist, angle = control
     k1, k2, k3 = jax.random.split(key, 3)
@@ -56,7 +43,7 @@ def execute_control(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings
     min_dist = compute_distance_to_wall(walls, new_pose, 0.0, settings.sensor_range)
     
     # Only move as far as we can before hitting a wall
-    safe_dist = jnp.minimum(noisy_dist, min_dist - 0.1)
+    safe_dist = jnp.minimum(noisy_dist, min_dist - WALL_COLLISION_THRESHOLD)
     safe_dist = jnp.maximum(safe_dist, 0)  # Don't move backwards
     
     new_pose = new_pose.step_along(safe_dist)
@@ -68,7 +55,7 @@ def execute_control(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings
 
 @jax.jit
 def get_sensor_readings(walls: jnp.ndarray, n_sensors: int, settings: "RobotSettings",
-                       pose: Pose, key: PRNGKey) -> Tuple[jnp.ndarray, PRNGKey]:
+                       pose: "Pose", key: PRNGKey) -> Tuple[jnp.ndarray, PRNGKey]:
     """Return noisy distance readings to walls from given pose"""
     MAX_SENSORS = 32  # Fixed maximum
     key, subkey = jax.random.split(key)
@@ -90,7 +77,7 @@ def get_sensor_readings(walls: jnp.ndarray, n_sensors: int, settings: "RobotSett
     return readings, key
 
 @jax.jit
-def compute_distance_to_wall(walls: jnp.ndarray, pose: Pose, 
+def compute_distance_to_wall(walls: jnp.ndarray, pose: "Pose", 
                            sensor_angle: float, sensor_range: float) -> float:
     """Compute true distance to nearest wall along sensor ray"""
     if walls.shape[0] == 0:  # No walls
