@@ -1,2 +1,4 @@
 robot = "🤖"
 pencil = "✏️"
+recycle = "♻️"
+clipboard = "📋"
