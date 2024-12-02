@@ -2,9 +2,9 @@ from genstudio.plot import js
 import genstudio.plot as Plot
 import robot_2.emoji as emoji
 from typing import Dict, List, Union, Any
+import jax.numpy as jnp
 
-WALL_WIDTH = 6
-PATH_WIDTH = 6
+
 
 def drawing_system(key, on_complete):
     """Create drawing system for walls and paths"""
@@ -59,182 +59,6 @@ def drawing_system(key, on_complete):
         }}""", on_complete)
     })
     return line + events
-
-def create_sliders():
-    """Create control sliders for robot parameters"""
-    return (
-        Plot.Slider(
-            "sensor_noise",
-            range=[0, 1],
-            step=0.02,
-            label="Sensor Noise:", 
-            showValue=True
-        )
-        | Plot.Slider(
-            "motion_noise",
-            range=[0, 1],
-            step=0.02,
-            label="Motion Noise:",
-            showValue=True
-        )
-        | Plot.Slider(
-            "n_sensors",
-            range=[4, 32],
-            step=1,
-            label="Number of Sensors:",
-            showValue=True
-        )
-    )
-    
-def clear_state(w, _):
-    """Reset visualization state"""
-    w.state.update(create_initial_state(w.state.current_seed) | {"selected_tool": w.state.selected_tool})
-    
-
-def create_toolbar():
-    """Create toolbar with tool selection buttons"""
-    selectable_button = "button.px-3.py-1.rounded.bg-gray-100.hover:bg-gray-300.data-[selected=true]:bg-gray-300"
-    
-    return Plot.html("Select tool:") | ["div.flex.gap-2",
-        [selectable_button, {
-            "data-selected": js("$state.selected_tool === 'path'"),
-            "onClick": js("() => $state.selected_tool = 'path'")
-        }, f"{emoji.robot} Path"],
-        [selectable_button, {
-            "data-selected": js("$state.selected_tool === 'walls'"),
-            "onClick": js("() => $state.selected_tool = 'walls'")
-        }, f"{emoji.pencil} Walls"],
-        [selectable_button, {
-            "onClick": clear_state
-        }, "Clear"]
-    ]
-
-def create_reality_toggle():
-    """Create toggle for showing true position"""
-    return Plot.html("") | ["label.flex.items-center.gap-2.p-2.bg-gray-100.rounded.hover:bg-gray-300", 
-        ["input", {
-            "type": "checkbox", 
-            "checked": js("$state.show_true_position"),
-            "onChange": js("(e) => $state.show_true_position = e.target.checked")
-        }], "Show true position"]
-
-def create_sensor_rays():
-    """Create visualization for sensor rays"""
-    return Plot.line(
-        js("""
-           Array.from($state.sensor_readings).map((r, i) => {
-            const heading = $state.robot_pose.heading || 0;
-            const n_sensors = $state.n_sensors;
-            const angle = heading + (i * Math.PI * 2) / n_sensors;
-            const x = $state.robot_pose.x;
-            const y = $state.robot_pose.y;
-            return [
-                [x, y, i],
-                [x + r * Math.cos(angle), 
-                 y + r * Math.sin(angle), i]
-            ]
-           }).flat()
-           """),
-        z="2",
-        stroke="red",
-        strokeWidth=1,
-        marker="circle"
-    )
-
-def create_robot_canvas(drawing_system_handler):
-    """Create main robot visualization canvas"""
-    return (
-        # Draw completed walls
-        Plot.line(
-            js("$state.walls"),
-            stroke=Plot.constantly("Walls"),
-            strokeWidth=WALL_WIDTH,
-            z="2", 
-            render=Plot.renderChildEvents({"onClick": js("""(e) => {
-                const zs = new Set($state.walls.map(w => w[2]));
-                const targetZ = [...zs][e.index];
-                $state.walls = $state.walls.filter(([x, y, z]) => z !== targetZ)
-                }""")})
-        )
-        # Draw current line being drawn
-        + drawing_system("current_line", drawing_system_handler)
-        
-        # Draw planned path
-        + Plot.line(
-            js("$state.robot_path"),
-            stroke=Plot.constantly("Robot Path"),
-            strokeWidth=2,
-            r=3,
-            marker="circle"
-        )
-        
-        # Draw robot and true path when enabled
-        + Plot.cond(
-            js("$state.show_true_position"), 
-            [Plot.text(
-                js("[[$state.robot_pose.x, $state.robot_pose.y]]"),
-                text=Plot.constantly(emoji.robot),
-                fontSize=30,
-                textAnchor="middle",
-                dy="-0.35em",
-                rotate=js("(-$state.robot_pose.heading + Math.PI/2) * 180 / Math.PI")), 
-                Plot.line(
-                    js("$state.true_path"),
-                    stroke=Plot.constantly("True Path"),
-                    strokeWidth=2
-                ),
-                create_sensor_rays()
-            ]
-        )
-        + Plot.domain([0, 10], [0, 10])
-        + Plot.grid()
-        + Plot.aspectRatio(1)
-        + Plot.colorMap({
-            "Walls": "#666",
-            "Sensor Rays": "red",
-            "True Path": "green",
-            "Robot Path": "blue",
-        })
-        + Plot.colorLegend()
-        + Plot.line(
-            js("""
-               if (!$state.show_debug || !$state.possible_paths) {return [];};
-               return $state.possible_paths.flatMap((path, pathIdx) => 
-                   path.map(([x, y]) => [x, y, pathIdx])
-               )
-            """, expression=False),
-            stroke="blue",
-            strokeOpacity=0.2,
-            z="2"
-        )
-        + Plot.clip()
-    )
-
-def create_initial_state(seed) -> Dict[str, Any]:
-    """Create initial state for visualization"""
-    return {
-        "walls": [
-            # Frame around domain (timestamp 0)
-            [0, 0, 0], [10, 0, 0],  # Bottom
-            [10, 0, 0], [10, 10, 0],  # Right
-            [10, 10, 0], [0, 10, 0],  # Top
-            [0, 10, 0], [0, 0, 0],  # Left
-        ],
-        "robot_pose": {"x": 0.5, "y": 0.5, "heading": 0},
-        "sensor_noise": 0.1,
-        "motion_noise": 0.1,
-        "n_sensors": 8,
-        "show_sensors": True,
-        "selected_tool": "path",
-        "robot_path": [],
-        "possible_paths": [],
-        "estimated_pose": None,
-        "sensor_readings": [],
-        "show_uncertainty": True,
-        "show_true_position": False, 
-        "current_line": [],
-        "current_seed": seed
-    }
 
 
 def key_scrubber(handle_seed_index):
@@ -316,3 +140,6 @@ def key_scrubber(handle_seed_index):
                 
                 )]
 )
+    
+
+    
