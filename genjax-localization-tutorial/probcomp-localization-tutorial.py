@@ -138,7 +138,7 @@ def create_segments(points):
 
 
 def make_world(wall_verts, clutters_vec, start, controls) -> tuple[
-    dict[str, FloatArray | tuple[float, float, float, float] | float | Pose], 
+    dict[str, FloatArray | tuple[float, float, float, float] | float | Pose],
     dict[str, Control | Pose],
     int
 ]:
@@ -805,18 +805,18 @@ def set_angle(widget: Widget, e):
     angle = float(e["value"])
     rotated_trace, rotated_trace_weight_diff = rotate_trace(key, trace, angle)
     widget.state.update({
-        "rotated_poses": pose_plot(rotated_trace.get_retval(), 
+        "rotated_poses": pose_plot(rotated_trace.get_retval(),
                                    fill=Plot.constantly("with heading modified")),
         "angle": angle,
         "rotated_trace_weight_diff": rotated_trace_weight_diff})
 
-(   
+(
     Plot.initialState({
         "poses": pose_plot(trace.get_retval(), fill=Plot.constantly("some pose")),
         "rotated_poses": pose_plot(rotated_trace.get_retval(), fill=Plot.constantly("with heading modified")),
-        "rotated_trace_weight_diff": rotated_trace_weight_diff, 
+        "rotated_trace_weight_diff": rotated_trace_weight_diff,
         "angle": jnp.pi / 2.0
-    
+
     })
     | Plot.new(
         world_plot
@@ -827,13 +827,13 @@ def set_angle(widget: Widget, e):
     )
     | html(["span.tc", Plot.js("`score ratio: ${$state.rotated_trace_weight_diff.toFixed(2)}`")])
     | (
-        Plot.js("`angle: ${$state.angle.toFixed(2)}`") 
-        & ["input", {"type": "range", 
-                     "name": "angle", 
-                     "defaultValue": Plot.js("$state.angle"), 
-                     "min": -jnp.pi / 2, 
-                     "max": jnp.pi / 2, 
-                     "step": 0.1, 
+        Plot.js("`angle: ${$state.angle.toFixed(2)}`")
+        & ["input", {"type": "range",
+                     "name": "angle",
+                     "defaultValue": Plot.js("$state.angle"),
+                     "min": -jnp.pi / 2,
+                     "max": jnp.pi / 2,
+                     "step": 0.1,
                      "onChange": set_angle
                      }]
         & {"widths": ["80px", "200px"]}
@@ -900,7 +900,7 @@ def set_first_step_angle(widget: Widget, e):
                      }]
         & {"widths": ["80px", "200px"]}
     )
-).widget() 
+).widget()
 
 # %% [markdown]
 # ### Ideal sensors
