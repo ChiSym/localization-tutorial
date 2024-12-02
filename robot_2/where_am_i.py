@@ -360,23 +360,20 @@ def simulate_robot_uncertainty(widget, e, seed=None):
     )
     
     path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
-    start_pose = Pose(path[0, :2], 0.0)
-    controls = path_to_controls(path)
     
-    key_true, key_possible = split(current_key)
-    
-    # Get single true path with full pose information
-    true_paths, true_headings, true_readings = sample_possible_paths(
-        key_true, 1, path, world, robot
+    # Sample all paths at once (1 true path + N possible paths)
+    n_possible = 20
+    all_paths, all_headings, all_readings = sample_possible_paths(
+        current_key, n_possible + 1, path, world, robot
     )
-    true_path = true_paths[0]  # Take first (only) path
-    final_readings = true_readings[0, -1]  # Take last readings
-    final_heading = true_headings[0, -1]  # Take final heading
     
-    # Get multiple possible paths
-    possible_paths, possible_headings, _ = sample_possible_paths(
-        key_possible, 20, path, world, robot
-    )
+    # First path is the "true" path
+    true_path = all_paths[0]
+    final_readings = all_readings[0, -1]
+    final_heading = all_headings[0, -1]
+    
+    # Remaining paths are possible paths
+    possible_paths = all_paths[1:]
     
     widget.state.update({
         "robot_pose": {
