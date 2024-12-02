@@ -1,8 +1,6 @@
 from genstudio.plot import js
 import genstudio.plot as Plot
 import robot_2.emoji as emoji
-from typing import Dict, List, Union, Any
-import jax.numpy as jnp
 
 
 def drawing_system(key, on_complete):
