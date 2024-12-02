@@ -263,67 +263,17 @@ def execute_control(world: World, robot: RobotCapabilities,
     
     return new_pose, readings, k4
 
-def sample_single_path(carry, control, world, robot):
-    """Single step of path sampling that can be used with scan"""
-    pose, key = carry
-    pose, _, key = execute_control(
-        world=world,
-        robot=robot,
-        current_pose=pose,
-        control=control,
-        key=key
-    )
-    return (pose, key), pose.p
-
-@partial(jax.jit, static_argnums=(1))
-def sample_possible_paths(key: jnp.ndarray, n_paths: int,
-                         robot_path: jnp.ndarray, world: World, 
-                         robot: RobotCapabilities):
-    """Generate n possible paths given the planned path, respecting walls
-    
-    This simulates multiple possible outcomes given:
-    1. The robot's intended path
-    2. The physical world constraints
-    3. The robot's motion/sensor characteristics
-    
-    Returns:
-        Array of shape [n_paths, n_steps, 2] containing possible trajectories
-    """
-    path_points = robot_path[:, :2]
-    controls = path_to_controls(path_points)
-    
-    start_point = path_points[0]
-    start_pose = Pose(jnp.array(start_point, dtype=jnp.float32), 0.0)
-    
-    keys = jax.random.split(key, n_paths)
-    
-    def sample_path_scan(key):
-        init_carry = (start_pose, key)
-        (final_pose, final_key), path_points = jax.lax.scan(
-            lambda carry, control: sample_single_path(carry, control, world, robot),
-            init_carry,
-            controls
-        )
-        return jnp.concatenate([start_pose.p[None, :], path_points], axis=0)
-    
-    paths = jax.vmap(sample_path_scan)(keys)
-    return paths
-
 @jax.jit
 def simulate_robot_path(world: World, robot: RobotCapabilities,
                        start_pose: Pose, controls: jnp.ndarray, 
                        key: jnp.ndarray):
     """Simulate robot path with noise and sensor readings
     
-    This simulates a single execution of the robot's planned path, including:
-    1. Noisy motion according to robot capabilities
-    2. Wall collisions from the physical world
-    3. Noisy sensor readings
-    
     Returns:
-        ((final_pose, final_key), (poses, readings)) where:
-        - poses contains all intermediate poses
-        - readings contains sensor readings at each step
+        Tuple of:
+        - Array of shape [n_steps, 2] containing positions
+        - Array of shape [n_steps] containing headings
+        - Array of shape [n_steps, n_sensors] containing sensor readings
     """
     def step_fn(carry, control):
         pose, k = carry
@@ -336,9 +286,41 @@ def simulate_robot_path(world: World, robot: RobotCapabilities,
         )
         return (new_pose, new_key), (new_pose, readings)
     
-    return jax.lax.scan(step_fn, (start_pose, key), controls)
+    (_, _), (poses, readings) = jax.lax.scan(step_fn, (start_pose, key), controls)
+    
+    # Extract positions and headings
+    positions = jnp.concatenate([
+        start_pose.p[None, :],
+        jax.vmap(lambda p: p.p)(poses)
+    ])
+    headings = jnp.concatenate([
+        jnp.array([start_pose.hd]),
+        jax.vmap(lambda p: p.hd)(poses)
+    ])
+    
+    return positions, headings, readings
 
-
+@partial(jax.jit, static_argnums=(1))
+def sample_possible_paths(key: jnp.ndarray, n_paths: int,
+                         robot_path: jnp.ndarray, world: World, 
+                         robot: RobotCapabilities):
+    """Generate n possible paths given the planned path, respecting walls"""
+    path_points = robot_path[:, :2]
+    controls = path_to_controls(path_points)
+    
+    start_point = path_points[0]
+    start_pose = Pose(jnp.array(start_point, dtype=jnp.float32), 0.0)
+    
+    keys = jax.random.split(key, n_paths)
+    
+    # Vectorize over different random keys
+    return jax.vmap(lambda k: simulate_robot_path(
+        world=world,
+        robot=robot,
+        start_pose=start_pose,
+        controls=controls,
+        key=k
+    ))(keys)
 
 def walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
     """Convert wall vertices from UI format to JAX array of wall segments"""
@@ -383,27 +365,27 @@ def simulate_robot_uncertainty(widget, e, seed=None):
     
     key_true, key_possible = split(current_key)
     
-    (final_pose, _), (poses, readings) = simulate_robot_path(
-        world=world,          
-        robot=robot,
-        start_pose=start_pose,
-        controls=controls,
-        key=key_true
+    # Get single true path with full pose information
+    true_paths, true_headings, true_readings = sample_possible_paths(
+        key_true, 1, path, world, robot
     )
+    true_path = true_paths[0]  # Take first (only) path
+    final_readings = true_readings[0, -1]  # Take last readings
+    final_heading = true_headings[0, -1]  # Take final heading
     
-    true_path = jnp.concatenate([start_pose.p[None, :], jax.vmap(lambda p: p.p)(poses)])
-    possible_paths = sample_possible_paths(
-        key_possible, 20, path, world, robot  
+    # Get multiple possible paths
+    possible_paths, possible_headings, _ = sample_possible_paths(
+        key_possible, 20, path, world, robot
     )
     
     widget.state.update({
         "robot_pose": {
-            "x": float(final_pose.p[0]),
-            "y": float(final_pose.p[1]),
-            "heading": float(final_pose.hd)
+            "x": float(true_path[-1, 0]),
+            "y": float(true_path[-1, 1]),
+            "heading": float(final_heading)
         },
         "possible_paths": possible_paths,
-        "sensor_readings": readings[-1] if len(readings) > 0 else [],
+        "sensor_readings": final_readings,
         "true_path": [[float(x), float(y)] for x, y in true_path],
         "show_debug": True,
         "current_seed": current_seed
