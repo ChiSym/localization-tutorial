@@ -5,22 +5,19 @@ from typing import Dict, List, Union, Any
 import jax.numpy as jnp
 
 
-
 def drawing_system(key, on_complete):
     """Create drawing system for walls and paths"""
     line = Plot.line(
-        js(f"$state.{key}"),
-        stroke="#ccc", 
-        strokeWidth=4,
-        strokeDasharray="4"
+        js(f"$state.{key}"), stroke="#ccc", strokeWidth=4, strokeDasharray="4"
     )
-    
-    events = Plot.events({
-        "_initialState": Plot.initialState({key: []}),
-        "onDrawStart": js(f"""(e) => {{
+
+    events = Plot.events(
+        {
+            "_initialState": Plot.initialState({key: []}),
+            "onDrawStart": js(f"""(e) => {{
             $state.{key} = [[e.x, e.y, e.key]];
         }}"""),
-        "onDraw": js(f"""(e) => {{
+            "onDraw": js(f"""(e) => {{
             if ($state.{key}.length > 0) {{
                 const last = $state.{key}[$state.{key}.length - 1];
                 const dx = e.x - last[0];
@@ -28,7 +25,8 @@ def drawing_system(key, on_complete):
                 $state.update(['{key}', 'append', [e.x, e.y, e.key]]);
             }}
         }}"""),
-        "onDrawEnd": js(f"""(e) => {{
+            "onDrawEnd": js(
+                f"""(e) => {{
             if ($state.{key}.length > 1) {{
                 const points = [...$state.{key}, [e.x, e.y, e.key]];
                 const ret = {{
@@ -36,19 +34,19 @@ def drawing_system(key, on_complete):
                     simplify: (threshold=0) => {{
                         const result = [points[0]];
                         let lastKept = points[0];
-                        
+
                         for (let i = 1; i < points.length - 1; i++) {{
                             const p = points[i];
                             const dx = p[0] - lastKept[0];
                             const dy = p[1] - lastKept[1];
                             const dist = Math.sqrt(dx*dx + dy*dy);
-                            
+
                             if (dist >= threshold) {{
                                 result.push(p);
                                 lastKept = p;
                             }}
                         }}
-                        
+
                         result.push(points[points.length - 1]);
                         return result;
                     }}
@@ -56,37 +54,41 @@ def drawing_system(key, on_complete):
                 %1(ret)
             }}
             $state.{key} = [];
-        }}""", on_complete)
-    })
+        }}""",
+                on_complete,
+            ),
+        }
+    )
     return line + events
 
 
 def key_scrubber(handle_seed_index):
     """Create a scrubber UI component for exploring different random seeds.
-    
-    The component shows a striped bar that can be clicked to pause/resume and 
+
+    The component shows a striped bar that can be clicked to pause/resume and
     scrubbed to explore different seeds. A recycle button allows cycling through seeds.
-    
+
     Args:
         handle_seed_index: Callback function that takes a dict with 'key' (current seed)
             and 'index' (stripe index or -1 for cycle) and handles seed changes.
-            
+
     Returns:
         A Plot.js component containing the scrubber UI.
     """
-    return (
-        [Plot.js("""
+    return [
+        Plot.js(
+            """
                 ({children}) => {
                     const [inside, setInside] = React.useState(false)
                     const [waiting, setWaiting] = React.useState(false)
                     const [paused, setPaused] = React.useState(false)
-                    
-                    const text = paused 
+
+                    const text = paused
                         ? 'Click to Start'
-                        : inside 
+                        : inside
                             ? 'Click to Pause'
                             : 'Explore Keys'
-                    
+
                     const onMouseMove = React.useCallback(async (e) => {
                             if (paused || waiting) return null;
                             const rect = e.currentTarget.getBoundingClientRect();
@@ -97,7 +99,7 @@ def key_scrubber(handle_seed_index):
                             setWaiting(false)
                         })
                     const stripeWidth = 4; // Width of each stripe in pixels
-                    
+
                     return html(["div.flex.flex-col.gap-1", [
                         ["div.flex.flex-row.gap-1", [
                             ["div.rounded-lg.p-2.delay-100.flex-grow", {
@@ -136,10 +138,8 @@ def key_scrubber(handle_seed_index):
                         }, $state.current_seed, ["div.text-gray-500.ml-auto", "copy"]]
                     ]])
                 }
-                """, handle_seed_index, emoji.recycle
-                
-                )]
-)
-    
-
-    
+                """,
+            handle_seed_index,
+            emoji.recycle,
+        )
+    ]
