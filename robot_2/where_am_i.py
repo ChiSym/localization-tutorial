@@ -444,6 +444,7 @@ def create_initial_state(seed) -> Dict[str, Any]:
         "possible_paths": [],
         "estimated_pose": None,
         "sensor_readings": [],
+        "sensor_explore_angle": -1,
         "show_uncertainty": True,
         "show_true_position": False, 
         "current_line": [],
@@ -481,7 +482,7 @@ sensor_rays = Plot.line(
     )
 
 
-animation_frame = Plot.Slider("frame", fps=30, range=628, controls=False)
+
 rotating_sensor_rays = (
     Plot.line(
         js("""
@@ -489,8 +490,11 @@ rotating_sensor_rays = (
             const heading = $state.robot_pose.heading || 0;
             const n_sensors = $state.n_sensors;
             let angle = heading + (i * Math.PI * 2) / n_sensors;
-            if (!$state.show_true_position) {
-                angle += $state.frame * 0.01;
+            if ($state.sensor_explore_angle > -1) {
+                angle += $state.sensor_explore_angle
+            }
+            else if (!$state.show_true_position) {
+                angle += $state.current_seed || Math.random() * 2 * Math.PI;
             }
             const x = $state.robot_pose.x;
             const y = $state.robot_pose.y;
@@ -506,13 +510,25 @@ rotating_sensor_rays = (
         strokeWidth=1,
         marker="circle"
     )
+    # move the mouse around the plot to rotate the sensors
+    + Plot.events({"onMouseMove": 
+        Plot.js("""(e) => {
+                    // Convert mouse position to angle from center
+                    // atan2 gives angle in radians from -pi to pi
+                    // Subtract pi/2 to make 12 o'clock 0 radians
+                    const angle = Math.atan2(e.y, e.x) - Math.PI/2;
+                    
+                    // Normalize to 0 to 2pi range
+                    const normalized = (angle + 2*Math.PI) % (2*Math.PI);
+                    
+                    $state.sensor_explore_angle = normalized;
+                }""")})
     + {"height": 200, "width": 200, "className": "bg-gray-100"}
     + Plot.aspectRatio(1)
     + Plot.domain([-10, 10])
     + Plot.hideAxis()
     + Plot.gridX(interval=1)
     + Plot.gridY(interval=1)
-
 )
 
 true_path = Plot.cond(
@@ -633,6 +649,5 @@ canvas = (
         "n_sensors": simulate_robot_uncertainty,
         "walls": simulate_robot_uncertainty
     })
-    | animation_frame
 )
 
