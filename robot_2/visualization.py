@@ -126,7 +126,7 @@ def key_scrubber(handle_seed_index):
                                 }
                             }, %2]
                         ]],
-                        ["div.text-md.flex.gap-2.mx-auto.p-2.border.hover:border-gray-400.cursor-pointer.w-[140px].text-center", {
+                        ["div.text-md.flex.gap-2.p-2.border.hover:border-gray-400.cursor-pointer.w-[140px].text-center", {
                             "onClick": () => {
                                 navigator.clipboard.writeText($state.current_seed.toString());
                             },
