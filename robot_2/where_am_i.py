@@ -367,7 +367,7 @@ def simulate_robot_uncertainty(widget, e, seed=None):
     
     current_key = PRNGKey(current_seed)
     
-    # Create world and robot objects with ALL parameters
+    # Create world and robot objects
     world = World(walls_to_jax(widget.state.walls))
     robot = RobotCapabilities(
         p_noise=widget.state.motion_noise,
@@ -384,7 +384,7 @@ def simulate_robot_uncertainty(widget, e, seed=None):
     key_true, key_possible = split(current_key)
     
     (final_pose, _), (poses, readings) = simulate_robot_path(
-        world=world,          # <-- Pass World object
+        world=world,          
         robot=robot,
         start_pose=start_pose,
         controls=controls,
@@ -393,7 +393,7 @@ def simulate_robot_uncertainty(widget, e, seed=None):
     
     true_path = jnp.concatenate([start_pose.p[None, :], jax.vmap(lambda p: p.p)(poses)])
     possible_paths = sample_possible_paths(
-        key_possible, 20, path, world, robot  # <-- Pass World object
+        key_possible, 20, path, world, robot  
     )
     
     widget.state.update({
@@ -500,6 +500,41 @@ sensor_rays = Plot.line(
         strokeWidth=1,
         marker="circle"
     )
+
+
+animation_frame = Plot.Slider("frame", fps=30, range=628, controls=False)
+rotating_sensor_rays = (
+    Plot.line(
+        js("""
+           Array.from($state.sensor_readings).map((r, i) => {
+            const heading = $state.robot_pose.heading || 0;
+            const n_sensors = $state.n_sensors;
+            let angle = heading + (i * Math.PI * 2) / n_sensors;
+            if (!$state.show_true_position) {
+                angle += $state.frame * 0.01;
+            }
+            const x = $state.robot_pose.x;
+            const y = $state.robot_pose.y;
+            return [
+                [0, 0, i],
+                [r * Math.cos(angle), 
+                 r * Math.sin(angle), i]
+            ]
+           }).flat()
+           """),
+        z="2",
+        stroke="red",
+        strokeWidth=1,
+        marker="circle"
+    )
+    + {"height": 200, "width": 200, "className": "bg-gray-100"}
+    + Plot.aspectRatio(1)
+    + Plot.domain([-10, 10])
+    + Plot.hideAxis()
+    + Plot.gridX(interval=1)
+    + Plot.gridY(interval=1)
+
+)
 
 true_path = Plot.cond(
             js("$state.show_true_position"), 
@@ -609,7 +644,7 @@ canvas = (
 
 (
     canvas & 
-    (sliders | toolbar | true_position_toggle | key_scrubber) 
+    (sliders | toolbar | true_position_toggle | key_scrubber | rotating_sensor_rays) 
     & {"widths": ["400px", 1]}
     | Plot.initialState(create_initial_state(0), sync=True)
     | Plot.onChange({
@@ -619,5 +654,6 @@ canvas = (
         "n_sensors": simulate_robot_uncertainty,
         "walls": simulate_robot_uncertainty
     })
+    | animation_frame
 )
 
