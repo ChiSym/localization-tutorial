@@ -1,6 +1,6 @@
 from genstudio.plot import js
 import genstudio.plot as Plot
-from robot_2.emoji import robot, pencil
+import robot_2.emoji as emoji
 from typing import Dict, List, Union, Any
 
 WALL_WIDTH = 6
@@ -88,7 +88,7 @@ def create_sliders():
     
 def clear_state(w, _):
     """Reset visualization state"""
-    w.state.update(create_initial_state(w.state.current_key) | {"selected_tool": w.state.selected_tool})
+    w.state.update(create_initial_state(w.state.current_seed) | {"selected_tool": w.state.selected_tool})
     
 
 def create_toolbar():
@@ -99,11 +99,11 @@ def create_toolbar():
         [selectable_button, {
             "data-selected": js("$state.selected_tool === 'path'"),
             "onClick": js("() => $state.selected_tool = 'path'")
-        }, f"{robot} Path"],
+        }, f"{emoji.robot} Path"],
         [selectable_button, {
             "data-selected": js("$state.selected_tool === 'walls'"),
             "onClick": js("() => $state.selected_tool = 'walls'")
-        }, f"{pencil} Walls"],
+        }, f"{emoji.pencil} Walls"],
         [selectable_button, {
             "onClick": clear_state
         }, "Clear"]
@@ -173,7 +173,7 @@ def create_robot_canvas(drawing_system_handler):
             js("$state.show_true_position"), 
             [Plot.text(
                 js("[[$state.robot_pose.x, $state.robot_pose.y]]"),
-                text=Plot.constantly(robot),
+                text=Plot.constantly(emoji.robot),
                 fontSize=30,
                 textAnchor="middle",
                 dy="-0.35em",
@@ -210,7 +210,7 @@ def create_robot_canvas(drawing_system_handler):
         + Plot.clip()
     )
 
-def create_initial_state(key) -> Dict[str, Any]:
+def create_initial_state(seed) -> Dict[str, Any]:
     """Create initial state for visualization"""
     return {
         "walls": [
@@ -233,6 +233,86 @@ def create_initial_state(key) -> Dict[str, Any]:
         "show_uncertainty": True,
         "show_true_position": False, 
         "current_line": [],
-        "current_key": key
+        "current_seed": seed
     }
 
+
+def key_scrubber(handle_seed_index):
+    """Create a scrubber UI component for exploring different random seeds.
+    
+    The component shows a striped bar that can be clicked to pause/resume and 
+    scrubbed to explore different seeds. A recycle button allows cycling through seeds.
+    
+    Args:
+        handle_seed_index: Callback function that takes a dict with 'key' (current seed)
+            and 'index' (stripe index or -1 for cycle) and handles seed changes.
+            
+    Returns:
+        A Plot.js component containing the scrubber UI.
+    """
+    return (
+        [Plot.js("""
+                ({children}) => {
+                    const [inside, setInside] = React.useState(false)
+                    const [waiting, setWaiting] = React.useState(false)
+                    const [paused, setPaused] = React.useState(false)
+                    
+                    const text = paused 
+                        ? 'Click to Start'
+                        : inside 
+                            ? 'Click to Pause'
+                            : 'Explore Keys'
+                    
+                    const onMouseMove = React.useCallback(async (e) => {
+                            if (paused || waiting) return null;
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const x = e.clientX - rect.left;
+                            const stripeIndex = Math.max(0, Math.floor(x / stripeWidth));
+                            setWaiting(true)
+                            await %1({key: $state.current_seed, index: stripeIndex});
+                            setWaiting(false)
+                        })
+                    const stripeWidth = 4; // Width of each stripe in pixels
+                    
+                    return html(["div.flex.flex-col.gap-1", [
+                        ["div.flex.flex-row.gap-1", [
+                            ["div.rounded-lg.p-2.delay-100.flex-grow", {
+                                "style": {
+                                    background: paused
+                                        ? 'repeating-linear-gradient(90deg,#aaa,#aaa 4px,#ddd 4px,#ddd 8px)'
+                                        : 'repeating-linear-gradient(90deg,#86efac,#86efac 4px,#bbf7d0 4px,#bbf7d0 8px)',
+                                    position: 'relative',
+                                    opacity: waiting ? 0.5 : 1,
+                                    transition: 'opacity 0.3s ease'
+                                },
+                                "onMouseEnter": () => !paused && setInside(true),
+                                "onMouseLeave": () => setInside(false),
+                                "onClick": () => setPaused(!paused),
+                                "onMouseMove": onMouseMove
+                            }, text],
+                            ["button.rounded-lg.p-1.text-xl.hover:bg-green-100", {
+                                "onClick": async () => {
+                                    setWaiting(true);
+                                    await %1({key: $state.current_seed, index: -1}); // Special index to indicate cycle
+                                    setWaiting(false);
+                                },
+                                "style": {
+                                    opacity: waiting ? 0.5 : 1,
+                                    transition: 'opacity 0.3s ease'
+                                }
+                            }, %2]
+                        ]],
+                        ["div.text-md.flex.gap-2.mx-auto.p-2.border.hover:border-gray-400.cursor-pointer.w-[140px].text-center", {
+                            "onClick": () => {
+                                navigator.clipboard.writeText($state.current_seed.toString());
+                            },
+                            "style": {
+                                cursor: "pointer"
+                            }
+                        }, $state.current_seed, ["div.text-gray-500.ml-auto", "copy"]]
+                    ]])
+                }
+                """, handle_seed_index, emoji.recycle
+                
+                )]
+)
