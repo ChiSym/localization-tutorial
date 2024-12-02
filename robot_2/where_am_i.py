@@ -353,7 +353,7 @@ def simulate_robot_uncertainty(widget, e, seed=None):
     world = World(walls_to_jax(widget.state.walls))
     robot = RobotCapabilities(
         p_noise=widget.state.motion_noise,
-        hd_noise=widget.state.motion_noise * 0.1,
+        hd_noise=widget.state.motion_noise * widget.state.heading_noise_scale,
         sensor_noise=widget.state.sensor_noise,
         n_sensors=widget.state.n_sensors,
         sensor_range=10.0
@@ -362,7 +362,7 @@ def simulate_robot_uncertainty(widget, e, seed=None):
     path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
     
     # Sample all paths at once (1 true path + N possible paths)
-    n_possible = 20
+    n_possible = 40
     all_paths, all_headings, all_readings = sample_possible_paths(
         current_key, n_possible + 1, path, world, robot
     )
@@ -395,30 +395,37 @@ drawing_system_handler = Plot.js("""({points, simplify}) => {
             $state.update(['walls', 'concat', simplify(0.25)])
         }
         if (mode === 'path') {
-            $state.robot_path = simplify(0.25)
+            $state.robot_path = simplify(0.5)
         }
     }""")
 
 sliders = (
         Plot.Slider(
-            "sensor_noise",
-            range=[0, 1],
-            step=0.02,
-            label="Sensor Noise:", 
-            showValue=True
-        )
-        | Plot.Slider(
             "motion_noise",
             range=[0, 0.5],
             step=0.01,
             label="Motion Noise:",
             showValue=True
         )
+        & Plot.Slider(
+            "heading_noise_scale",
+            range=[0, 1],
+            step=0.05,
+            label="Heading Noise Scale:",
+            showValue=True
+        )
         | Plot.Slider(
+            "sensor_noise",
+            range=[0, 1],
+            step=0.02,
+            label="Sensor Noise:", 
+            showValue=True
+        )
+        & Plot.Slider(
             "n_sensors",
             range=[4, 32],
             step=1,
-            label="Number of Sensors:",
+            label="Sensors:",
             showValue=True
         )
     )
@@ -437,6 +444,7 @@ def create_initial_state(seed) -> Dict[str, Any]:
         "robot_pose": {"x": 0.5, "y": 0.5, "heading": 0},
         "sensor_noise": 0.1,
         "motion_noise": 0.1,
+        "heading_noise_scale": 0.3,
         "n_sensors": 8,
         "show_sensors": True,
         "selected_tool": "path",
@@ -490,12 +498,13 @@ rotating_sensor_rays = (
             const heading = $state.robot_pose.heading || 0;
             const n_sensors = $state.n_sensors;
             let angle = heading + (i * Math.PI * 2) / n_sensors;
-            if ($state.sensor_explore_angle > -1) {
-                angle += $state.sensor_explore_angle
-            }
-            else if (!$state.show_true_position) {
-                angle += $state.current_seed || Math.random() * 2 * Math.PI;
-            }
+            if (!$state.show_true_position) {
+                if ($state.sensor_explore_angle > -1) {
+                    angle += $state.sensor_explore_angle
+                } else {
+                    angle += $state.current_seed || Math.random() * 2 * Math.PI;
+                }
+            } 
             const x = $state.robot_pose.x;
             const y = $state.robot_pose.y;
             return [
@@ -646,6 +655,7 @@ canvas = (
         "robot_path": simulate_robot_uncertainty,
         "sensor_noise": simulate_robot_uncertainty,
         "motion_noise": simulate_robot_uncertainty,
+        "heading_noise_scale": simulate_robot_uncertainty,
         "n_sensors": simulate_robot_uncertainty,
         "walls": simulate_robot_uncertainty
     })
