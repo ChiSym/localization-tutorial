@@ -787,7 +787,10 @@ trace = step_proposal.simulate(
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
 
-def rotate_trace(key: PRNGKey, trace: genjax.Trace[Pose], angle) -> tuple[genjax.Trace[Pose], genjax.Weight]:
+
+def rotate_trace(
+    key: PRNGKey, trace: genjax.Trace[Pose], angle
+) -> tuple[genjax.Trace[Pose], genjax.Weight]:
     """Returns a modified trace with the heading set to the given angle (in radians), along with the weight difference."""
     key, sub_key = jax.random.split(key)
     rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
@@ -795,25 +798,37 @@ def rotate_trace(key: PRNGKey, trace: genjax.Trace[Pose], angle) -> tuple[genjax
     )
     return rotated_trace, rotated_trace_weight_diff
 
+
 rotated_trace, rotated_trace_weight_diff = rotate_trace(key, trace, jnp.pi / 2.0)
+
 
 def set_angle(widget: Widget, e):
     angle = float(e["value"])
     rotated_trace, rotated_trace_weight_diff = rotate_trace(key, trace, angle)
-    widget.state.update({
-        "rotated_poses": pose_plot(rotated_trace.get_retval(),
-                                   fill=Plot.constantly("with heading modified")),
-        "angle": angle,
-        "rotated_trace_weight_diff": rotated_trace_weight_diff})
+    widget.state.update(
+        {
+            "rotated_poses": pose_plot(
+                rotated_trace.get_retval(),
+                fill=Plot.constantly("with heading modified"),
+            ),
+            "angle": angle,
+            "rotated_trace_weight_diff": rotated_trace_weight_diff,
+        }
+    )
+
 
 (
-    Plot.initialState({
-        "poses": pose_plot(trace.get_retval(), fill=Plot.constantly("some pose")),
-        "rotated_poses": pose_plot(rotated_trace.get_retval(), fill=Plot.constantly("with heading modified")),
-        "rotated_trace_weight_diff": rotated_trace_weight_diff,
-        "angle": jnp.pi / 2.0
-
-    })
+    Plot.initialState(
+        {
+            "poses": pose_plot(trace.get_retval(), fill=Plot.constantly("some pose")),
+            "rotated_poses": pose_plot(
+                rotated_trace.get_retval(),
+                fill=Plot.constantly("with heading modified"),
+            ),
+            "rotated_trace_weight_diff": rotated_trace_weight_diff,
+            "angle": jnp.pi / 2.0,
+        }
+    )
     | Plot.new(
         world_plot
         + Plot.js("$state.poses")
@@ -821,17 +836,26 @@ def set_angle(widget: Widget, e):
         + Plot.color_map({"some pose": "green", "with heading modified": "red"})
         + Plot.title("Modifying a heading")
     )
-    | html(["span.tc", Plot.js("`score ratio: ${$state.rotated_trace_weight_diff.toFixed(2)}`")])
+    | html(
+        [
+            "span.tc",
+            Plot.js("`score ratio: ${$state.rotated_trace_weight_diff.toFixed(2)}`"),
+        ]
+    )
     | (
         Plot.js("`angle: ${$state.angle.toFixed(2)}`")
-        & ["input", {"type": "range",
-                     "name": "angle",
-                     "defaultValue": Plot.js("$state.angle"),
-                     "min": -jnp.pi / 2,
-                     "max": jnp.pi / 2,
-                     "step": 0.1,
-                     "onChange": set_angle
-                     }]
+        & [
+            "input",
+            {
+                "type": "range",
+                "name": "angle",
+                "defaultValue": Plot.js("$state.angle"),
+                "min": -jnp.pi / 2,
+                "max": jnp.pi / 2,
+                "step": 0.1,
+                "onChange": set_angle,
+            },
+        ]
         & {"widths": ["80px", "200px"]}
     )
 ).widget()
@@ -843,7 +867,10 @@ def set_angle(widget: Widget, e):
 key, sub_key = jax.random.split(key)
 trace = generate_path_trace(sub_key)
 
-def rotate_first_step(key: PRNGKey, trace: genjax.Trace[Pose], angle) -> tuple[genjax.Trace[Pose], genjax.Weight]:
+
+def rotate_first_step(
+    key: PRNGKey, trace: genjax.Trace[Pose], angle
+) -> tuple[genjax.Trace[Pose], genjax.Weight]:
     """Returns a modified trace with the first step's heading set to the given angle (in radians), along with the weight difference."""
     key, sub_key = jax.random.split(key)
     rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
@@ -851,31 +878,39 @@ def rotate_first_step(key: PRNGKey, trace: genjax.Trace[Pose], angle) -> tuple[g
     )
     return rotated_trace, rotated_trace_weight_diff
 
+
 def set_first_step_angle(widget: Widget, e):
     angle = float(e["value"])
     rotated_trace, rotated_trace_weight_diff = rotate_first_step(key, trace, angle)
-    widget.state.update({
-        "rotated_path": [
-            pose_plot(pose, fill=Plot.constantly("with heading modified"))
-            for pose in path_from_trace(rotated_trace)
-        ],
-        "angle": angle,
-        "rotated_trace_weight_diff": rotated_trace_weight_diff
-    })
+    widget.state.update(
+        {
+            "rotated_path": [
+                pose_plot(pose, fill=Plot.constantly("with heading modified"))
+                for pose in path_from_trace(rotated_trace)
+            ],
+            "angle": angle,
+            "rotated_trace_weight_diff": rotated_trace_weight_diff,
+        }
+    )
+
 
 (
-    Plot.initialState({
-        "original_path": [
-            pose_plot(pose, fill=Plot.constantly("some path"))
-            for pose in path_from_trace(trace)
-        ],
-        "rotated_path": [
-            pose_plot(pose, fill=Plot.constantly("with heading modified"))
-            for pose in path_from_trace(rotate_first_step(key, trace, jnp.pi / 2.0)[0])
-        ],
-        "rotated_trace_weight_diff": rotate_first_step(key, trace, jnp.pi / 2.0)[1],
-        "angle": jnp.pi / 2.0
-    })
+    Plot.initialState(
+        {
+            "original_path": [
+                pose_plot(pose, fill=Plot.constantly("some path"))
+                for pose in path_from_trace(trace)
+            ],
+            "rotated_path": [
+                pose_plot(pose, fill=Plot.constantly("with heading modified"))
+                for pose in path_from_trace(
+                    rotate_first_step(key, trace, jnp.pi / 2.0)[0]
+                )
+            ],
+            "rotated_trace_weight_diff": rotate_first_step(key, trace, jnp.pi / 2.0)[1],
+            "angle": jnp.pi / 2.0,
+        }
+    )
     | Plot.new(
         world_plot
         + Plot.js("$state.rotated_path")
@@ -883,17 +918,26 @@ def set_first_step_angle(widget: Widget, e):
         + Plot.color_map({"some path": "green", "with heading modified": "red"})
         + Plot.title("Modifying first step heading")
     )
-    | html(["span.tc", Plot.js("`score ratio: ${$state.rotated_trace_weight_diff.toFixed(2)}`")])
+    | html(
+        [
+            "span.tc",
+            Plot.js("`score ratio: ${$state.rotated_trace_weight_diff.toFixed(2)}`"),
+        ]
+    )
     | (
         Plot.js("`angle: ${$state.angle.toFixed(2)}`")
-        & ["input", {"type": "range",
-                     "name": "angle",
-                     "defaultValue": Plot.js("$state.angle"),
-                     "min": -jnp.pi / 2,
-                     "max": jnp.pi / 2,
-                     "step": 0.1,
-                     "onChange": set_first_step_angle
-                     }]
+        & [
+            "input",
+            {
+                "type": "range",
+                "name": "angle",
+                "defaultValue": Plot.js("$state.angle"),
+                "min": -jnp.pi / 2,
+                "max": jnp.pi / 2,
+                "step": 0.1,
+                "onChange": set_first_step_angle,
+            },
+        ]
         & {"widths": ["80px", "200px"]}
     )
 ).widget()
@@ -1072,7 +1116,8 @@ def full_model(motion_settings):
     return (
         full_model_kernel.partial_apply(motion_settings).scan()(
             robot_inputs["start"], robot_inputs["controls"]
-        ) @ "steps"
+        )
+        @ "steps"
     )
 
 
@@ -1478,7 +1523,8 @@ def resample(
         jax.random.split(key1, N * K), constraints, (motion_settings,)
     )
     winners = jax.vmap(genjax.categorical.sampler)(
-        jax.random.split(key2, K), jnp.reshape(log_weights, (K, N)))
+        jax.random.split(key2, K), jnp.reshape(log_weights, (K, N))
+    )
     # indices returned are relative to the start of the K-segment from which they were drawn.
     # globalize the indices by adding back the index of the start of each segment.
     winners += jnp.arange(0, N * K, N)
@@ -1669,7 +1715,8 @@ def grid_sample(gf, pose_grid, observation):
 def flatten_pose_cube(pose_grid, cube_step_size, scores):
     n_indices = 2 * cube_step_size + 1
     best_heading_indices = jnp.argmax(
-        scores.reshape(n_indices * n_indices, n_indices), axis=1)
+        scores.reshape(n_indices * n_indices, n_indices), axis=1
+    )
     # those were block relative; linearize them by adding back block indices
     bs = best_heading_indices + jnp.arange(0, n_indices**3, n_indices)
     return Pose(pose_grid.p[bs], pose_grid.hd[bs]), scores[bs]
