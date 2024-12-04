@@ -560,6 +560,10 @@ rotating_sensor_rays = (
 true_path = Plot.cond(
     js("$state.show_true_position"),
     [
+        Plot.line(
+            js("$state.true_path"), stroke=Plot.constantly("True Path"), strokeWidth=2
+        ),
+        sensor_rays,
         Plot.text(
             js("[[$state.robot_pose.x, $state.robot_pose.y]]"),
             text=Plot.constantly(emoji.robot),
@@ -568,10 +572,6 @@ true_path = Plot.cond(
             dy="-0.35em",
             rotate=js("(-$state.robot_pose.heading + Math.PI/2) * 180 / Math.PI"),
         ),
-        Plot.line(
-            js("$state.true_path"), stroke=Plot.constantly("True Path"), strokeWidth=2
-        ),
-        sensor_rays,
     ],
 )
 
@@ -668,8 +668,8 @@ canvas = (
     v.drawing_system("current_line", drawing_system_handler)
     + walls
     + planned_path
-    + true_path
     + possible_paths
+    + true_path
     + Plot.domain([0, 10], [0, 10])
     + Plot.grid()
     + Plot.aspectRatio(1)
@@ -683,6 +683,7 @@ canvas = (
     )
     + Plot.colorLegend()
     + Plot.clip()
+    + Plot.gridX(interval=1)
 )
 
 (
