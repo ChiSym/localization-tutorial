@@ -1478,7 +1478,7 @@ def resample(
         jax.random.split(key1, N * K), constraints, (motion_settings,)
     )
     winners = jax.vmap(genjax.categorical.sampler)(
-        jax.random.split(key2, K), jnp.reshape(log_weights, (K, N))
+        jax.random.split(key2, K), jnp.reshape(log_weights, (K, N)))
     # indices returned are relative to the start of the K-segment from which they were drawn.
     # globalize the indices by adding back the index of the start of each segment.
     winners += jnp.arange(0, N * K, N)
@@ -1669,7 +1669,7 @@ def grid_sample(gf, pose_grid, observation):
 def flatten_pose_cube(pose_grid, cube_step_size, scores):
     n_indices = 2 * cube_step_size + 1
     best_heading_indices = jnp.argmax(
-        scores.reshape(n_indices * n_indices, n_indices), axis=1
+        scores.reshape(n_indices * n_indices, n_indices), axis=1)
     # those were block relative; linearize them by adding back block indices
     bs = best_heading_indices + jnp.arange(0, n_indices**3, n_indices)
     return Pose(pose_grid.p[bs], pose_grid.hd[bs]), scores[bs]

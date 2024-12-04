@@ -50,7 +50,6 @@
 # pyright: reportUnusedExpression=false
 # pyright: reportUnknownMemberType=false
 
-from dataclasses import dataclass
 from functools import partial
 from typing import List, Tuple, Any, Dict
 
@@ -58,7 +57,6 @@ import genjax
 import genstudio.plot as Plot
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax.random import PRNGKey, split
 from penzai import pz
 from genstudio.plot import js
