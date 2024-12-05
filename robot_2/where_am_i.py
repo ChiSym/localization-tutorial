@@ -66,37 +66,35 @@ import robot_2.visualization as v
 
 key = PRNGKey(0)
 
-
 WALL_COLLISION_THRESHOLD = 0.15
-WALL_WIDTH = 6
-PATH_WIDTH = 6
-
 
 @pz.pytree_dataclass
 class Pose(genjax.PythonicPytree):
     """Robot pose with position and heading"""
-
-    p: jax.numpy.ndarray  # [x, y]
-    hd: float  # heading in radians
+    
+    p: jnp.ndarray  # [x, y]
+    hd: jnp.ndarray  # heading in radians
+    __hash__ = None
 
     def dp(self):
         """Get direction vector from heading"""
         return jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
 
-    def step_along(self, s: float) -> "Pose":
+    def step_along(self, s: jnp.ndarray) -> "Pose":
         """Move forward by distance s"""
         return Pose(self.p + s * self.dp(), self.hd)
 
-    def rotate(self, angle: float) -> "Pose":
+    def rotate(self, angle: jnp.ndarray) -> "Pose":
         """Rotate by angle (in radians)"""
         return Pose(self.p, self.hd + angle)
-
-
+    def for_json(self):
+        return [*self.p, self.hd]
 @pz.pytree_dataclass
 class World(genjax.PythonicPytree):
     """The physical environment with walls that robots can collide with"""
 
     walls: jnp.ndarray  # [N, 2, 2] array of wall segments
+    __hash__ = None
 
     @jax.jit
     def ray_distance(
@@ -104,7 +102,7 @@ class World(genjax.PythonicPytree):
     ) -> float:
         """Find distance to nearest wall along a ray"""
         if self.walls.shape[0] == 0:  # No walls
-            return max_dist
+            return max_dist + WALL_COLLISION_THRESHOLD
 
         # Vectorized computation for all walls at once
         p1 = self.walls[:, 0]  # Shape: (N, 2)
@@ -132,8 +130,9 @@ class World(genjax.PythonicPytree):
 
         # Find minimum valid distance
         min_dist = jnp.min(jnp.where(is_valid, t * jnp.linalg.norm(ray_dir), jnp.inf))
-        return jnp.where(jnp.isinf(min_dist), max_dist, min_dist)
+        return jnp.where(jnp.isinf(min_dist), max_dist + WALL_COLLISION_THRESHOLD, min_dist)
 
+    # TODO, turn this into physical_step (with bounce from wall)
     @jax.jit
     def check_movement(
         self,
@@ -149,7 +148,7 @@ class World(genjax.PythonicPytree):
             collision_radius: How close we can get to walls
 
         Returns:
-            (can_move, safe_pos) where safe_pos is either end_pos or the
+            (is_path_clear, safe_pos) where safe_pos is either end_pos or the
             furthest safe position along the movement line
         """
         movement_dir = end_pos - start_pos
@@ -163,186 +162,252 @@ class World(genjax.PythonicPytree):
         )
 
         wall_dist = self.ray_distance(start_pos, ray_dir, dist)
+        is_path_clear = wall_dist >= dist
+        
+        # Only adjust position if we actually hit a wall
+        final_pos = jnp.where(
+            is_path_clear,
+            end_pos,
+            start_pos + ray_dir * (wall_dist - collision_radius)
+        )
 
-        # Stop short of wall by collision_radius
-        safe_dist = jnp.maximum(0.0, wall_dist - collision_radius)
-        safe_pos = start_pos + ray_dir * safe_dist
-
-        # Use where to select between start_pos and safe_pos
-        final_pos = jnp.where(dist > 1e-6, safe_pos, start_pos)
-
-        return wall_dist > dist - collision_radius, final_pos
+        return is_path_clear, final_pos
 
 
 @pz.pytree_dataclass
 class RobotCapabilities(genjax.PythonicPytree):
     """Physical capabilities and limitations of the robot"""
 
-    p_noise: float  # Position noise (std dev in meters)
-    hd_noise: float  # Heading noise (std dev in radians)
-    sensor_noise: float  # Sensor noise (std dev in meters)
+    p_noise: jnp.ndarray  # Position noise (std dev in meters)
+    hd_noise: jnp.ndarray  # Heading noise (std dev in radians)
+    sensor_noise: jnp.ndarray  # Sensor noise (std dev in meters)
     n_sensors: int = 8  # Number of distance sensors
-    sensor_range: float = 10.0  # Maximum sensor range in meters
+    sensor_range: jnp.ndarray = 10.0  # Maximum sensor range in meters
 
-    def try_move(
-        self,
-        world: World,
-        current_pos: jnp.ndarray,
-        desired_pos: jnp.ndarray,
-        key: PRNGKey,
-    ) -> jnp.ndarray:
-        """Try to move to desired_pos, respecting walls and adding noise"""
-        # Add motion noise
-        noise = jax.random.normal(key, shape=(2,)) * self.p_noise
-        noisy_target = desired_pos + noise
-
-        # Check for collisions
-        _, safe_pos = world.check_movement(current_pos, noisy_target)
-        return safe_pos
-
-
-def path_to_controls(path_points: List[List[float]]) -> jnp.ndarray:
-    """Convert a series of points into (distance, angle) control pairs"""
+@jax.jit
+def path_to_controls(path_points: jnp.ndarray) -> Tuple[Pose, jnp.ndarray]:
+    """Convert a series of points into a starting pose and list of (distance, angle) control pairs
+    
+    Each control pair is (distance, angle) where:
+    - distance: move this far in current heading
+    - angle: after moving, turn this much (relative to current heading)
+    """
     points = jnp.array([p[:2] for p in path_points])
     deltas = points[1:] - points[:-1]
     distances = jnp.linalg.norm(deltas, axis=1)
+    
+    # Calculate absolute angles for each segment
     angles = jnp.arctan2(deltas[:, 1], deltas[:, 0])
-    angle_changes = jnp.diff(angles, prepend=0.0)
-    return jnp.stack([distances, angle_changes], axis=1)
+    
+    # Start facing the first segment
+    start_pose = Pose(
+        p=points[0],
+        hd=angles[0]
+    )
+    
+    # For each segment, we need:
+    # - distance: length of current segment
+    # - angle: turn needed after this segment to face next segment
+    angle_changes = jnp.diff(angles, append=angles[-1])
+    
+    controls = jnp.stack([distances, angle_changes], axis=1)
+    
+    return start_pose, controls
 
 
-@jax.jit
-def get_sensor_readings(
-    world: World, robot: RobotCapabilities, pose: Pose, key: PRNGKey
-) -> Tuple[jnp.ndarray, PRNGKey]:
-    """Return noisy distance readings to walls from given pose"""
-    MAX_SENSORS = 32  # Fixed maximum
-    key, subkey = jax.random.split(key)
 
-    # Calculate angles based on n_sensors, but generate MAX_SENSORS of them
+
+# Create a sample world with walls and obstacles
+example_world = World(
+    walls=jnp.array([
+        # Outer walls forming a room
+        [[0.0, 0.0], [10.0, 0.0]],  # Bottom wall
+        [[10.0, 0.0], [10.0, 8.0]], # Right wall
+        [[10.0, 8.0], [0.0, 8.0]],  # Top wall
+        [[0.0, 8.0], [0.0, 0.0]],   # Left wall
+        
+        # Inner obstacles
+        [[3.0, 2.0], [3.0, 4.0]],   # Vertical obstacle
+        [[6.0, 4.0], [8.0, 4.0]],   # Horizontal obstacle
+    ])
+)
+
+# Define robot capabilities
+example_robot = RobotCapabilities(
+    n_sensors=8,
+    sensor_range=jnp.array(5.0),
+    sensor_noise=jnp.array(0.1),
+    p_noise=jnp.array(0.1),    # Position noise
+    hd_noise=jnp.array(0.05),  # Heading noise
+    
+)
+
+# Create a sample planned path with waypoints
+example_planned_path = jnp.array([
+    [1.0, 1.0],    # Start at (1,1)
+    [4.0, 2.0],    # Move diagonally up and right
+    [7.0, 4.0],    # Continue diagonally
+    [8.0, 6.0],    # End near top right
+])
+
+
+# Sample control instructions for testing
+example_controls = jnp.array([
+    [2.0, 0.0],   # Move forward 2 units
+    [1.5, 0.5],   # Move forward 1.5 units while turning right 0.5 rad
+    [2.0, -0.3],  # Move forward 2 units while turning left 0.3 rad
+    [1.0, 0.8],   # Move forward 1 unit while turning right 0.8 rad
+])
+example_control = example_controls[0]  # Just use first control for single control tests
+
+# Create a sample starting pose
+example_pose = Pose(
+    p=jnp.array([1.0, 1.0]),  # Starting position at (1,1)
+    hd=jnp.array(0.0)         # Initial heading of 0 radians (facing right)
+)
+
+@genjax.gen
+def get_sensor_reading(
+    world: World, robot: RobotCapabilities, pose: Pose, angle: jnp.ndarray
+) -> jnp.ndarray:
+    """Get a single noisy sensor reading at the given angle relative to robot heading"""
+    # Get the ray direction vector for this sensor angle
+    ray_dir = jnp.array([
+        jnp.cos(pose.hd + angle), 
+        jnp.sin(pose.hd + angle)
+    ])
+    
+    # Get raw distance reading
+    distance = world.ray_distance(
+        ray_start=pose.p,
+        ray_dir=ray_dir,
+        max_dist=robot.sensor_range
+    )
+    
+    # Add noise to reading
+    noisy_distance = genjax.normal(distance, robot.sensor_noise) @ "sensor_noise"
+    
+    return noisy_distance
+
+# Example usage of get_sensor_reading
+# Get a reading from sensor pointing 45 degrees (π/4 radians) relative to robot heading
+# key = jax.random.PRNGKey(0)
+# reading = get_sensor_reading.simulate(key, (sample_world, sample_robot, sample_pose, jnp.array(jnp.pi/4))).get_retval()
+# print(f"Sensor reading at 45 degrees: {reading:.2f} units")
+
+
+@genjax.gen
+def get_all_sensor_readings(
+    world: World, robot: RobotCapabilities, pose: Pose
+):
+    """Get noisy sensor readings at evenly spaced angles around the robot"""
+    # Calculate angles for max sensors
+    MAX_SENSORS = 32
     angle_step = 2 * jnp.pi / robot.n_sensors
     angles = jnp.arange(MAX_SENSORS) * angle_step
-    noise = jax.random.normal(subkey, (MAX_SENSORS,)) * robot.sensor_noise
-
-    readings = jax.vmap(
-        lambda a: world.ray_distance(
-            ray_start=pose.p,
-            ray_dir=jnp.array([jnp.cos(pose.hd + a), jnp.sin(pose.hd + a)]),
-            max_dist=robot.sensor_range,
-        )
-    )(angles)
-
-    # Create a mask for the first n_sensors elements
+    
+    # Create mask based on actual number of sensors
     mask = jnp.arange(MAX_SENSORS) < robot.n_sensors
+    
+    # Chain vmap and mask combinators
+    masked_readings = get_sensor_reading.mask().vmap(in_axes=(0, None, None, None, 0))
+    return masked_readings(mask, world, robot, pose, angles) @ "sensor_readings"
 
-    # Apply mask and pad with zeros
-    readings = (readings + noise) * mask
+# Example usage
+readings = get_all_sensor_readings.simulate(key, (example_world, example_robot, example_pose)).get_retval()
+print(f"All sensor readings: {readings.value[readings.flag]}")
 
-    return readings, key
-
-
-@jax.jit
+@genjax.gen
 def execute_control(
     world: World,
     robot: RobotCapabilities,
     current_pose: Pose,
-    control: Tuple[float, float],
-    key: PRNGKey,
-) -> Tuple[Pose, jnp.ndarray, PRNGKey]:
+    control: jnp.ndarray,
+):
     """Execute a control command with noise, stopping if we hit a wall
 
     Args:
         control: (distance, angle) pair where:
-            - angle is how much to turn FIRST
-            - distance is how far to move AFTER turning
+            - distance is how far to move FIRST
+            - angle is how much to turn AFTER moving
     """
     dist, angle = control
-    k1, k2, k3 = jax.random.split(key, 3)
-
-    # Add noise to motion
-    noisy_dist = dist + jax.random.normal(k1) * robot.p_noise
-    noisy_angle = angle + jax.random.normal(k2) * robot.hd_noise
-
-    # First rotate (can always rotate)
-    new_pose = current_pose.rotate(noisy_angle)
-
-    # Check distance to wall in our current heading direction
-    min_dist = world.ray_distance(
-        ray_start=new_pose.p, ray_dir=new_pose.dp(), max_dist=robot.sensor_range
+    
+    uncorrected_pos = current_pose.p + dist * current_pose.dp()
+    noisy_pos = genjax.mv_normal_diag(uncorrected_pos, robot.p_noise * jnp.ones(2)) @ "p_noise"
+    (no_obstructions, corrected_pos) = world.check_movement(
+        start_pos=current_pose.p,
+        end_pos=noisy_pos,
     )
+    
+    noisy_angle = genjax.normal(current_pose.hd + angle, robot.hd_noise) @ "hd_noise"
+    noisy_pose = Pose(p=corrected_pos, hd=noisy_angle)
+    readings = get_all_sensor_readings(world, robot, noisy_pose) @ "readings"
+    return noisy_pose, (noisy_pose, readings)
+#
+execute_control_sim = jax.jit(execute_control.simulate)
 
-    # Only move as far as we can before hitting a wall
-    safe_dist = jnp.minimum(noisy_dist, min_dist - WALL_COLLISION_THRESHOLD)
-    safe_dist = jnp.maximum(safe_dist, 0)  # Don't move backwards
-
-    new_pose = new_pose.step_along(safe_dist)
-
-    # Get sensor readings from new position
-    readings, k4 = get_sensor_readings(world, robot, new_pose, k3)
-
-    return new_pose, readings, k4
+# execute_control_sim(key, (sample_world, sample_robot, sample_pose, sample_control)).get_retval()
 
 
-@jax.jit
-def simulate_robot_path(
-    world: World,
-    robot: RobotCapabilities,
-    start_pose: Pose,
-    controls: jnp.ndarray,
-    key: jnp.ndarray,
-):
-    """Simulate robot path with noise and sensor readings
+
+@genjax.gen 
+def sample_robot_path(
+    world: World, 
+    robot: RobotCapabilities, 
+    start: Pose, 
+    controls: jnp.ndarray):
+    """Simulate robot path with noise and sensor readings using genjax
+
+    Args:
+        world: World containing walls
+        robot: Robot capabilities and noise parameters
+        start: Starting pose
+        controls: Array of (distance, angle) control pairs
 
     Returns:
         Tuple of:
-        - Array of shape [n_steps, 2] containing positions
-        - Array of shape [n_steps] containing headings
-        - Array of shape [n_steps, n_sensors] containing sensor readings
+        - Array of poses for each step (including start pose)
+        - Array of sensor readings for each step
     """
+    # Prepend a no-op control to get initial readings
+    noop = jnp.array([0.0, 0.0])
+    all_controls = jnp.concatenate([noop[None], controls])
+    
+    # Use execute_control.scan() to process all controls
+    _, (poses, readings) = execute_control.partial_apply(world, robot).scan()(start, all_controls) @ "trajectory"
+    
+    return poses, readings
 
-    def step_fn(carry, control):
-        pose, k = carry
-        new_pose, readings, new_key = execute_control(
-            world=world, robot=robot, current_pose=pose, control=control, key=k
-        )
-        return (new_pose, new_key), (new_pose, readings)
-
-    (_, _), (poses, readings) = jax.lax.scan(step_fn, (start_pose, key), controls)
-
-    # Extract positions and headings
-    positions = jnp.concatenate([start_pose.p[None, :], jax.vmap(lambda p: p.p)(poses)])
-    headings = jnp.concatenate(
-        [jnp.array([start_pose.hd]), jax.vmap(lambda p: p.hd)(poses)]
-    )
-
-    return positions, headings, readings
+# jax.jit(sample_robot_path.simulate)(key, (sample_world, sample_robot, sample_pose, sample_controls))
 
 
-@partial(jax.jit, static_argnums=(1))
+sample_robot_path_sim = jax.jit(sample_robot_path.simulate)
+
 def sample_possible_paths(
-    key: jnp.ndarray,
-    n_paths: int,
-    robot_path: jnp.ndarray,
     world: World,
     robot: RobotCapabilities,
+    planned_path: jnp.ndarray,
+    n_paths: int,
+    key
 ):
     """Generate n possible paths given the planned path, respecting walls"""
-    path_points = robot_path[:, :2]
-    controls = path_to_controls(path_points)
-
-    start_point = path_points[0]
-    start_pose = Pose(jnp.array(start_point, dtype=jnp.float32), 0.0)
-
+    (start_pose, controls) = path_to_controls(planned_path[:, :2])
+    # Create n random keys for parallel simulation
     keys = jax.random.split(key, n_paths)
+    
+    # Vectorize simulation across keys
+    (pose, mask) = jax.vmap(sample_robot_path.simulate, in_axes=(0, None))(
+        keys,
+        (world, robot, start_pose, controls)
+    ).get_retval()
+    
+    return (pose, mask.value[mask.flag])
 
-    # Vectorize over different random keys
-    return jax.vmap(
-        lambda k: simulate_robot_path(
-            world=world, robot=robot, start_pose=start_pose, controls=controls, key=k
-        )
-    )(keys)
+# sample_possible_paths(sample_world, sample_robot, sample_planned_path, 20, key)
 
 
+@jax.jit
 def walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
     """Convert wall vertices from UI format to JAX array of wall segments"""
     if not walls_list:
@@ -358,7 +423,7 @@ def walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
     return segments * valid_mask[:, None, None]
 
 
-def simulate_robot_uncertainty(widget, e, seed=None):
+def update_robot_simulation(widget, e, seed=None):
     """Handle updates to robot simulation"""
     if not widget.state.robot_path:
         return
@@ -382,28 +447,19 @@ def simulate_robot_uncertainty(widget, e, seed=None):
 
     # Sample all paths at once (1 true path + N possible paths)
     n_possible = 40
-    all_paths, all_headings, all_readings = sample_possible_paths(
-        current_key, n_possible + 1, path, world, robot
+    poses, readings = sample_possible_paths(
+        world, robot, path, n_possible + 1, current_key
     )
-
-    # First path is the "true" path
-    true_path = all_paths[0]
-    final_readings = all_readings[0, -1]
-    final_heading = all_headings[0, -1]
-
-    # Remaining paths are possible paths
-    possible_paths = all_paths[1:]
-
+    
+    true_pose = poses[0]
+    
+    
     widget.state.update(
         {
-            "robot_pose": {
-                "x": float(true_path[-1, 0]),
-                "y": float(true_path[-1, 1]),
-                "heading": float(final_heading),
-            },
-            "possible_paths": possible_paths,
-            "sensor_readings": final_readings,
-            "true_path": [[float(x), float(y)] for x, y in true_path],
+            "robot_pose": true_pose,
+            "possible_paths": poses[1:].p,
+            "sensor_readings": readings[-1],
+            "true_path": true_pose.p,
             "show_debug": True,
             "current_seed": current_seed,
         }
@@ -447,19 +503,17 @@ def create_initial_state(seed) -> Dict[str, Any]:
             [0, 10, 0],
             [0, 0, 0],  # Left
         ],
-        "robot_pose": {"x": 0.5, "y": 0.5, "heading": 0},
+        "robot_pose": [0.5, 0.5, 0],
         "sensor_noise": 0.1,
         "motion_noise": 0.1,
         "heading_noise_scale": 0.3,
         "n_sensors": 8,
-        "show_sensors": True,
         "selected_tool": "path",
         "robot_path": [],
         "possible_paths": [],
         "estimated_pose": None,
         "sensor_readings": [],
         "sensor_explore_angle": -1,
-        "show_uncertainty": True,
         "show_true_position": False,
         "current_line": [],
         "current_seed": seed,
@@ -484,11 +538,9 @@ true_position_toggle = Plot.html(
 sensor_rays = Plot.line(
     js("""
            Array.from($state.sensor_readings).map((r, i) => {
-            const heading = $state.robot_pose.heading || 0;
+            const [x, y, heading] = $state.robot_pose;
             const n_sensors = $state.n_sensors;
             const angle = heading + (i * Math.PI * 2) / n_sensors;
-            const x = $state.robot_pose.x;
-            const y = $state.robot_pose.y;
             return [
                 [x, y, i],
                 [x + r * Math.cos(angle),
@@ -507,7 +559,7 @@ rotating_sensor_rays = (
     Plot.line(
         js("""
            Array.from($state.sensor_readings).map((r, i) => {
-            const heading = $state.robot_pose.heading || 0;
+            const [x, y, heading] = $state.robot_pose;
             const n_sensors = $state.n_sensors;
             let angle = heading + (i * Math.PI * 2) / n_sensors;
             if (!$state.show_true_position) {
@@ -517,8 +569,6 @@ rotating_sensor_rays = (
                     angle += $state.current_seed || Math.random() * 2 * Math.PI;
                 }
             }
-            const x = $state.robot_pose.x;
-            const y = $state.robot_pose.y;
             return [
                 [0, 0, i],
                 [r * Math.cos(angle),
@@ -563,12 +613,12 @@ true_path = Plot.cond(
         ),
         sensor_rays,
         Plot.text(
-            js("[[$state.robot_pose.x, $state.robot_pose.y]]"),
+            js("[$state.robot_pose]"),
             text=Plot.constantly(emoji.robot),
             fontSize=30,
             textAnchor="middle",
             dy="-0.35em",
-            rotate=js("(-$state.robot_pose.heading + Math.PI/2) * 180 / Math.PI"),
+            rotate=js("(-$state.robot_pose[2] + Math.PI/2) * 180 / Math.PI"),
         ),
     ],
 )
@@ -584,7 +634,7 @@ planned_path = Plot.line(
 walls = Plot.line(
     js("$state.walls"),
     stroke=Plot.constantly("Walls"),
-    strokeWidth=WALL_WIDTH,
+    strokeWidth=6,
     z="2",
     render=Plot.renderChildEvents(
         {
@@ -598,12 +648,11 @@ walls = Plot.line(
 )
 
 possible_paths = Plot.line(
-    js(
-        """
-               if (!$state.show_debug || !$state.possible_paths) {return [];};
-               return $state.possible_paths.flatMap((path, pathIdx) =>
-                   path.map(([x, y]) => [x, y, pathIdx])
-               )
+    js("""
+        if (!$state.show_debug || !$state.possible_paths) {return [];};
+        return $state.possible_paths.map((path, pathIdx) =>
+            path.map(([x, y]) => [x, y, pathIdx])
+        ).flat()
             """,
         expression=False,
     ),
@@ -647,6 +696,7 @@ toolbar = Plot.html("Select tool:") | [
 
 def handleSeedIndex(w, e):
     global key
+    seed = None
     try:
         if e.index == 0:
             seed = key[0]
@@ -655,9 +705,9 @@ def handleSeedIndex(w, e):
             seed = key[0]
         else:
             seed = split(key, e.index)[e.index - 1][0]
-        simulate_robot_uncertainty(w, e, seed=seed)
     except Exception as err:
         print(f"Error handling seed index: {err}, {e.key}, {e.index}")
+    update_robot_simulation(w, e, seed=seed)
 
 
 key_scrubber = v.key_scrubber(handleSeedIndex)
@@ -691,12 +741,50 @@ canvas = (
     | Plot.initialState(create_initial_state(0), sync=True)
     | Plot.onChange(
         {
-            "robot_path": simulate_robot_uncertainty,
-            "sensor_noise": simulate_robot_uncertainty,
-            "motion_noise": simulate_robot_uncertainty,
-            "heading_noise_scale": simulate_robot_uncertainty,
-            "n_sensors": simulate_robot_uncertainty,
-            "walls": simulate_robot_uncertainty,
+            "robot_path": update_robot_simulation,
+            "sensor_noise": update_robot_simulation,
+            "motion_noise": update_robot_simulation,
+            "heading_noise_scale": update_robot_simulation,
+            "n_sensors": update_robot_simulation,
+            "walls": update_robot_simulation,
         }
     )
 )
+
+
+# %% 
+# Test path_to_controls with simple examples
+# Test with a longer path
+test_path = jnp.array([
+    [2.0, 5.0],  # Start
+    [3.0, 6.0],  # Up and right
+    [4.0, 6.0],  # Right
+    [5.0, 5.0],  # Down and right
+])
+
+start_pose, controls = path_to_controls(test_path)
+print("Test path:")
+print(f"Start pose: pos={start_pose.p}, heading={start_pose.hd:.2f} rad")
+print("\nControls (distance, angle):")
+for i, (dist, angle) in enumerate(controls):
+    print(f"  Step {i}: move {dist:.2f} units, turn {angle:.2f} rad")
+
+test_world = World(jnp.array([]))  # Empty world
+test_robot = RobotCapabilities(
+    p_noise=jnp.array(0.0),    # No noise for testing
+    hd_noise=jnp.array(0.0),
+    sensor_noise=jnp.array(0.0),
+    n_sensors=8,
+    sensor_range=jnp.array(10.0)
+)
+
+# Execute each control and track state
+current_pose = start_pose
+print("\nExecuting controls:")
+for i, control in enumerate(controls):
+    result = execute_control_sim(key, (test_world, test_robot, current_pose, control))
+    current_pose = result.get_retval()[0]
+    print(f"\nAfter step {i}:")
+    print(f"  Position: {current_pose.p}")
+    print(f"  Heading: {current_pose.hd:.2f} rad")
+    print(f"  Direction vector: {current_pose.dp()}")
