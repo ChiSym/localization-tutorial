@@ -60,14 +60,16 @@ import jax.numpy as jnp
 from jax.random import PRNGKey, split
 from penzai import pz
 from genstudio.plot import js
+import dataclasses
+
 
 import robot_2.emoji as emoji
 import robot_2.visualization as v
 
 key = PRNGKey(0)
 
-WALL_COLLISION_THRESHOLD = 0.15
-WALL_BOUNCE = 0.15
+WALL_COLLISION_THRESHOLD = jnp.array(0.15)
+WALL_BOUNCE = jnp.array(0.15)
 
 
 @pz.pytree_dataclass
@@ -90,7 +92,6 @@ class Pose(genjax.PythonicPytree):
         """Rotate by angle (in radians)"""
         return Pose(self.p, self.hd + angle)
 
-    @jax.jit
     def for_json(self):
         if len(self.p.shape) == 1:
             return [*self.p, self.hd]
@@ -102,23 +103,10 @@ class Pose(genjax.PythonicPytree):
 def calculate_bounce_point(
     collision_point: jnp.ndarray,
     ray_dir: jnp.ndarray,
-    wall_vec: jnp.ndarray,
+    wall_normal: jnp.ndarray,
     bounce_amount: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Calculate bounce point for a single wall collision
-
-    Args:
-        collision_point: Point of collision with wall
-        ray_dir: Direction of incoming ray
-        wall_vec: Vector along wall direction
-        bounce_amount: How far to bounce
-
-    Returns:
-        Point after bouncing off wall
-    """
-    wall_normal = jnp.array([-wall_vec[1], wall_vec[0]]) / (
-        jnp.linalg.norm(wall_vec) + 1e-10
-    )
+    """Calculate bounce point for a single wall collision using precomputed normal"""
     # Ensure wall normal points away from approach direction
     wall_normal = jnp.where(
         jnp.dot(ray_dir, wall_normal) > 0, -wall_normal, wall_normal
@@ -132,7 +120,10 @@ class World(genjax.PythonicPytree):
 
     walls: jnp.ndarray  # [N, 2, 2] array of wall segments
     wall_vecs: jnp.ndarray  # [N, 2] array of wall direction vectors
-    bounce: jnp.ndarray = WALL_BOUNCE  # How much to bounce off walls
+    wall_unit_vecs: jnp.ndarray  # [N, 2] array of normalized wall vectors
+    wall_normals: jnp.ndarray  # [N, 2] array of wall normal vectors
+    bounce: jnp.ndarray = dataclasses.field(default_factory=lambda: WALL_BOUNCE)
+    
     __hash__ = None
 
     @jax.jit
@@ -144,8 +135,8 @@ class World(genjax.PythonicPytree):
 
     @jax.jit
     def physical_step(
-        self, start_pos: jnp.ndarray, end_pos: jnp.ndarray, heading: jnp.ndarray
-    ) -> Pose:
+        self, start_pos: jnp.ndarray, end_pos: jnp.ndarray
+    ) -> jnp.ndarray:
         """Compute physical step with wall collisions and bounces
 
         Args:
@@ -169,7 +160,7 @@ class World(genjax.PythonicPytree):
 
         # Calculate bounce point if wall hit
         bounce_pos = calculate_bounce_point(
-            collision_point, ray_dir, self.wall_vecs[wall_idx], self.bounce
+            collision_point, ray_dir, self.wall_normals[wall_idx], self.bounce
         )
 
         # Define conditions for position selection
@@ -185,9 +176,7 @@ class World(genjax.PythonicPytree):
             bounce_pos,  # For wall collision
         ]
 
-        final_pos = jnp.select(conditions, positions, default=end_pos)
-
-        return Pose(final_pos, heading)
+        return jnp.select(conditions, positions, default=end_pos)
 
     @jax.jit
     def ray_distance(
@@ -214,7 +203,7 @@ class World(genjax.PythonicPytree):
         # Vector from wall start to ray start
         to_start = ray_start - p1  # Shape: (N, 2)
 
-        # Compute determinant (cross product in 2D) using pre-computed wall vectors
+        # Compute determinant (cross product in 2D) using wall vectors
         det = self.wall_vecs[:, 0] * (-ray_dir[1]) - self.wall_vecs[:, 1] * (
             -ray_dir[0]
         )
@@ -230,7 +219,7 @@ class World(genjax.PythonicPytree):
 
         # Valid intersections: not parallel, in front of ray, within wall segment
         is_valid = (jnp.abs(det) > 1e-10) & (t >= 0) & (u >= 0) & (u <= 1)
-        distances = jnp.where(is_valid, t * jnp.linalg.norm(ray_dir), jnp.inf)
+        distances = jnp.where(is_valid, t, jnp.inf)
 
         # Find closest valid wall
         closest_idx = jnp.argmin(distances)
@@ -246,11 +235,12 @@ class World(genjax.PythonicPytree):
 
 
 @jax.jit
-def walls_to_jax(walls_list: List[List[float]]) -> Tuple[jnp.ndarray, jnp.ndarray]:
-    """Convert wall vertices from UI format to JAX arrays of wall segments and direction vectors"""
+def walls_to_jax(walls_list: List[List[float]]) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Convert wall vertices from UI format to JAX arrays with precomputed vectors"""
     if not walls_list:
         empty = jnp.array([]).reshape((0, 2, 2))
-        return empty, jnp.array([]).reshape((0, 2))
+        empty_vec = jnp.array([]).reshape((0, 2))
+        return empty, empty_vec, empty_vec, empty_vec
 
     points = jnp.array(walls_list, dtype=jnp.float32)
     p1 = points[:-1]
@@ -259,11 +249,16 @@ def walls_to_jax(walls_list: List[List[float]]) -> Tuple[jnp.ndarray, jnp.ndarra
     segments = jnp.stack([p1[:, :2], p2[:, :2]], axis=1)
     valid_mask = p1[:, 2] == p2[:, 2]
 
-    # Compute wall direction vectors
+    # Compute wall vectors and normalize
     wall_segments = segments * valid_mask[:, None, None]
     wall_vecs = (wall_segments[:, 1] - wall_segments[:, 0]) * valid_mask[:, None]
+    
+    # Compute unit vectors and normals
+    norms = jnp.linalg.norm(wall_vecs, axis=1, keepdims=True) + 1e-10
+    wall_unit_vecs = wall_vecs / norms
+    wall_normals = jnp.stack([-wall_unit_vecs[:, 1], wall_unit_vecs[:, 0]], axis=1)
 
-    return wall_segments, wall_vecs
+    return wall_segments, wall_vecs, wall_unit_vecs, wall_normals
 
 
 @pz.pytree_dataclass
@@ -356,28 +351,23 @@ def execute_control(
     dist, angle = control
 
     # Calculate noisy intended position
-    uncorrected_pos = current_pose.p + dist * current_pose.dp()
+    planned_pos = current_pose.p + dist * current_pose.dp()
     noisy_pos = (
-        genjax.mv_normal_diag(uncorrected_pos, robot.p_noise * jnp.ones(2)) @ "p_noise"
+        genjax.mv_normal_diag(planned_pos, robot.p_noise * jnp.ones(2)) @ "p_noise"
     )
 
-    # Get physical movement result including bounces
-    moved_pose = world.physical_step(
-        start_pos=current_pose.p, end_pos=noisy_pos, heading=current_pose.hd
-    )
+    physical_pos = world.physical_step(current_pose.p, noisy_pos)
 
-    # Apply heading change with noise
-    noisy_angle = genjax.normal(moved_pose.hd + angle, robot.hd_noise) @ "hd_noise"
-    noisy_pose = Pose(p=moved_pose.p, hd=noisy_angle)
+    noisy_angle = genjax.normal(current_pose.hd + angle, robot.hd_noise) @ "hd_noise"
+    noisy_pose = Pose(p=physical_pos, hd=noisy_angle)
 
     # Get sensor readings at final position
     readings = get_all_sensor_readings(world, robot, noisy_pose) @ "readings"
     return noisy_pose, (noisy_pose, readings.value * readings.flag)
 
-
 @genjax.gen
 def sample_robot_path(
-    world: World, robot: RobotCapabilities, start: Pose, controls: jnp.ndarray
+    robot: RobotCapabilities, start: Pose, controls: jnp.ndarray
 ):
     """Simulate robot path with noise and sensor readings using genjax
 
@@ -404,9 +394,12 @@ def sample_robot_path(
 
     return path, readings
 
+# f = genjax.partial(sample_robot_path, world); jax.jit(f.simulate...)
+# sample_robot_path_sim = jax.jit(sample_robot_path.simulate, static_argnums=)
 
-sample_robot_path_sim = jax.jit(sample_robot_path.simulate)
-
+# @partial(jax.jit, static_argnums=1)
+# def sample_robot_path_sim_2(key, world, robot, start_pos, controls):
+#     sample_robot_path.simulate(key, ())
 
 def sample_possible_paths(
     world: World, robot: RobotCapabilities, planned_path: jnp.ndarray, n_paths: int, key
@@ -432,6 +425,10 @@ def update_robot_simulation(widget, e, seed=None):
 
     current_key = PRNGKey(current_seed)
 
+    # TODO 
+    # static decorators on World and RobotCapabilities? 
+    # (since they are immutable)
+    
     # Create world and robot objects
     world = World(*walls_to_jax(widget.state.walls))
     robot = RobotCapabilities(
