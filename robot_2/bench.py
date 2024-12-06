@@ -1,6 +1,14 @@
 # %%
 import jax.numpy as jnp
 import time
+from robot_2.where_am_i import (
+    RobotCapabilities,
+    simulate_robot,
+    World,
+    walls_to_jax,
+    PRNGKey,
+)
+import jax.random
 
 # Benchmark State:
 # Walls:
@@ -241,16 +249,6 @@ def perturb_walls(w, idx, amount=0.1):
     w[idx][1] = w[idx][1] + amount
     w[idx][2] = w[idx][2] + amount
     return w
-
-
-from robot_2.where_am_i import (
-    RobotCapabilities,
-    simulate_robot,
-    World,
-    walls_to_jax,
-    PRNGKey,
-)
-import jax.random
 
 
 def get_robot(p_noise):
