@@ -122,6 +122,12 @@ def calculate_bounce_point(
     return collision_point + bounce_amount * wall_normal
 
 
+def compute_wall_normal(wall_direction: jnp.ndarray) -> jnp.ndarray:
+    """Compute unit normal vector to wall direction"""
+    return jnp.array([-wall_direction[1], wall_direction[0]]) / (
+        jnp.linalg.norm(wall_direction) + 1e-10
+    )
+
 @pz.pytree_dataclass
 class World(genjax.PythonicPytree):
     """The physical environment with walls that robots can collide with"""
@@ -130,12 +136,6 @@ class World(genjax.PythonicPytree):
     wall_vecs: jnp.ndarray  # [N, 2] array of wall direction vectors
     bounce: jnp.ndarray = WALL_BOUNCE  # How much to bounce off walls
     __hash__ = None
-
-    def compute_wall_normal(self, wall_direction: jnp.ndarray) -> jnp.ndarray:
-        """Compute unit normal vector to wall direction"""
-        return jnp.array([-wall_direction[1], wall_direction[0]]) / (
-            jnp.linalg.norm(wall_direction) + 1e-10
-        )
 
     def physical_step(
         self, start_pos: jnp.ndarray, end_pos: jnp.ndarray
