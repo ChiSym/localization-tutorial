@@ -314,11 +314,8 @@ def get_all_sensor_readings(world: World, robot: RobotCapabilities, pose: Pose):
 
 
 # Example usage
-readings = get_all_sensor_readings.simulate(
-    key, (example_world, example_robot, example_pose)
-).get_retval()
-print(f"All sensor readings: {readings.value[readings.flag]}")
-
+# readings = get_all_sensor_readings.simulate(key, (example_world, example_robot, example_pose)).get_retval()
+# print(f"All sensor readings: {readings.value[readings.flag]}")
 
 @genjax.gen
 def execute_control(
