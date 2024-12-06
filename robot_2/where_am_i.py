@@ -447,18 +447,11 @@ def update_robot_simulation(widget, e, seed=None):
         world, robot, path, n_possible + 1, current_key
     )
     
-    true_path = paths[0]
-    possible_paths = paths[1:]
-    
-    print("true path", true_path.p.shape)
-    print("readings", readings.shape)
-    
-    
     widget.state.update(
         {
-            "possible_paths": possible_paths,
-            "sensor_readings": readings[0],
-            "true_path": true_path,
+            "possible_paths": paths[1:],
+            "true_path": paths[0],
+            "robot_readings": readings[0][-1][:robot.n_sensors],
             "show_debug": True,
             "current_seed": current_seed,
         }
@@ -512,8 +505,7 @@ def create_initial_state(seed) -> Dict[str, Any]:
         "robot_path": [],
         "possible_paths": [],
         "estimated_pose": None,
-        "sensor_readings": None,
-        "robot_readings": Plot.js("$state.sensor_readings ? Array.from($state.sensor_readings[$state.sensor_readings.length-1]) : []"),
+        "robot_readings": None,
         "sensor_explore_angle": -1,
         "show_true_position": False,
         "current_line": [],
@@ -538,17 +530,17 @@ true_position_toggle = Plot.html(
 
 sensor_rays = Plot.line(
     js("""
-           $state.robot_readings?.flatMap((r, i) => {
-               if (!r) return [];
-            const [x, y, heading] = $state.robot_pose;
-            const n_sensors = $state.n_sensors;
+        const readings = $state.robot_readings
+        if (!readings) return;
+        const n_sensors = readings.length; 
+        const [x, y, heading] = $state.robot_pose;
+        return Array.from($state.robot_readings).flatMap((r, i) => {
             const angle = heading + (i * Math.PI * 2) / n_sensors;
             const from = [x, y, i]
-            const to = [x + r * Math.cos(angle),
-                 y + r * Math.sin(angle), i]
+            const to = [x + r * Math.cos(angle), y + r * Math.sin(angle), i]
             return [from, to]
-           })
-           """),
+        })
+           """, expression=False),
     z="2",
     stroke="red",
     strokeWidth=1,
@@ -559,25 +551,28 @@ sensor_rays = Plot.line(
 rotating_sensor_rays = (
     Plot.line(
         js("""
-           $state.robot_readings?.flatMap((r, i) => {
-               if (!r) return [];
+            const readings = $state.robot_readings;
+            if (!readings) return;
+            const n_sensors = readings.length; 
             const [x, y, heading] = $state.robot_pose;
-            const n_sensors = $state.n_sensors;
-            let angle = heading + (i * Math.PI * 2) / n_sensors;
+            
+            let angle_modifier = 0
             if (!$state.show_true_position) {
-                if ($state.sensor_explore_angle > -1) {
-                    angle += $state.sensor_explore_angle
+                const explore_angle = $state.sensor_explore_angle;
+                if (explore_angle > -1) {
+                    angle_modifier = explore_angle
                 } else {
-                    angle += $state.current_seed || Math.random() * 2 * Math.PI;
+                    angle_modifier = $state.current_seed || Math.random() * 2 * Math.PI;
                 }
             }
-            return [
-                [0, 0, i],
-                [r * Math.cos(angle),
-                 r * Math.sin(angle), i]
-            ]
-           })
-           """),
+            return Array.from($state.robot_readings).flatMap((r, i) => {
+                let angle = heading + (i * Math.PI * 2) / n_sensors;
+                angle += angle_modifier;
+                const from = [0, 0, i]
+                const to = [r * Math.cos(angle), r * Math.sin(angle), i]
+                return [from, to]
+            })
+           """, expression=False),
         z="2",
         stroke="red",
         strokeWidth=1,
@@ -741,7 +736,7 @@ canvas = (
     canvas
     & (sliders | toolbar | true_position_toggle | key_scrubber | rotating_sensor_rays)
     & {"widths": ["400px", 1]}
-    | Plot.initialState(create_initial_state(0), sync={"current_seed"})
+    | Plot.initialState(create_initial_state(7+5+14), sync={"current_seed"})
     | Plot.onChange(
         {
             "robot_path": update_robot_simulation,
