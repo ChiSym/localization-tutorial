@@ -367,12 +367,15 @@ def update_robot_simulation(widget, e, seed=None):
     world = World(walls_to_jax(widget.state.walls))
     robot = RobotCapabilities(
         p_noise=jnp.array(widget.state.motion_noise, dtype=jnp.float32),
-        hd_noise=jnp.array(widget.state.motion_noise * widget.state.heading_noise_scale, dtype=jnp.float32),
+        hd_noise=jnp.array(
+            widget.state.motion_noise * widget.state.heading_noise_scale,
+            dtype=jnp.float32,
+        ),
         sensor_noise=jnp.array(widget.state.sensor_noise, dtype=jnp.float32),
         n_sensors=jnp.array(widget.state.n_sensors, dtype=jnp.int32),
         sensor_range=jnp.array(10.0, dtype=jnp.float32),
     )
-    
+
     path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
 
     # Sample all paths at once (1 true path + N possible paths)
@@ -662,6 +665,7 @@ def handleSeedIndex(w, e):
     # Update simulation with the selected seed
     update_robot_simulation(w, e, seed=seed)
 
+
 canvas = (
     v.drawing_system("current_line", drawing_system_handler)
     + walls
@@ -686,7 +690,13 @@ canvas = (
 
 (
     canvas
-    & (sliders | toolbar | true_position_toggle | rotating_sensor_rays | v.seed_scrubber(handleSeedIndex))
+    & (
+        sliders
+        | toolbar
+        | true_position_toggle
+        | rotating_sensor_rays
+        | v.seed_scrubber(handleSeedIndex)
+    )
     & {"widths": ["400px", 1]}
     | Plot.initialState(create_initial_state(7 + 5 + 14), sync={"current_seed"})
     | Plot.onChange(

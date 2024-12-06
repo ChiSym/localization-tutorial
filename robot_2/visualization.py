@@ -99,7 +99,7 @@ def seed_scrubber(handle_seed_index):
                     const stripeWidth = 4; // Width of each stripe in pixels
 
                     return html(["div.flex.flex-col.gap-1", [
-                        ["div.flex.flex-row.gap-1", 
+                        ["div.flex.flex-row.gap-1",
                         ["div.text-md.flex.gap-2.p-2.border.hover:border-gray-400.cursor-pointer.font-mono.text-center.w-[140px]", {
                             "onClick": () => {
                                 navigator.clipboard.writeText($state.current_seed.toString());
