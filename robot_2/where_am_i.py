@@ -124,7 +124,7 @@ class World(genjax.PythonicPytree):
     wall_unit_vecs: jnp.ndarray  # [N, 2] array of normalized wall vectors
     wall_normals: jnp.ndarray  # [N, 2] array of wall normal vectors
     bounce: jnp.ndarray = dataclasses.field(default_factory=lambda: WALL_BOUNCE)
-    
+
     @jax.jit
     def compute_wall_normal(self, wall_direction: jnp.ndarray) -> jnp.ndarray:
         """Compute unit normal vector to wall direction"""
@@ -234,7 +234,9 @@ class World(genjax.PythonicPytree):
 
 
 @jax.jit
-def walls_to_jax(walls_list: List[List[float]]) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+def walls_to_jax(
+    walls_list: List[List[float]],
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Convert wall vertices from UI format to JAX arrays with precomputed vectors"""
     if walls_list is None:
         empty = jnp.array([]).reshape((0, 2, 2))
@@ -251,7 +253,7 @@ def walls_to_jax(walls_list: List[List[float]]) -> Tuple[jnp.ndarray, jnp.ndarra
     # Compute wall vectors and normalize
     wall_segments = segments * valid_mask[:, None, None]
     wall_vecs = (wall_segments[:, 1] - wall_segments[:, 0]) * valid_mask[:, None]
-    
+
     # Compute unit vectors and normals
     norms = jnp.linalg.norm(wall_vecs, axis=1, keepdims=True) + 1e-10
     wall_unit_vecs = wall_vecs / norms
@@ -301,7 +303,7 @@ def path_to_controls(path_points: jnp.ndarray) -> Tuple[Pose, jnp.ndarray]:
 
 def create_model(world: World):
     """Create all generative functions with world parameter baked in"""
-    
+
     @genjax.gen
     def get_sensor_reading(
         robot: RobotCapabilities, pose: Pose, angle: jnp.ndarray
@@ -355,7 +357,9 @@ def create_model(world: World):
 
         physical_pos = world.physical_step(current_pose.p, noisy_pos)
 
-        noisy_angle = genjax.normal(current_pose.hd + angle, robot.hd_noise) @ "hd_noise"
+        noisy_angle = (
+            genjax.normal(current_pose.hd + angle, robot.hd_noise) @ "hd_noise"
+        )
         noisy_pose = Pose(p=physical_pos, hd=noisy_angle)
 
         # Get sensor readings at final position
@@ -363,9 +367,7 @@ def create_model(world: World):
         return noisy_pose, (noisy_pose, readings.value)
 
     @genjax.gen
-    def sample_robot_path(
-        robot: RobotCapabilities, start: Pose, controls: jnp.ndarray
-    ):
+    def sample_robot_path(robot: RobotCapabilities, start: Pose, controls: jnp.ndarray):
         """Simulate robot path with noise and sensor readings using genjax"""
         # Prepend a no-op control to get initial readings
         noop = jnp.array([0.0, 0.0])
@@ -381,17 +383,19 @@ def create_model(world: World):
 
     return jax.jit(sample_robot_path.simulate)
 
+
 class ModelCache:
     """Manages caching of the robot path simulation model"""
+
     def __init__(self):
         self.version = -1
         self.expected_version = 0
         self.model = None
-    
+
     def mark_world_changed(self):
         """Increment the expected version when world changes"""
         self.expected_version += 1
-    
+
     def get_model(self, walls):
         """Update model if version mismatch"""
         if self.version != self.expected_version:
@@ -399,9 +403,10 @@ class ModelCache:
             self.model = create_model(World(*walls_to_jax(walls)))
         return self.model
 
+
 def update_robot_simulation(widget, e, seed=None, world_changed=False):
     """Handle updates to robot simulation"""
-    
+
     if not widget.state.robot_path:
         return
 
@@ -409,9 +414,9 @@ def update_robot_simulation(widget, e, seed=None, world_changed=False):
     assert jnp.issubdtype(current_seed.dtype, jnp.integer), "Seed must be an integer"
 
     current_key = PRNGKey(current_seed)
-    
+
     # Create world and robot objects
-   
+
     robot = RobotCapabilities(
         p_noise=jnp.array(widget.state.motion_noise, dtype=jnp.float32),
         hd_noise=jnp.array(
@@ -426,22 +431,22 @@ def update_robot_simulation(widget, e, seed=None, world_changed=False):
     path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
 
     # Initialize model cache if not present
-    if not hasattr(widget, 'model_cache'):
+    if not hasattr(widget, "model_cache"):
         widget.model_cache = ModelCache()
-    
+
     # Update cache version if world changed
     if world_changed:
         widget.model_cache.mark_world_changed()
-    
+
     # Get current model
     sample_robot_path = widget.model_cache.get_model(widget.state.walls)
-    
+
     # Sample all paths at once (1 true path + N possible paths)
     start_pose, controls = path_to_controls(path[:, :2])
-    
+
     # Create n random keys for parallel simulation
     keys = jax.random.split(current_key, N_POSSIBLE_PATHS + 1)
-    
+
     # Vectorize simulation across keys
     paths, readings = jax.vmap(sample_robot_path, in_axes=(0, None))(
         keys, (robot, start_pose, controls)
