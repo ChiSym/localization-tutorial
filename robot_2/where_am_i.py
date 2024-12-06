@@ -345,9 +345,7 @@ def execute_control(
     noisy_angle = genjax.normal(current_pose.hd + angle, robot.hd_noise) @ "hd_noise"
     noisy_pose = Pose(p=corrected_pos, hd=noisy_angle)
     readings = get_all_sensor_readings(world, robot, noisy_pose) @ "readings"
-    return noisy_pose, (noisy_pose, readings)
-
-
+    return noisy_pose, (noisy_pose, readings.value * readings.flag)
 #
 execute_control_sim = jax.jit(execute_control.simulate)
 
@@ -376,12 +374,9 @@ def sample_robot_path(
     all_controls = jnp.concatenate([noop[None], controls])
 
     # Use execute_control.scan() to process all controls
-    _, (poses, readings) = (
-        execute_control.partial_apply(world, robot).scan()(start, all_controls)
-        @ "trajectory"
-    )
-
-    return poses, readings
+    _, (path, readings) = execute_control.partial_apply(world, robot).scan()(start, all_controls) @ "trajectory"
+    
+    return path, readings
 
 
 # jax.jit(sample_robot_path.simulate)(key, (sample_world, sample_robot, sample_pose, sample_controls))
@@ -399,11 +394,10 @@ def sample_possible_paths(
     keys = jax.random.split(key, n_paths)
 
     # Vectorize simulation across keys
-    (pose, mask) = jax.vmap(sample_robot_path.simulate, in_axes=(0, None))(
-        keys, (world, robot, start_pose, controls)
+    return jax.vmap(sample_robot_path_sim, in_axes=(0, None))(
+        keys,
+        (world, robot, start_pose, controls)
     ).get_retval()
-
-    return (pose, mask.value[mask.flag])
 
 
 # sample_possible_paths(sample_world, sample_robot, sample_planned_path, 20, key)
@@ -449,18 +443,22 @@ def update_robot_simulation(widget, e, seed=None):
 
     # Sample all paths at once (1 true path + N possible paths)
     n_possible = 40
-    poses, readings = sample_possible_paths(
+    paths, readings = sample_possible_paths(
         world, robot, path, n_possible + 1, current_key
     )
-
-    true_pose = poses[0]
-
+    
+    true_path = paths[0]
+    possible_paths = paths[1:]
+    
+    print("true path", true_path.p.shape)
+    print("readings", readings.shape)
+    
+    
     widget.state.update(
         {
-            "robot_pose": true_pose,
-            "possible_paths": poses[1:].p,
-            "sensor_readings": readings[-1],
-            "true_path": true_pose.p,
+            "possible_paths": possible_paths,
+            "sensor_readings": readings[0],
+            "true_path": true_path,
             "show_debug": True,
             "current_seed": current_seed,
         }
@@ -504,7 +502,8 @@ def create_initial_state(seed) -> Dict[str, Any]:
             [0, 10, 0],
             [0, 0, 0],  # Left
         ],
-        "robot_pose": [0.5, 0.5, 0],
+        "robot_pose": Plot.js("$state.true_path?.[$state.true_path.length-1]"),
+        "true_path": None,
         "sensor_noise": 0.1,
         "motion_noise": 0.1,
         "heading_noise_scale": 0.3,
@@ -513,7 +512,8 @@ def create_initial_state(seed) -> Dict[str, Any]:
         "robot_path": [],
         "possible_paths": [],
         "estimated_pose": None,
-        "sensor_readings": [],
+        "sensor_readings": None,
+        "robot_readings": Plot.js("$state.sensor_readings ? Array.from($state.sensor_readings[$state.sensor_readings.length-1]) : []"),
         "sensor_explore_angle": -1,
         "show_true_position": False,
         "current_line": [],
@@ -538,16 +538,16 @@ true_position_toggle = Plot.html(
 
 sensor_rays = Plot.line(
     js("""
-           Array.from($state.sensor_readings).map((r, i) => {
+           $state.robot_readings?.flatMap((r, i) => {
+               if (!r) return [];
             const [x, y, heading] = $state.robot_pose;
             const n_sensors = $state.n_sensors;
             const angle = heading + (i * Math.PI * 2) / n_sensors;
-            return [
-                [x, y, i],
-                [x + r * Math.cos(angle),
+            const from = [x, y, i]
+            const to = [x + r * Math.cos(angle),
                  y + r * Math.sin(angle), i]
-            ]
-           }).flat()
+            return [from, to]
+           })
            """),
     z="2",
     stroke="red",
@@ -559,7 +559,8 @@ sensor_rays = Plot.line(
 rotating_sensor_rays = (
     Plot.line(
         js("""
-           Array.from($state.sensor_readings).map((r, i) => {
+           $state.robot_readings?.flatMap((r, i) => {
+               if (!r) return [];
             const [x, y, heading] = $state.robot_pose;
             const n_sensors = $state.n_sensors;
             let angle = heading + (i * Math.PI * 2) / n_sensors;
@@ -575,7 +576,7 @@ rotating_sensor_rays = (
                 [r * Math.cos(angle),
                  r * Math.sin(angle), i]
             ]
-           }).flat()
+           })
            """),
         z="2",
         stroke="red",
@@ -607,7 +608,7 @@ rotating_sensor_rays = (
 )
 
 true_path = Plot.cond(
-    js("$state.show_true_position"),
+    js("$state.show_true_position && $state.robot_pose"),
     [
         Plot.line(
             js("$state.true_path"), stroke=Plot.constantly("True Path"), strokeWidth=2
@@ -727,7 +728,7 @@ canvas = (
         {
             "Walls": "#666",
             "Sensor Rays": "red",
-            "True Path": "green",
+            "True Path": "black",
             "Robot Path": "blue",
         }
     )
@@ -740,7 +741,7 @@ canvas = (
     canvas
     & (sliders | toolbar | true_position_toggle | key_scrubber | rotating_sensor_rays)
     & {"widths": ["400px", 1]}
-    | Plot.initialState(create_initial_state(0), sync=True)
+    | Plot.initialState(create_initial_state(0), sync={"current_seed"})
     | Plot.onChange(
         {
             "robot_path": update_robot_simulation,
