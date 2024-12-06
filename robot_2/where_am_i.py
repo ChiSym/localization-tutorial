@@ -90,7 +90,10 @@ class Pose(genjax.PythonicPytree):
         return Pose(self.p, self.hd + angle)
 
     def for_json(self):
-        return [*self.p, self.hd]
+        if len(self.p.shape) == 1:
+            return [*self.p, self.hd]
+        heading_expanded = jnp.expand_dims(self.hd, axis=-1)  # Add last dimension
+        return jnp.concatenate([self.p, heading_expanded], axis=-1)
 
 
 @pz.pytree_dataclass
@@ -185,7 +188,7 @@ class RobotCapabilities(genjax.PythonicPytree):
     p_noise: jnp.ndarray  # Position noise (std dev in meters)
     hd_noise: jnp.ndarray  # Heading noise (std dev in radians)
     sensor_noise: jnp.ndarray  # Sensor noise (std dev in meters)
-    n_sensors: int = 8  # Number of distance sensors
+    n_sensors: jnp.ndarray = 8  # Number of distance sensors
     sensor_range: jnp.ndarray = 10.0  # Maximum sensor range in meters
 
 
@@ -437,13 +440,13 @@ def update_robot_simulation(widget, e, seed=None):
     # Create world and robot objects
     world = World(walls_to_jax(widget.state.walls))
     robot = RobotCapabilities(
-        p_noise=widget.state.motion_noise,
-        hd_noise=widget.state.motion_noise * widget.state.heading_noise_scale,
-        sensor_noise=widget.state.sensor_noise,
-        n_sensors=widget.state.n_sensors,
-        sensor_range=10.0,
+        p_noise=jnp.array(widget.state.motion_noise, dtype=jnp.float32),
+        hd_noise=jnp.array(widget.state.motion_noise * widget.state.heading_noise_scale, dtype=jnp.float32),
+        sensor_noise=jnp.array(widget.state.sensor_noise, dtype=jnp.float32),
+        n_sensors=jnp.array(widget.state.n_sensors, dtype=jnp.int32),
+        sensor_range=jnp.array(10.0, dtype=jnp.float32),
     )
-
+    
     path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
 
     # Sample all paths at once (1 true path + N possible paths)
@@ -745,7 +748,7 @@ canvas = (
 
 (
     canvas
-    & (sliders | toolbar | true_position_toggle | key_scrubber | rotating_sensor_rays)
+    & (sliders | toolbar | true_position_toggle | rotating_sensor_rays | key_scrubber)
     & {"widths": ["400px", 1]}
     | Plot.initialState(create_initial_state(7 + 5 + 14), sync={"current_seed"})
     | Plot.onChange(
