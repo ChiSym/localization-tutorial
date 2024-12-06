@@ -67,6 +67,7 @@ import robot_2.visualization as v
 key = PRNGKey(0)
 
 WALL_COLLISION_THRESHOLD = 0.15
+WALL_BOUNCE = 0.15
 
 
 @pz.pytree_dataclass
@@ -89,98 +90,165 @@ class Pose(genjax.PythonicPytree):
         """Rotate by angle (in radians)"""
         return Pose(self.p, self.hd + angle)
 
+    @jax.jit
     def for_json(self):
         if len(self.p.shape) == 1:
             return [*self.p, self.hd]
         heading_expanded = jnp.expand_dims(self.hd, axis=-1)  # Add last dimension
         return jnp.concatenate([self.p, heading_expanded], axis=-1)
+    
 
+@jax.jit
+def calculate_bounce_point(collision_point: jnp.ndarray, ray_dir: jnp.ndarray, wall_vec: jnp.ndarray, bounce_amount: jnp.ndarray) -> jnp.ndarray:
+    """Calculate bounce point for a single wall collision
+    
+    Args:
+        collision_point: Point of collision with wall
+        ray_dir: Direction of incoming ray
+        wall_vec: Vector along wall direction
+        bounce_amount: How far to bounce
+        
+    Returns:
+        Point after bouncing off wall
+    """
+    wall_normal = jnp.array([-wall_vec[1], wall_vec[0]]) / (
+        jnp.linalg.norm(wall_vec) + 1e-10
+    )
+    # Ensure wall normal points away from approach direction
+    wall_normal = jnp.where(
+        jnp.dot(ray_dir, wall_normal) > 0,
+        -wall_normal,
+        wall_normal
+    )
+    return collision_point + bounce_amount * wall_normal
 
 @pz.pytree_dataclass
 class World(genjax.PythonicPytree):
     """The physical environment with walls that robots can collide with"""
 
-    walls: jnp.ndarray  # [N, 2, 2] array of wall segments
+    walls: jnp.ndarray  # [N, 2, 2] array of wall segments 
+    wall_vecs: jnp.ndarray  # [N, 2] array of wall direction vectors
+    bounce: jnp.ndarray = WALL_BOUNCE  # How much to bounce off walls
     __hash__ = None
+
+    @jax.jit
+    def compute_wall_normal(self, wall_direction: jnp.ndarray) -> jnp.ndarray:
+        """Compute unit normal vector to wall direction"""
+        return jnp.array([-wall_direction[1], wall_direction[0]]) / (
+            jnp.linalg.norm(wall_direction) + 1e-10
+        )
+
+    @jax.jit
+    def physical_step(
+        self, start_pos: jnp.ndarray, end_pos: jnp.ndarray, heading: jnp.ndarray
+    ) -> Pose:
+        """Compute physical step with wall collisions and bounces
+
+        Args:
+            start_pos: Starting position [x, y]
+            end_pos: Intended end position [x, y]
+            heading: Current heading in radians
+
+        Returns:
+            New pose after movement, considering wall collisions
+        """
+        # Calculate step properties
+        step_direction = end_pos - start_pos
+        step_length = jnp.linalg.norm(step_direction)
+        
+        # Get distance to nearest wall
+        ray_dir = step_direction / (step_length + 1e-10)  # Avoid division by zero
+        wall_dist, wall_idx = self.ray_distance(start_pos, ray_dir, step_length)
+        
+        # Find collision point
+        collision_point = start_pos + ray_dir * wall_dist
+        
+        # Calculate bounce point if wall hit
+        bounce_pos = calculate_bounce_point(collision_point, ray_dir, self.wall_vecs[wall_idx], self.bounce)
+        
+        # Define conditions for position selection
+        conditions = [
+            step_length < 1e-6,  # No movement case
+            wall_dist >= step_length,  # No collision case
+            wall_idx >= 0,  # Wall collision case
+        ]
+        
+        positions = [
+            start_pos,  # For no movement
+            end_pos,  # For no collision
+            bounce_pos,  # For wall collision
+        ]
+        
+        final_pos = jnp.select(conditions, positions, default=end_pos)
+        
+        return Pose(final_pos, heading)
 
     @jax.jit
     def ray_distance(
         self, ray_start: jnp.ndarray, ray_dir: jnp.ndarray, max_dist: float
-    ) -> float:
-        """Find distance to nearest wall along a ray"""
+    ) -> Tuple[float, int]:
+        """Find distance to nearest wall along a ray and which wall was hit
+
+        Args:
+            ray_start: Starting point of ray
+            ray_dir: Direction of ray (normalized)
+            max_dist: Maximum distance to check
+
+        Returns:
+            Tuple of (distance, wall_idx) where:
+            - distance: Distance to nearest wall, or max_dist + threshold if no wall hit
+            - wall_idx: Index of wall that was hit, or -1 if no wall hit
+        """
         if self.walls.shape[0] == 0:  # No walls
-            return max_dist + WALL_COLLISION_THRESHOLD
+            return max_dist + WALL_COLLISION_THRESHOLD, -1
 
         # Vectorized computation for all walls at once
         p1 = self.walls[:, 0]  # Shape: (N, 2)
-        p2 = self.walls[:, 1]  # Shape: (N, 2)
-
-        # Wall direction vectors
-        wall_vec = p2 - p1  # Shape: (N, 2)
 
         # Vector from wall start to ray start
         to_start = ray_start - p1  # Shape: (N, 2)
 
-        # Compute determinant (cross product in 2D)
-        det = wall_vec[:, 0] * (-ray_dir[1]) - wall_vec[:, 1] * (-ray_dir[0])
+        # Compute determinant (cross product in 2D) using pre-computed wall vectors
+        det = self.wall_vecs[:, 0] * (-ray_dir[1]) - self.wall_vecs[:, 1] * (-ray_dir[0])
 
         # Compute intersection parameters
-        u = (to_start[:, 0] * (-ray_dir[1]) - to_start[:, 1] * (-ray_dir[0])) / (
-            det + 1e-10
-        )
-        t = (wall_vec[:, 0] * to_start[:, 1] - wall_vec[:, 1] * to_start[:, 0]) / (
-            det + 1e-10
-        )
+        u = (to_start[:, 0] * (-ray_dir[1]) - to_start[:, 1] * (-ray_dir[0])) / (det + 1e-10)
+        t = (self.wall_vecs[:, 0] * to_start[:, 1] - self.wall_vecs[:, 1] * to_start[:, 0]) / (det + 1e-10)
 
         # Valid intersections: not parallel, in front of ray, within wall segment
         is_valid = (jnp.abs(det) > 1e-10) & (t >= 0) & (u >= 0) & (u <= 1)
-
-        # Find minimum valid distance
-        min_dist = jnp.min(jnp.where(is_valid, t * jnp.linalg.norm(ray_dir), jnp.inf))
-        return jnp.where(
-            jnp.isinf(min_dist), max_dist + WALL_COLLISION_THRESHOLD, min_dist
-        )
-
-    # TODO, turn this into physical_step (with bounce from wall)
-    @jax.jit
-    def check_movement(
-        self,
-        start_pos: jnp.ndarray,
-        end_pos: jnp.ndarray,
-        collision_radius: float = WALL_COLLISION_THRESHOLD,
-    ) -> Tuple[bool, jnp.ndarray]:
-        """Check if movement between two points collides with walls
-
-        Args:
-            start_pos: [x, y] starting position
-            end_pos: [x, y] intended end position
-            collision_radius: How close we can get to walls
-
-        Returns:
-            (is_path_clear, safe_pos) where safe_pos is either end_pos or the
-            furthest safe position along the movement line
-        """
-        movement_dir = end_pos - start_pos
-        dist = jnp.linalg.norm(movement_dir)
-
-        # Replace if with where
-        ray_dir = jnp.where(
-            dist > 1e-6,
-            movement_dir / dist,
-            jnp.array([1.0, 0.0]),  # Default direction if no movement
-        )
-
-        wall_dist = self.ray_distance(start_pos, ray_dir, dist)
-        is_path_clear = wall_dist >= dist
-
-        # Only adjust position if we actually hit a wall
-        final_pos = jnp.where(
-            is_path_clear, end_pos, start_pos + ray_dir * (wall_dist - collision_radius)
-        )
-
-        return is_path_clear, final_pos
+        distances = jnp.where(is_valid, t * jnp.linalg.norm(ray_dir), jnp.inf)
+        
+        # Find closest valid wall
+        closest_idx = jnp.argmin(distances)
+        min_dist = distances[closest_idx]
+        
+        # Return -1 as wall index if no valid intersection found
+        wall_idx = jnp.where(jnp.isinf(min_dist), -1, closest_idx)
+        final_dist = jnp.where(jnp.isinf(min_dist), max_dist + WALL_COLLISION_THRESHOLD, min_dist)
+        
+        return final_dist, wall_idx
 
 
+@jax.jit
+def walls_to_jax(walls_list: List[List[float]]) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """Convert wall vertices from UI format to JAX arrays of wall segments and direction vectors"""
+    if not walls_list:
+        empty = jnp.array([]).reshape((0, 2, 2))
+        return empty, jnp.array([]).reshape((0, 2))
+
+    points = jnp.array(walls_list, dtype=jnp.float32)
+    p1 = points[:-1]
+    p2 = points[1:]
+
+    segments = jnp.stack([p1[:, :2], p2[:, :2]], axis=1)
+    valid_mask = p1[:, 2] == p2[:, 2]
+    
+    # Compute wall direction vectors
+    wall_segments = segments * valid_mask[:, None, None]
+    wall_vecs = (wall_segments[:, 1] - wall_segments[:, 0]) * valid_mask[:, None]
+    
+    return wall_segments, wall_vecs
 @pz.pytree_dataclass
 class RobotCapabilities(genjax.PythonicPytree):
     """Physical capabilities and limitations of the robot"""
@@ -229,7 +297,7 @@ def get_sensor_reading(
     ray_dir = jnp.array([jnp.cos(pose.hd + angle), jnp.sin(pose.hd + angle)])
 
     # Get raw distance reading
-    distance = world.ray_distance(
+    distance, idx = world.ray_distance(
         ray_start=pose.p, ray_dir=ray_dir, max_dist=robot.sensor_range
     )
 
@@ -238,6 +306,7 @@ def get_sensor_reading(
 
     return noisy_distance
 
+masked_readings = jax.jit(get_sensor_reading.mask().vmap(in_axes=(0, None, None, None, 0)))
 
 @genjax.gen
 def get_all_sensor_readings(world: World, robot: RobotCapabilities, pose: Pose):
@@ -251,7 +320,7 @@ def get_all_sensor_readings(world: World, robot: RobotCapabilities, pose: Pose):
     mask = jnp.arange(MAX_SENSORS) < robot.n_sensors
 
     # Chain vmap and mask combinators
-    masked_readings = get_sensor_reading.mask().vmap(in_axes=(0, None, None, None, 0))
+    
     return masked_readings(mask, world, robot, pose, angles) @ "sensor_readings"
 
 
@@ -262,33 +331,29 @@ def execute_control(
     current_pose: Pose,
     control: jnp.ndarray,
 ):
-    """Execute a control command with noise, stopping if we hit a wall
-
-    Args:
-        control: (distance, angle) pair where:
-            - distance is how far to move FIRST
-            - angle is how much to turn AFTER moving
-    """
+    """Execute a control command with physical step and noise"""
     dist, angle = control
 
+    # Calculate noisy intended position
     uncorrected_pos = current_pose.p + dist * current_pose.dp()
     noisy_pos = (
         genjax.mv_normal_diag(uncorrected_pos, robot.p_noise * jnp.ones(2)) @ "p_noise"
     )
-    (no_obstructions, corrected_pos) = world.check_movement(
+    
+    # Get physical movement result including bounces
+    moved_pose = world.physical_step(
         start_pos=current_pose.p,
         end_pos=noisy_pos,
+        heading=current_pose.hd
     )
-
-    noisy_angle = genjax.normal(current_pose.hd + angle, robot.hd_noise) @ "hd_noise"
-    noisy_pose = Pose(p=corrected_pos, hd=noisy_angle)
+    
+    # Apply heading change with noise
+    noisy_angle = genjax.normal(moved_pose.hd + angle, robot.hd_noise) @ "hd_noise"
+    noisy_pose = Pose(p=moved_pose.p, hd=noisy_angle)
+    
+    # Get sensor readings at final position
     readings = get_all_sensor_readings(world, robot, noisy_pose) @ "readings"
     return noisy_pose, (noisy_pose, readings.value * readings.flag)
-
-
-#
-execute_control_sim = jax.jit(execute_control.simulate)
-
 
 @genjax.gen
 def sample_robot_path(
@@ -337,22 +402,6 @@ def sample_possible_paths(
     ).get_retval()
 
 
-@jax.jit
-def walls_to_jax(walls_list: List[List[float]]) -> jnp.ndarray:
-    """Convert wall vertices from UI format to JAX array of wall segments"""
-    if not walls_list:
-        return jnp.array([]).reshape((0, 2, 2))
-
-    points = jnp.array(walls_list, dtype=jnp.float32)
-    p1 = points[:-1]
-    p2 = points[1:]
-
-    segments = jnp.stack([p1[:, :2], p2[:, :2]], axis=1)
-
-    valid_mask = p1[:, 2] == p2[:, 2]
-    return segments * valid_mask[:, None, None]
-
-
 def update_robot_simulation(widget, e, seed=None):
     """Handle updates to robot simulation"""
     if not widget.state.robot_path:
@@ -364,7 +413,7 @@ def update_robot_simulation(widget, e, seed=None):
     current_key = PRNGKey(current_seed)
 
     # Create world and robot objects
-    world = World(walls_to_jax(widget.state.walls))
+    world = World(*walls_to_jax(widget.state.walls))
     robot = RobotCapabilities(
         p_noise=jnp.array(widget.state.motion_noise, dtype=jnp.float32),
         hd_noise=jnp.array(
@@ -698,7 +747,7 @@ canvas = (
         | v.seed_scrubber(handleSeedIndex)
     )
     & {"widths": ["400px", 1]}
-    | Plot.initialState(create_initial_state(7 + 5 + 14), sync={"current_seed"})
+    | Plot.initialState(create_initial_state(7 + 5 + 14), sync={"current_seed", "selected_tool"})
     | Plot.onChange(
         {
             "robot_path": update_robot_simulation,
