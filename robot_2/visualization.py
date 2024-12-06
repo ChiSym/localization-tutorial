@@ -60,7 +60,7 @@ def drawing_system(key, on_complete):
     return line + events
 
 
-def key_scrubber(handle_seed_index):
+def seed_scrubber(handle_seed_index):
     """Create a scrubber UI component for exploring different random seeds.
 
     The component shows a striped bar that can be clicked to pause/resume and

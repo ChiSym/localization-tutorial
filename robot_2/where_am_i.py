@@ -633,22 +633,34 @@ toolbar = Plot.html("Select tool:") | [
 
 
 def handleSeedIndex(w, e):
+    # Called by seed scrubber UI with:
+    # w: Plot.js widget
+    # e: {index: stripe index, key: current seed}
+    # The index indicates which stripe was clicked:
+    #   -1: Recycle button was clicked, cycle to next seed
+    #    0: First stripe clicked, use first seed
+    #   >0: Other stripes clicked, use seed at that position
+    # Need to: Get seed from global key based on index, update simulation
     global key
     seed = None
     try:
         if e.index == 0:
+            # For first stripe, use first seed from key
             seed = key[0]
         elif e.index == -1:
+            # For recycle button, split key into 2 parts and use first seed
+            # This cycles through seeds by taking first part
             key = split(key, 2)[0]
             seed = key[0]
         else:
+            # For other stripes, split key into e.index parts
+            # Use seed at position (index-1) since we're 0-based
             seed = split(key, e.index)[e.index - 1][0]
     except Exception as err:
+        # Log any errors that occur during seed selection
         print(f"Error handling seed index: {err}, {e.key}, {e.index}")
+    # Update simulation with the selected seed
     update_robot_simulation(w, e, seed=seed)
-
-
-key_scrubber = v.key_scrubber(handleSeedIndex)
 
 canvas = (
     v.drawing_system("current_line", drawing_system_handler)
@@ -674,7 +686,7 @@ canvas = (
 
 (
     canvas
-    & (sliders | toolbar | true_position_toggle | rotating_sensor_rays | key_scrubber)
+    & (sliders | toolbar | true_position_toggle | rotating_sensor_rays | v.seed_scrubber(handleSeedIndex))
     & {"widths": ["400px", 1]}
     | Plot.initialState(create_initial_state(7 + 5 + 14), sync={"current_seed"})
     | Plot.onChange(
