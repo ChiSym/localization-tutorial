@@ -128,6 +128,7 @@ def compute_wall_normal(wall_direction: jnp.ndarray) -> jnp.ndarray:
         jnp.linalg.norm(wall_direction) + 1e-10
     )
 
+
 @pz.pytree_dataclass
 class World(genjax.PythonicPytree):
     """The physical environment with walls that robots can collide with"""
