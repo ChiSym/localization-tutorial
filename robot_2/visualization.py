@@ -85,7 +85,7 @@ def key_scrubber(handle_seed_index):
                         ? 'Click to Start'
                         : inside
                             ? 'Click to Pause'
-                            : 'Explore Keys'
+                            : 'Explore Seeds'
 
                     const onMouseMove = React.useCallback(async (e) => {
                             if (paused || waiting) return null;
@@ -99,7 +99,15 @@ def key_scrubber(handle_seed_index):
                     const stripeWidth = 4; // Width of each stripe in pixels
 
                     return html(["div.flex.flex-col.gap-1", [
-                        ["div.flex.flex-row.gap-1", [
+                        ["div.flex.flex-row.gap-1", 
+                        ["div.text-md.flex.gap-2.p-2.border.hover:border-gray-400.cursor-pointer.font-mono.text-center.w-[140px]", {
+                            "onClick": () => {
+                                navigator.clipboard.writeText($state.current_seed.toString());
+                            },
+                            "style": {
+                                cursor: "pointer"
+                            }
+                        }, $state.current_seed, ["div.text-gray-500.ml-auto", "copy"]],[
                             ["div.rounded-lg.p-2.delay-100.flex-grow", {
                                 "style": {
                                     background: paused
@@ -125,15 +133,7 @@ def key_scrubber(handle_seed_index):
                                     transition: 'opacity 0.3s ease'
                                 }
                             }, %2]
-                        ]],
-                        ["div.text-md.flex.gap-2.p-2.border.hover:border-gray-400.cursor-pointer.w-[140px].text-center", {
-                            "onClick": () => {
-                                navigator.clipboard.writeText($state.current_seed.toString());
-                            },
-                            "style": {
-                                cursor: "pointer"
-                            }
-                        }, $state.current_seed, ["div.text-gray-500.ml-auto", "copy"]]
+                        ]]
                     ]])
                 }
                 """,

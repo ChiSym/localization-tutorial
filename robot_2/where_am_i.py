@@ -220,60 +220,6 @@ def path_to_controls(path_points: jnp.ndarray) -> Tuple[Pose, jnp.ndarray]:
     return start_pose, controls
 
 
-# Create a sample world with walls and obstacles
-example_world = World(
-    walls=jnp.array(
-        [
-            # Outer walls forming a room
-            [[0.0, 0.0], [10.0, 0.0]],  # Bottom wall
-            [[10.0, 0.0], [10.0, 8.0]],  # Right wall
-            [[10.0, 8.0], [0.0, 8.0]],  # Top wall
-            [[0.0, 8.0], [0.0, 0.0]],  # Left wall
-            # Inner obstacles
-            [[3.0, 2.0], [3.0, 4.0]],  # Vertical obstacle
-            [[6.0, 4.0], [8.0, 4.0]],  # Horizontal obstacle
-        ]
-    )
-)
-
-# Define robot capabilities
-example_robot = RobotCapabilities(
-    n_sensors=8,
-    sensor_range=jnp.array(5.0),
-    sensor_noise=jnp.array(0.1),
-    p_noise=jnp.array(0.1),  # Position noise
-    hd_noise=jnp.array(0.05),  # Heading noise
-)
-
-# Create a sample planned path with waypoints
-example_planned_path = jnp.array(
-    [
-        [1.0, 1.0],  # Start at (1,1)
-        [4.0, 2.0],  # Move diagonally up and right
-        [7.0, 4.0],  # Continue diagonally
-        [8.0, 6.0],  # End near top right
-    ]
-)
-
-
-# Sample control instructions for testing
-example_controls = jnp.array(
-    [
-        [2.0, 0.0],  # Move forward 2 units
-        [1.5, 0.5],  # Move forward 1.5 units while turning right 0.5 rad
-        [2.0, -0.3],  # Move forward 2 units while turning left 0.3 rad
-        [1.0, 0.8],  # Move forward 1 unit while turning right 0.8 rad
-    ]
-)
-example_control = example_controls[0]  # Just use first control for single control tests
-
-# Create a sample starting pose
-example_pose = Pose(
-    p=jnp.array([1.0, 1.0]),  # Starting position at (1,1)
-    hd=jnp.array(0.0),  # Initial heading of 0 radians (facing right)
-)
-
-
 @genjax.gen
 def get_sensor_reading(
     world: World, robot: RobotCapabilities, pose: Pose, angle: jnp.ndarray
@@ -293,13 +239,6 @@ def get_sensor_reading(
     return noisy_distance
 
 
-# Example usage of get_sensor_reading
-# Get a reading from sensor pointing 45 degrees (π/4 radians) relative to robot heading
-# key = jax.random.PRNGKey(0)
-# reading = get_sensor_reading.simulate(key, (sample_world, sample_robot, sample_pose, jnp.array(jnp.pi/4))).get_retval()
-# print(f"Sensor reading at 45 degrees: {reading:.2f} units")
-
-
 @genjax.gen
 def get_all_sensor_readings(world: World, robot: RobotCapabilities, pose: Pose):
     """Get noisy sensor readings at evenly spaced angles around the robot"""
@@ -314,11 +253,6 @@ def get_all_sensor_readings(world: World, robot: RobotCapabilities, pose: Pose):
     # Chain vmap and mask combinators
     masked_readings = get_sensor_reading.mask().vmap(in_axes=(0, None, None, None, 0))
     return masked_readings(mask, world, robot, pose, angles) @ "sensor_readings"
-
-
-# Example usage
-# readings = get_all_sensor_readings.simulate(key, (example_world, example_robot, example_pose)).get_retval()
-# print(f"All sensor readings: {readings.value[readings.flag]}")
 
 
 @genjax.gen
@@ -355,8 +289,6 @@ def execute_control(
 #
 execute_control_sim = jax.jit(execute_control.simulate)
 
-# execute_control_sim(key, (sample_world, sample_robot, sample_pose, sample_control)).get_retval()
-
 
 @genjax.gen
 def sample_robot_path(
@@ -388,9 +320,6 @@ def sample_robot_path(
     return path, readings
 
 
-# jax.jit(sample_robot_path.simulate)(key, (sample_world, sample_robot, sample_pose, sample_controls))
-
-
 sample_robot_path_sim = jax.jit(sample_robot_path.simulate)
 
 
@@ -406,9 +335,6 @@ def sample_possible_paths(
     return jax.vmap(sample_robot_path_sim, in_axes=(0, None))(
         keys, (world, robot, start_pose, controls)
     ).get_retval()
-
-
-# sample_possible_paths(sample_world, sample_robot, sample_planned_path, 20, key)
 
 
 @jax.jit
@@ -762,43 +688,3 @@ canvas = (
         }
     )
 )
-
-
-# %%
-# Test path_to_controls with simple examples
-# Test with a longer path
-test_path = jnp.array(
-    [
-        [2.0, 5.0],  # Start
-        [3.0, 6.0],  # Up and right
-        [4.0, 6.0],  # Right
-        [5.0, 5.0],  # Down and right
-    ]
-)
-
-start_pose, controls = path_to_controls(test_path)
-print("Test path:")
-print(f"Start pose: pos={start_pose.p}, heading={start_pose.hd:.2f} rad")
-print("\nControls (distance, angle):")
-for i, (dist, angle) in enumerate(controls):
-    print(f"  Step {i}: move {dist:.2f} units, turn {angle:.2f} rad")
-
-test_world = World(jnp.array([]))  # Empty world
-test_robot = RobotCapabilities(
-    p_noise=jnp.array(0.0),  # No noise for testing
-    hd_noise=jnp.array(0.0),
-    sensor_noise=jnp.array(0.0),
-    n_sensors=8,
-    sensor_range=jnp.array(10.0),
-)
-
-# Execute each control and track state
-current_pose = start_pose
-print("\nExecuting controls:")
-for i, control in enumerate(controls):
-    result = execute_control_sim(key, (test_world, test_robot, current_pose, control))
-    current_pose = result.get_retval()[0]
-    print(f"\nAfter step {i}:")
-    print(f"  Position: {current_pose.p}")
-    print(f"  Heading: {current_pose.hd:.2f} rad")
-    print(f"  Direction vector: {current_pose.dp()}")
