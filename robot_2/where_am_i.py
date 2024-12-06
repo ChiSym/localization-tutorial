@@ -44,7 +44,7 @@
 #    - Blue line: What the robot THINKS it's doing (following commands perfectly)
 #    - Red rays: What the robot actually SEES (sensor readings)
 #    - Blue cloud: Where the robot MIGHT be (uncertainty)
-#    - Green line: Where the robot figures it ACTUALLY is
+#    - Black line: Where the robot figures it ACTUALLY is
 
 # %%
 # pyright: reportUnusedExpression=false
