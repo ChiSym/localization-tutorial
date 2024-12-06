@@ -71,6 +71,7 @@ key = PRNGKey(0)
 
 WALL_COLLISION_THRESHOLD = jnp.array(0.15)
 WALL_BOUNCE = jnp.array(0.15)
+N_POSSIBLE_PATHS = 40
 
 
 @pz.pytree_dataclass(eq=False)
@@ -391,7 +392,7 @@ class ModelCache:
         """Increment the expected version when world changes"""
         self.expected_version += 1
     
-    def ensure_model_current(self, walls):
+    def get_model(self, walls):
         """Update model if version mismatch"""
         if self.version != self.expected_version:
             self.version = self.expected_version
@@ -433,14 +434,13 @@ def update_robot_simulation(widget, e, seed=None, world_changed=False):
         widget.model_cache.mark_world_changed()
     
     # Get current model
-    sample_robot_path = widget.model_cache.ensure_model_current(widget.state.walls)
+    sample_robot_path = widget.model_cache.get_model(widget.state.walls)
     
     # Sample all paths at once (1 true path + N possible paths)
-    n_possible = 40
     start_pose, controls = path_to_controls(path[:, :2])
     
     # Create n random keys for parallel simulation
-    keys = jax.random.split(current_key, n_possible + 1)
+    keys = jax.random.split(current_key, N_POSSIBLE_PATHS + 1)
     
     # Vectorize simulation across keys
     paths, readings = jax.vmap(sample_robot_path, in_axes=(0, None))(
