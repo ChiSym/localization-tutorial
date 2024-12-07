@@ -379,9 +379,6 @@ def sample_robot_path(
     return path, readings
 
 
-sample_robot_path_sim = jax.jit(sample_robot_path.simulate)
-
-
 def sample_possible_paths(
     world: World, robot: RobotCapabilities, planned_path: jnp.ndarray, n_paths: int, key
 ):
@@ -391,7 +388,7 @@ def sample_possible_paths(
     keys = jax.random.split(key, n_paths)
 
     # Vectorize simulation across keys
-    return jax.vmap(sample_robot_path_sim, in_axes=(0, None))(
+    return jax.vmap(sample_robot_path.simulate, in_axes=(0, None))(
         keys, (world, robot, start_pose, controls)
     ).get_retval()
 
