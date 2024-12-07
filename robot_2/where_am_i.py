@@ -60,7 +60,7 @@ import time
 from jax.random import PRNGKey, split
 from penzai import pz
 from genstudio.plot import js
-from functools import partial 
+from functools import partial
 
 import robot_2.emoji as emoji
 import robot_2.visualization as v
@@ -318,6 +318,7 @@ def get_sensor_reading(
 
     return noisy_distance
 
+
 @genjax.gen
 def execute_control(
     world: World,
@@ -338,12 +339,13 @@ def execute_control(
 
     final_pose = Pose(p=physical_pos, hd=noisy_angle)
 
-    
     sensor_angles = jnp.arange(MAX_SENSORS) * 2 * jnp.pi / robot.n_sensors
     sensor_mask = jnp.arange(MAX_SENSORS) < robot.n_sensors
-    get_readings = get_sensor_reading.partial_apply(world, robot, final_pose).mask().vmap()
+    get_readings = (
+        get_sensor_reading.partial_apply(world, robot, final_pose).mask().vmap()
+    )
     readings = get_readings(sensor_mask, sensor_angles) @ "sensor readings"
-    
+
     return final_pose, (final_pose, readings.value)
 
 
@@ -392,6 +394,7 @@ def sample_possible_paths(
     return jax.vmap(sample_robot_path_sim, in_axes=(0, None))(
         keys, (world, robot, start_pose, controls)
     ).get_retval()
+
 
 @partial(jax.jit, static_argnums=4)
 def simulate_robot(
@@ -459,6 +462,7 @@ def update_robot_simulation(widget, e, seed=None):
             "simulation_time": simulation_time,
         }
     )
+
 
 drawing_system_handler = Plot.js("""({points, simplify}) => {
         mode = $state.selected_tool
@@ -762,7 +766,12 @@ canvas = (
 )
 
 (
-    (canvas | Plot.js("$state.simulation_time && `${$state.simulation_time?.toFixed(2)} ms`"))
+    (
+        canvas
+        | Plot.js(
+            "$state.simulation_time && `${$state.simulation_time?.toFixed(2)} ms`"
+        )
+    )
     & (
         sliders
         | toolbar
