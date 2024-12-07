@@ -56,9 +56,11 @@ import genjax
 import genstudio.plot as Plot
 import jax
 import jax.numpy as jnp
+import time
 from jax.random import PRNGKey, split
 from penzai import pz
 from genstudio.plot import js
+from functools import partial 
 
 import robot_2.emoji as emoji
 import robot_2.visualization as v
@@ -391,7 +393,7 @@ def sample_possible_paths(
         keys, (world, robot, start_pose, controls)
     ).get_retval()
 
-
+@partial(jax.jit, static_argnums=4)
 def simulate_robot(
     world: World,
     robot: RobotCapabilities,
@@ -442,8 +444,10 @@ def update_robot_simulation(widget, e, seed=None):
 
     path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
 
-    # Use the factored out simulation function
+    # Use the factored out simulation function and measure time
+    start_time = time.time()
     paths, readings = simulate_robot(world, robot, path, current_key)
+    simulation_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
     widget.state.update(
         {
@@ -452,9 +456,9 @@ def update_robot_simulation(widget, e, seed=None):
             "robot_readings": readings[0][-1][: robot.n_sensors],
             "show_debug": True,
             "current_seed": current_seed,
+            "simulation_time": simulation_time,
         }
     )
-
 
 drawing_system_handler = Plot.js("""({points, simplify}) => {
         mode = $state.selected_tool
@@ -758,7 +762,7 @@ canvas = (
 )
 
 (
-    canvas
+    (canvas | Plot.js("$state.simulation_time && `${$state.simulation_time?.toFixed(2)} ms`"))
     & (
         sliders
         | toolbar

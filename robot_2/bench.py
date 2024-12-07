@@ -245,9 +245,7 @@ robot_path = [
 
 def perturb_walls(w, idx, amount=0.1):
     # Add small random offset to one wall endpoint
-    w = list(w)  # Convert to list to allow modification
     w[idx][1] = w[idx][1] + amount
-    w[idx][2] = w[idx][2] + amount
     return w
 
 
@@ -272,7 +270,7 @@ print("Test 1: Perturbing walls")
 start = time.time()
 all_paths_1, all_readings_1 = jax.vmap(
     lambda k: simulate_robot(
-        World(*walls_to_jax(perturb_walls(walls, idx=0))),
+        World(*walls_to_jax(walls)),
         get_robot(0.1),
         jnp.array(robot_path),
         k,
