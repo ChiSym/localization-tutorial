@@ -65,8 +65,9 @@ import robot_2.visualization as v
 
 key = PRNGKey(0)
 
-WALL_COLLISION_THRESHOLD = 0.15
+WALL_COLLISION_THRESHOLD = jnp.array(0.15)
 WALL_BOUNCE = 0.15
+MAX_SENSORS = 32
 
 
 @pz.pytree_dataclass
@@ -185,8 +186,8 @@ class World(genjax.PythonicPytree):
         return final_pos
 
     def ray_distance(
-        self, ray_start: jnp.ndarray, ray_dir: jnp.ndarray, max_dist: float
-    ) -> Tuple[float, int]:
+        self, ray_start: jnp.ndarray, ray_dir: jnp.ndarray, max_dist: jnp.ndarray
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """Find distance to nearest wall along a ray and which wall was hit
 
         Args:
@@ -200,7 +201,7 @@ class World(genjax.PythonicPytree):
             - wall_idx: Index of wall that was hit, or -1 if no wall hit
         """
         if self.walls.shape[0] == 0:  # No walls
-            return max_dist + WALL_COLLISION_THRESHOLD, -1
+            return max_dist + WALL_COLLISION_THRESHOLD, jnp.array(-1)
 
         # Vectorized computation for all walls at once
         p1 = self.walls[:, 0]  # Shape: (N, 2)
@@ -315,22 +316,6 @@ def get_sensor_reading(
 
     return noisy_distance
 
-
-@genjax.gen
-def get_all_sensor_readings(world: World, robot: RobotCapabilities, pose: Pose):
-    """Get noisy sensor readings at evenly spaced angles around the robot"""
-    # Calculate angles for max sensors
-    MAX_SENSORS = 32
-    angle_step = 2 * jnp.pi / robot.n_sensors
-    angles = jnp.arange(MAX_SENSORS) * angle_step
-
-    # Create mask based on actual number of sensors
-    mask = jnp.arange(MAX_SENSORS) < robot.n_sensors
-
-    masked_readings = get_sensor_reading.partial_apply(world, robot, pose).mask().vmap()
-    return masked_readings(mask, angles) @ "readings"
-
-
 @genjax.gen
 def execute_control(
     world: World,
@@ -351,8 +336,12 @@ def execute_control(
 
     final_pose = Pose(p=physical_pos, hd=noisy_angle)
 
-    # Get sensor readings at final position
-    readings = get_all_sensor_readings(world, robot, final_pose) @ "sensor"
+    
+    sensor_angles = jnp.arange(MAX_SENSORS) * 2 * jnp.pi / robot.n_sensors
+    sensor_mask = jnp.arange(MAX_SENSORS) < robot.n_sensors
+    get_readings = get_sensor_reading.partial_apply(world, robot, final_pose).mask().vmap()
+    readings = get_readings(sensor_mask, sensor_angles) @ "sensor readings"
+    
     return final_pose, (final_pose, readings.value)
 
 
