@@ -348,6 +348,34 @@ def execute_control(
 
     return final_pose, (final_pose, readings.value)
 
+@genjax.gen
+def path_readings(
+    world: World,
+    robot: RobotCapabilities,
+    current_pose: Pose,
+    control: jnp.ndarray,
+):
+    """Execute a control command with physical step and noise"""
+    dist, angle = control
+
+    # Calculate noisy intended position
+    planned_pos = current_pose.p + dist * current_pose.dp()
+    noisy_pos = (
+        genjax.mv_normal_diag(planned_pos, robot.p_noise * jnp.ones(2)) @ "p_noise"
+    )
+    noisy_angle = genjax.normal(current_pose.hd + angle, robot.hd_noise) @ "hd_noise"
+    physical_pos = world.physical_step(current_pose.p, noisy_pos)
+
+    final_pose = Pose(p=physical_pos, hd=noisy_angle)
+
+    sensor_angles = jnp.arange(MAX_SENSORS) * 2 * jnp.pi / robot.n_sensors
+    sensor_mask = jnp.arange(MAX_SENSORS) < robot.n_sensors
+    get_readings = (
+        get_sensor_reading.partial_apply(world, robot, final_pose).mask().vmap()
+    )
+    readings = get_readings(sensor_mask, sensor_angles) @ "sensor readings"
+
+    return final_pose, (final_pose, readings.value)
 
 @genjax.gen
 def sample_robot_path(
@@ -380,10 +408,10 @@ def sample_robot_path(
 
 
 def sample_possible_paths(
-    world: World, robot: RobotCapabilities, planned_path: jnp.ndarray, n_paths: int, key
+    world: World, robot: RobotCapabilities, start_pose: Pose, controls: jnp.ndarray, n_paths: int, key
 ):
     """Generate n possible paths given the planned path, respecting walls"""
-    (start_pose, controls) = path_to_controls(planned_path[:, :2])
+    
     # Create n random keys for parallel simulation
     keys = jax.random.split(key, n_paths)
 
@@ -393,11 +421,54 @@ def sample_possible_paths(
     ).get_retval()
 
 
-@partial(jax.jit, static_argnums=4)
-def simulate_robot(
+@genjax.gen 
+def pose_readings(
+    world: World, 
+    robot: RobotCapabilities, 
+    pose: Pose
+):
+    sensor_angles = jnp.arange(MAX_SENSORS) * 2 * jnp.pi / robot.n_sensors
+    sensor_mask = jnp.arange(MAX_SENSORS) < robot.n_sensors
+    get_readings = (
+        get_sensor_reading.partial_apply(world, robot, pose).mask().vmap()
+    )
+    readings = get_readings(sensor_mask, sensor_angles) @ "sensor readings"
+
+@genjax.gen
+def generate_true_path(
+    world: World,
+    robot: RobotCapabilities, 
+    start_pose: Pose,
+    controls: jnp.ndarray,
+):
+    """Generate a single true path and its sensor readings
+    
+    Args:
+        world: World containing walls
+        robot: Robot capabilities and noise parameters 
+        paths: Array of path points
+        key: Random key for simulation
+
+    Returns:
+        Tuple of:
+        - path: Array of shape (n_steps, 3) containing the simulated path
+        - readings: Array of shape (n_steps, n_sensors) containing sensor readings
+    """
+    
+    
+    # Sample single path
+    path, readings = sample_robot_path(world, robot, start_pose, controls) @ "true_path"
+    # readings2 = pose_readings.partial_apply(world, robot).vmap()(path) @ "readings"
+    # readings2 = jax.vmap(pose_readings.partial_apply(world, robot).simulate, in_axes=(0))(ks, (true_path,))
+    
+    return path, readings
+
+@partial(jax.jit, static_argnums=5)
+def generate_possible_paths(
     world: World,
     robot: RobotCapabilities,
-    path: jnp.ndarray,
+    start_pose: Pose,
+    controls: jnp.ndarray,
     key: jnp.ndarray,
     n_possible: int = 40,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -415,8 +486,13 @@ def simulate_robot(
         - paths: Array of shape (n_possible + 1, n_steps, 3) containing all simulated paths
         - readings: Array of shape (n_possible + 1, n_steps, n_sensors) containing sensor readings
     """
+    
     # Sample all paths at once (1 true path + N possible paths)
-    return sample_possible_paths(world, robot, path, n_possible + 1, key)
+    (paths, readings) =  sample_possible_paths(world, robot, start_pose, controls, n_possible + 1, key)
+    
+    return (paths, readings)
+
+
 
 
 def update_robot_simulation(widget, e, seed=None):
@@ -429,6 +505,8 @@ def update_robot_simulation(widget, e, seed=None):
 
     current_key = PRNGKey(current_seed)
 
+    k1, k2 = jax.random.split(current_key, 2)
+    
     # Create world and robot objects
     world = World(*walls_to_jax(widget.state.walls))
     robot = RobotCapabilities(
@@ -442,18 +520,20 @@ def update_robot_simulation(widget, e, seed=None):
         sensor_range=jnp.array(10.0, dtype=jnp.float32),
     )
 
-    path = jnp.array(widget.state.robot_path, dtype=jnp.float32)
-
+    paths = jnp.array(widget.state.robot_path, dtype=jnp.float32)
+    (start_pose, controls) = path_to_controls(paths[:, :2])
+    
     # Use the factored out simulation function and measure time
     start_time = time.time()
-    paths, readings = simulate_robot(world, robot, path, current_key)
+    paths, readings = generate_possible_paths(world, robot, start_pose, controls, k1)
+    true_path, readings2 = generate_true_path.simulate(k2, (world, robot, start_pose, controls)).get_retval()
     simulation_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
     widget.state.update(
         {
             "possible_paths": paths[1:],
-            "true_path": paths[0],
-            "robot_readings": readings[0][-1][: robot.n_sensors],
+            "true_path": true_path,
+            "robot_readings": readings2[-1][: robot.n_sensors],
             "show_debug": True,
             "current_seed": current_seed,
             "simulation_time": simulation_time,
