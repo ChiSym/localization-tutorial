@@ -432,7 +432,7 @@ def pose_readings(
     get_readings = (
         get_sensor_reading.partial_apply(world, robot, pose).mask().vmap()
     )
-    readings = get_readings(sensor_mask, sensor_angles) @ "sensor readings"
+    return get_readings(sensor_mask, sensor_angles) @ "sensor readings"
 
 @genjax.gen
 def generate_true_path(
@@ -457,11 +457,11 @@ def generate_true_path(
     
     
     # Sample single path
-    path, readings = sample_robot_path(world, robot, start_pose, controls) @ "true_path"
-    # readings2 = pose_readings.partial_apply(world, robot).vmap()(path) @ "readings"
+    path, _ = sample_robot_path(world, robot, start_pose, controls) @ "true_path"
+    readings2 = pose_readings.partial_apply(world, robot).vmap()(path) @ "readings"
     # readings2 = jax.vmap(pose_readings.partial_apply(world, robot).simulate, in_axes=(0))(ks, (true_path,))
     
-    return path, readings
+    return path, readings2.value
 
 @partial(jax.jit, static_argnums=5)
 def generate_possible_paths(
@@ -488,9 +488,11 @@ def generate_possible_paths(
     """
     
     # Sample all paths at once (1 true path + N possible paths)
-    (paths, readings) =  sample_possible_paths(world, robot, start_pose, controls, n_possible + 1, key)
+    k1, k2 = jax.random.split(key)
+    paths, _ =  sample_possible_paths(world, robot, start_pose, controls, n_possible + 1, k1)
+    true_path, readings = generate_true_path.simulate(k2, (world, robot, start_pose, controls)).get_retval()
     
-    return (paths, readings)
+    return paths, true_path, readings
 
 
 
@@ -525,8 +527,7 @@ def update_robot_simulation(widget, e, seed=None):
     
     # Use the factored out simulation function and measure time
     start_time = time.time()
-    paths, readings = generate_possible_paths(world, robot, start_pose, controls, k1)
-    true_path, readings2 = generate_true_path.simulate(k2, (world, robot, start_pose, controls)).get_retval()
+    paths, true_path, readings2 = generate_possible_paths(world, robot, start_pose, controls, k1)
     simulation_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
     widget.state.update(
