@@ -305,15 +305,13 @@ def get_sensor_reading(
     world: World, robot: RobotCapabilities, pose: Pose, angle: jnp.ndarray
 ) -> jnp.ndarray:
     """Get a single noisy sensor reading at the given angle relative to robot heading"""
-    # Get the ray direction vector for this sensor angle
+    
     ray_dir = jnp.array([jnp.cos(pose.hd + angle), jnp.sin(pose.hd + angle)])
 
-    # Get raw distance reading
     distance, idx = world.ray_distance(
         ray_start=pose.p, ray_dir=ray_dir, max_dist=robot.sensor_range
     )
 
-    # Add noise to reading
     noisy_distance = genjax.normal(distance, robot.sensor_noise) @ "reading"
 
     return noisy_distance
@@ -339,14 +337,7 @@ def execute_control(
 
     final_pose = Pose(p=physical_pos, hd=noisy_angle)
 
-    sensor_angles = jnp.arange(MAX_SENSORS) * 2 * jnp.pi / robot.n_sensors
-    sensor_mask = jnp.arange(MAX_SENSORS) < robot.n_sensors
-    get_readings = (
-        get_sensor_reading.partial_apply(world, robot, final_pose).mask().vmap()
-    )
-    readings = get_readings(sensor_mask, sensor_angles) @ "sensor readings"
-
-    return final_pose, (final_pose, readings.value)
+    return final_pose, final_pose
 
 @genjax.gen
 def path_readings(
@@ -399,27 +390,12 @@ def sample_robot_path(
     all_controls = jnp.concatenate([noop[None], controls])
 
     # Use execute_control.scan() to process all controls
-    _, (path, readings) = (
+    _, path = (
         execute_control.partial_apply(world, robot).scan()(start, all_controls)
         @ "trajectory"
     )
 
-    return path, readings
-
-
-def sample_possible_paths(
-    world: World, robot: RobotCapabilities, start_pose: Pose, controls: jnp.ndarray, n_paths: int, key
-):
-    """Generate n possible paths given the planned path, respecting walls"""
-    
-    # Create n random keys for parallel simulation
-    keys = jax.random.split(key, n_paths)
-
-    # Vectorize simulation across keys
-    return jax.vmap(sample_robot_path.simulate, in_axes=(0, None))(
-        keys, (world, robot, start_pose, controls)
-    ).get_retval()
-
+    return path
 
 @genjax.gen 
 def pose_readings(
@@ -457,7 +433,7 @@ def generate_true_path(
     
     
     # Sample single path
-    path, _ = sample_robot_path(world, robot, start_pose, controls) @ "true_path"
+    path = sample_robot_path(world, robot, start_pose, controls) @ "true_path"
     readings2 = pose_readings.partial_apply(world, robot).vmap()(path) @ "readings"
     # readings2 = jax.vmap(pose_readings.partial_apply(world, robot).simulate, in_axes=(0))(ks, (true_path,))
     
@@ -489,12 +465,19 @@ def generate_possible_paths(
     
     # Sample all paths at once (1 true path + N possible paths)
     k1, k2 = jax.random.split(key)
-    paths, _ =  sample_possible_paths(world, robot, start_pose, controls, n_possible + 1, k1)
+    paths =  sample_possible_paths(world, robot, start_pose, controls, n_possible + 1, k1)
+    
+    
+    keys = jax.random.split(k1, n_possible)
+
+    # Vectorize simulation across keys
+    paths = jax.vmap(sample_robot_path.simulate, in_axes=(0, None))(
+        keys, (world, robot, start_pose, controls)
+    ).get_retval()
+    
     true_path, readings = generate_true_path.simulate(k2, (world, robot, start_pose, controls)).get_retval()
     
     return paths, true_path, readings
-
-
 
 
 def update_robot_simulation(widget, e, seed=None):
@@ -527,14 +510,14 @@ def update_robot_simulation(widget, e, seed=None):
     
     # Use the factored out simulation function and measure time
     start_time = time.time()
-    paths, true_path, readings2 = generate_possible_paths(world, robot, start_pose, controls, k1)
+    paths, true_path, readings = generate_possible_paths(world, robot, start_pose, controls, k1)
     simulation_time = (time.time() - start_time) * 1000  # Convert to milliseconds
 
     widget.state.update(
         {
-            "possible_paths": paths[1:],
+            "possible_paths": paths,
             "true_path": true_path,
-            "robot_readings": readings2[-1][: robot.n_sensors],
+            "robot_readings": readings[-1][: robot.n_sensors],
             "show_debug": True,
             "current_seed": current_seed,
             "simulation_time": simulation_time,
