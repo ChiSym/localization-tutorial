@@ -385,7 +385,7 @@ def pose_readings(world: World, robot: RobotCapabilities, pose: Pose):
 
 
 @genjax.gen
-def generate_true_path(
+def path_with_readings(
     world: World,
     robot: RobotCapabilities,
     start_pose: Pose,
@@ -394,7 +394,7 @@ def generate_true_path(
     path = sample_robot_path(world, robot, start_pose, controls) @ "true_path"
     readings = pose_readings.partial_apply(world, robot).vmap()(path) @ "sensor"
 
-    return path, readings.value
+    return path, readings
 
 
 @partial(jax.jit, static_argnums=5)
@@ -421,24 +421,16 @@ def generate_possible_paths(
         - readings: Array of shape (n_possible + 1, n_steps, n_sensors) containing sensor readings
     """
 
-    # Sample all paths at once (1 true path + N possible paths)
-    k1, k2 = jax.random.split(key)
-
-    # Vectorize simulation across keys
-    paths_k = jax.random.split(k1, n_possible)
-    possible_paths = jax.vmap(sample_robot_path.simulate, in_axes=(0, None))(
-        paths_k, (world, robot, start_pose, controls)
+    (paths, readings) = jax.vmap(path_with_readings.simulate, in_axes=(0, None))(
+        jax.random.split(key, n_possible), (world, robot, start_pose, controls)
     ).get_retval()
 
-    true_path = possible_paths[0]
-    possible_paths = possible_paths[1:]
+    
+    possible_paths = paths[1:]
+    true_path = paths[0]
+    true_path_readings = readings[0]
 
-    readings_k = jax.random.split(k2, len(true_path))
-    readings = jax.vmap(pose_readings.partial_apply(world, robot).simulate)(
-        readings_k, (true_path,)
-    )
-
-    return possible_paths, true_path, readings.get_retval()
+    return possible_paths, true_path, true_path_readings
 
 
 def update_robot_simulation(widget, e, seed=None):
@@ -471,7 +463,7 @@ def update_robot_simulation(widget, e, seed=None):
 
     # Use the factored out simulation function and measure time
     start_time = time.time()
-    paths, true_path, readings = generate_possible_paths(
+    paths, true_path, true_path_readings = generate_possible_paths(
         world, robot, start_pose, controls, k1
     )
     simulation_time = (time.time() - start_time) * 1000  # Convert to milliseconds
@@ -480,7 +472,7 @@ def update_robot_simulation(widget, e, seed=None):
         {
             "possible_paths": paths,
             "true_path": true_path,
-            "robot_readings": readings[-1][: robot.n_sensors],
+            "true_path_readings": true_path_readings[-1][: robot.n_sensors],
             "show_debug": True,
             "current_seed": current_seed,
             "simulation_time": simulation_time,
@@ -535,7 +527,7 @@ def create_initial_state(seed) -> Dict[str, Any]:
         "robot_path": [],
         "possible_paths": [],
         "estimated_pose": None,
-        "robot_readings": None,
+        "true_path_readings": None,
         "sensor_explore_angle": -1,
         "show_true_position": False,
         "current_line": [],
@@ -561,11 +553,11 @@ true_position_toggle = Plot.html(
 sensor_rays = Plot.line(
     js(
         """
-        const readings = $state.robot_readings
+        const readings = $state.true_path_readings
         if (!readings) return;
         const n_sensors = readings.length;
         const [x, y, heading] = $state.robot_pose;
-        return Array.from($state.robot_readings).flatMap((r, i) => {
+        return Array.from($state.true_path_readings).flatMap((r, i) => {
             const angle = heading + (i * Math.PI * 2) / n_sensors;
             const from = [x, y, i]
             const to = [x + r * Math.cos(angle), y + r * Math.sin(angle), i]
@@ -585,7 +577,7 @@ rotating_sensor_rays = (
     Plot.line(
         js(
             """
-            const readings = $state.robot_readings;
+            const readings = $state.true_path_readings;
             if (!readings) return;
             const n_sensors = readings.length;
             const [x, y, heading] = $state.robot_pose;
@@ -599,7 +591,7 @@ rotating_sensor_rays = (
                     angle_modifier = $state.current_seed || Math.random() * 2 * Math.PI;
                 }
             }
-            return Array.from($state.robot_readings).flatMap((r, i) => {
+            return Array.from($state.true_path_readings).flatMap((r, i) => {
                 let angle = heading + (i * Math.PI * 2) / n_sensors;
                 angle += angle_modifier;
                 const from = [0, 0, i]
