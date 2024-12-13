@@ -537,8 +537,10 @@ pose_samples = jax.vmap(step_model.simulate, in_axes=(0, None))(
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
 
+
 def pose_list_to_plural_pose(pl: list[Pose]) -> Pose:
-     return Pose(jnp.array([pose.p for pose in pl]), [pose.hd for pose in pl])
+    return Pose(jnp.array([pose.p for pose in pl]), [pose.hd for pose in pl])
+
 
 def poses_to_plots(poses: Iterable[Pose], **plot_opts):
     return [pose_plot(pose, **plot_opts) for pose in poses]
@@ -1530,10 +1532,11 @@ ControlT = TypeVar("ControlT")
 
 
 class SequentialImportanceSampling(Generic[StateT, ControlT]):
-
     def __init__(
         self,
-        importance: Callable[[PRNGKey, StateT, ControlT, Array], tuple[genjax.Trace[StateT], float]],
+        importance: Callable[
+            [PRNGKey, StateT, ControlT, Array], tuple[genjax.Trace[StateT], float]
+        ],
         init: StateT,
         controls: ControlT,
         observations: Array,
@@ -1544,7 +1547,9 @@ class SequentialImportanceSampling(Generic[StateT, ControlT]):
         self.observations = observations
 
     class Result(Generic[StateT]):
-        def __init__(self, N: int, end: StateT, samples: genjax.Trace[StateT], indices: IntArray):
+        def __init__(
+            self, N: int, end: StateT, samples: genjax.Trace[StateT], indices: IntArray
+        ):
             self.N = N
             self.end = end
             self.samples = samples
@@ -1580,12 +1585,18 @@ class SequentialImportanceSampling(Generic[StateT, ControlT]):
         def step(state, update):
             key, control, observation = update
             ks = jax.random.split(key, (2, N))
-            sample, log_weights = jax.vmap(self.importance, in_axes=(0, 0, None, None))(ks[0], state, control, observation)
-            indices = jax.vmap(genjax.categorical.sampler, in_axes=(0, None))(ks[1], log_weights)
+            sample, log_weights = jax.vmap(self.importance, in_axes=(0, 0, None, None))(
+                ks[0], state, control, observation
+            )
+            indices = jax.vmap(genjax.categorical.sampler, in_axes=(0, None))(
+                ks[1], log_weights
+            )
             resample = jax.tree.map(lambda v: v[indices], sample)
             return resample.get_retval(), (sample, indices)
 
-        init_array = jax.tree.map(lambda a: jnp.broadcast_to(a, (N,) + a.shape), self.init)
+        init_array = jax.tree.map(
+            lambda a: jnp.broadcast_to(a, (N,) + a.shape), self.init
+        )
         end, (samples, indices) = jax.lax.scan(
             step,
             init_array,
@@ -1598,22 +1609,29 @@ class SequentialImportanceSampling(Generic[StateT, ControlT]):
         return SequentialImportanceSampling.Result(N, end, samples, indices)
 
 
-
 # %%
 def localization_sis(motion_settings, observations):
     return SequentialImportanceSampling(
-        lambda key, pose, control, observation: full_model_kernel.map(lambda r: r[0]).importance(
-            key, C['sensor', :, 'distance'].set(observation), (motion_settings, pose, control)
+        lambda key, pose, control, observation: full_model_kernel.map(
+            lambda r: r[0]
+        ).importance(
+            key,
+            C["sensor", :, "distance"].set(observation),
+            (motion_settings, pose, control),
         ),
-        robot_inputs['start'],
-        robot_inputs['controls'],
-        observations
+        robot_inputs["start"],
+        robot_inputs["controls"],
+        observations,
     )
+
+
 # %%
 
 
 key, sub_key = jax.random.split(key)
-smc_result = localization_sis(motion_settings_high_deviation, observations_high_deviation).run(sub_key, 20)
+smc_result = localization_sis(
+    motion_settings_high_deviation, observations_high_deviation
+).run(sub_key, 20)
 # %%
 (
     world_plot
@@ -1626,7 +1644,9 @@ smc_result = localization_sis(motion_settings_high_deviation, observations_high_
 # %%
 # Try it in the low deviation setting
 key, sub_key = jax.random.split(key)
-low_smc_result = localization_sis(motion_settings_low_deviation, observations_low_deviation).run(sub_key, 20)
+low_smc_result = localization_sis(
+    motion_settings_low_deviation, observations_low_deviation
+).run(sub_key, 20)
 (
     world_plot
     + path_to_polyline(path_low_deviation, stroke="blue", strokeWidth=2)
