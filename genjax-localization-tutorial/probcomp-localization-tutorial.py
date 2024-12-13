@@ -42,9 +42,10 @@ import genjax
 from urllib.request import urlopen
 from genjax import SelectionBuilder as S
 from genjax import ChoiceMapBuilder as C
-from genjax.typing import FloatArray, PRNGKey
+from genjax.typing import Array, FloatArray, PRNGKey, IntArray
 from penzai import pz
-from typing import Any, Iterable
+from typing import Any, Iterable, TypeVar, Generic, Callable
+
 
 import os
 
@@ -536,6 +537,8 @@ pose_samples = jax.vmap(step_model.simulate, in_axes=(0, None))(
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
 
+def pose_list_to_plural_pose(pl: list[Pose]) -> Pose:
+     return Pose(jnp.array([pose.p for pose in pl]), [pose.hd for pose in pl])
 
 def poses_to_plots(poses: Iterable[Pose], **plot_opts):
     return [pose_plot(pose, **plot_opts) for pose in poses]
@@ -1520,102 +1523,121 @@ def path_to_polyline(path, **options):
 
 
 # %%
-# P(z_t, y_t ; u_t, z_{t-1})
-def smc(motion_settings, observations):
-    # TODO: maybe kernel should return a single value and we should map it to return a pair before scan
-    kernel_importance = jax.jit(full_model_kernel.map(lambda r: r[0]).importance)
 
-    def run(key, N):
 
+StateT = TypeVar("StateT")
+ControlT = TypeVar("ControlT")
+
+
+class SequentialImportanceSampling(Generic[StateT, ControlT]):
+
+    def __init__(
+        self,
+        importance: Callable[[PRNGKey, StateT, ControlT, Array], tuple[genjax.Trace[StateT], float]],
+        init: StateT,
+        controls: ControlT,
+        observations: Array,
+    ):
+        self.importance = jax.jit(importance)
+        self.init = init
+        self.controls = controls
+        self.observations = observations
+
+    class Result(Generic[StateT]):
+        def __init__(self, N: int, end: StateT, samples: genjax.Trace[StateT], indices: IntArray):
+            self.N = N
+            self.end = end
+            self.samples = samples
+            self.indices = indices
+
+        def flood_fill(self) -> list[list[StateT]]:
+            samples = self.samples.get_retval()
+            active_paths = [[p] for p in samples[0]]
+            complete_paths = []
+            for i in range(1, len(samples)):
+                indices = self.indices[i - 1]
+                counts = jnp.bincount(indices, length=self.N)
+                new_active_paths = self.N * [None]
+                for j in range(self.N):
+                    if counts[j] == 0:
+                        complete_paths.append(active_paths[j])
+                    new_active_paths[j] = active_paths[indices[j]] + [samples[i][j]]
+                active_paths = new_active_paths
+
+            return complete_paths + active_paths
+
+        def backtrack(self) -> list[list[StateT]]:
+            paths = [[p] for p in self.end]
+            samples = self.samples.get_retval()
+            for i in reversed(range(len(samples))):
+                for j in range(len(paths)):
+                    paths[j].append(samples[i][self.indices[i][j].item()])
+            for p in paths:
+                p.reverse()
+            return paths
+
+    def run(self, key: PRNGKey, N: int) -> dict:
         def step(state, update):
-            key, control, observations = update
-            key, sub_key = jax.random.split(key)
-            def inner(key, pose):
-                return kernel_importance(key, C['sensor', :, 'distance'].set(observations), (motion_settings, pose, control))
-            sample, log_weights = jax.vmap(inner)(
-                jax.random.split(sub_key, N),
-                state
-            )
-            key, sub_key = jax.random.split(key)
-            chosen = jax.vmap(genjax.categorical.sample, in_axes=(0, None))(
-                jax.random.split(sub_key, N), log_weights
-            )
-            resample = jax.tree.map(lambda v: v[chosen], sample)
-            return (resample.get_retval(), (sample, chosen))
+            key, control, observation = update
+            ks = jax.random.split(key, (2, N))
+            sample, log_weights = jax.vmap(self.importance, in_axes=(0, 0, None, None))(ks[0], state, control, observation)
+            indices = jax.vmap(genjax.categorical.sampler, in_axes=(0, None))(ks[1], log_weights)
+            resample = jax.tree.map(lambda v: v[indices], sample)
+            return resample.get_retval(), (sample, indices)
 
-        p0 = robot_inputs['start']
-        p0i = Pose(jnp.broadcast_to(p0.p, (N, 2)), jnp.broadcast_to(p0.hd, (N,)))
+        init_array = jax.tree.map(lambda a: jnp.broadcast_to(a, (N,) + a.shape), self.init)
         end, (samples, indices) = jax.lax.scan(
             step,
-            p0i,
-            (jax.random.split(key, T), robot_inputs['controls'], observations)
+            init_array,
+            (
+                jax.random.split(key, len(self.controls)),
+                self.controls,
+                self.observations,
+            ),
         )
-        return {
-            'N': N,
-            'samples': samples,
-            'indices': indices,
-            'end': end
-        }
-
-    return run
-
+        return SequentialImportanceSampling.Result(N, end, samples, indices)
 
 
 
 # %%
-def smc_result_flood_fill(smc_result):
-    N = smc_result["N"]
-    samples = smc_result['samples'].get_retval()
-    active_paths = [[p] for p in samples[0]]
-    complete_paths = []
-    for i in range(1, len(samples)):
-        indices = smc_result["indices"][i - 1]
-        counts = jnp.bincount(indices, length=N)
-        new_active_paths = N * [None]
-        for j in range(N):
-            if counts[j] == 0:
-                complete_paths.append(active_paths[j])
-            new_active_paths[j] = active_paths[indices[j]] + [samples[i][j]]
-        active_paths = new_active_paths
+def localization_sis(motion_settings, observations):
+    return SequentialImportanceSampling(
+        lambda key, pose, control, observation: full_model_kernel.map(lambda r: r[0]).importance(
+            key, C['sensor', :, 'distance'].set(observation), (motion_settings, pose, control)
+        ),
+        robot_inputs['start'],
+        robot_inputs['controls'],
+        observations
+    )
+# %%
 
-    # currently we have lists of single poses; transpose back to vector poses
-    def pose_list_to_plural_pose(pl):
-        return Pose(jnp.array([pose.p for pose in pl]), [pose.hd for pose in pl])
-
-    return map(pose_list_to_plural_pose, complete_paths + active_paths)
 
 key, sub_key = jax.random.split(key)
-smc_result = smc(motion_settings_high_deviation, observations_high_deviation)(sub_key, 50)
+smc_result = localization_sis(motion_settings_high_deviation, observations_high_deviation).run(sub_key, 20)
+# %%
 (
     world_plot
     + path_to_polyline(path_high_deviation, stroke="blue", strokeWidth=2)
     + [
-        path_to_polyline(p, opacity=0.1, stroke="green")
-        for p in smc_result_flood_fill(smc_result)
+        path_to_polyline(pose_list_to_plural_pose(p), opacity=0.1, stroke="green")
+        for p in smc_result.backtrack()
     ]
 )
-
-# %%
-def smc_result_backtrack(smc_result):
-    samples = smc_result['samples'].get_retval()
-    end = smc_result['end'].get_retval()
-    print
-
-
-
-
 # %%
 # Try it in the low deviation setting
+key, sub_key = jax.random.split(key)
+low_smc_result = localization_sis(motion_settings_low_deviation, observations_low_deviation).run(sub_key, 20)
 (
     world_plot
     + path_to_polyline(path_low_deviation, stroke="blue", strokeWidth=2)
     + [
-        path_to_polyline(p, opacity=0.1, stroke="green")
-        for p in smc_result_flood_fill(smc(motion_settings_low_deviation, observations_low_deviation)(sub_key, 100))
+        path_to_polyline(pose_list_to_plural_pose(p), opacity=0.1, stroke="green")
+        for p in low_smc_result.flood_fill()
     ]
 )
 
 # %%
+
 
 def observation_to_choicemap(sensor_readings, pose=None):
     sensor_cm = C["sensor", :, "distance"].set(sensor_readings)
@@ -1623,6 +1645,7 @@ def observation_to_choicemap(sensor_readings, pose=None):
         return sensor_cm | C["pose", "p"].set(pose.p) | C["pose", "hd"].set(pose.hd)
     else:
         return sensor_cm
+
 
 def select_by_weight(key: PRNGKey, weights: FloatArray, things):
     """Makes a categorical selection from the vector object `things`
