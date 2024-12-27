@@ -1570,6 +1570,7 @@ class SequentialImportanceSampling(Generic[StateT, ControlT]):
         and offers some convenient methods to reconstruct the paths explored
         (`flood_fill`) or ultimately chosen (`backtrack`).
         """
+
         def __init__(
             self, N: int, end: StateT, samples: genjax.Trace[StateT], indices: IntArray
         ):
