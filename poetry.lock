@@ -688,13 +688,13 @@ files = [
 
 [[package]]
 name = "genjax"
-version = "0.7.0.post4.dev0+eacb241e"
+version = "0.8.0"
 description = "Probabilistic programming with Gen, built on top of JAX."
 optional = false
 python-versions = ">=3.10,<3.13"
 files = [
-    {file = "genjax-0.7.0.post4.dev0+eacb241e-py3-none-any.whl", hash = "sha256:c6374155c6b772e65919115613264e372606844438e75a6ef1d3db0350d5c79f"},
-    {file = "genjax-0.7.0.post4.dev0+eacb241e.tar.gz", hash = "sha256:d738d029a7a5a40390236ab35b8d1e8745c7ba02cc5fc1d2723382c1f8b0cb01"},
+    {file = "genjax-0.8.0-py3-none-any.whl", hash = "sha256:ac7d38e24036afdeba6bfd200180e939a950d0e78c91133604b02cda05c4e968"},
+    {file = "genjax-0.8.0.tar.gz", hash = "sha256:f207dbe3021750c445cec2cf14d79da69f0b234e10385a56e8f2f06247331931"},
 ]
 
 [package.dependencies]
@@ -708,8 +708,8 @@ tensorflow-probability = ">=0.23.0,<0.24.0"
 treescope = ">=0.1.5,<0.2.0"
 
 [package.extras]
-all = ["genstudio (==2024.09.003)"]
-genstudio = ["genstudio (==2024.09.003)"]
+all = ["genstudio (==2024.11.015)"]
+genstudio = ["genstudio (==2024.11.015)"]
 
 [package.source]
 type = "legacy"
@@ -718,23 +718,26 @@ reference = "gcp"
 
 [[package]]
 name = "genstudio"
-version = "2024.11.021"
+version = "2024.12.4"
 description = ""
 optional = false
 python-versions = ">=3.10,<3.13"
-files = []
-develop = true
+files = [
+    {file = "genstudio-2024.12.4-py3-none-any.whl", hash = "sha256:280154e6facb55a73b66b8b6229c847c8c57377faf3022ff73f564d252e52a8f"},
+    {file = "genstudio-2024.12.4.tar.gz", hash = "sha256:f3c975e61c068e7c2a6a75be018018df16e4bb38a693eadeddcfff86dcff2da7"},
+]
 
 [package.dependencies]
-anywidget = "^0.9.10"
-html2image = "^2.0.4.3"
-orjson = "^3.10.6"
-pillow = "^10.4.0"
-traitlets = "^5.14.3"
+anywidget = ">=0.9.10,<0.10.0"
+html2image = ">=2.0.4.3,<3.0.0.0"
+orjson = ">=3.10.6,<4.0.0"
+pillow = ">=10.4.0,<11.0.0"
+traitlets = ">=5.14.3,<6.0.0"
 
 [package.source]
-type = "directory"
-url = "../genstudio"
+type = "legacy"
+url = "https://us-west1-python.pkg.dev/probcomp-caliban/probcomp/simple"
+reference = "gcp"
 
 [[package]]
 name = "html2image"
@@ -2713,4 +2716,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "3d9a2ab9db39381cf0b6982d7546fd98231b1d83e37bac488f6d0dbc879aa7e8"
+content-hash = "48a726e720b1311bc7f5b1738c8b8576f08d70d07f93c24cd2cae92a2cc85e9f"
