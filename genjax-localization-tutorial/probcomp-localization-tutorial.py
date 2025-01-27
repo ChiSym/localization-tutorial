@@ -13,8 +13,9 @@
 #     display_name: Python 3
 #     language: python
 #     name: python3
-# ---
 # pyright: reportUnusedExpression=false
+# pyright: reportUnusedCallResult=false
+# ---
 # %%
 # import sys
 
@@ -35,6 +36,7 @@
 
 import json
 import genstudio.plot as Plot
+from genstudio.widget import Widget
 import itertools
 import jax
 import jax.numpy as jnp
@@ -572,7 +574,7 @@ def confidence_circle(pose: Pose, p_noise: float):
 # %%
 # `simulate` takes the GF plus a tuple of args to pass to it.
 key, sub_key = jax.random.split(key)
-trace = step_proposal.simulate(
+trace: genjax.Trace[Pose] = step_proposal.simulate(
     sub_key,
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
@@ -779,31 +781,84 @@ Plot.Frames(
 #
 # One could, for instance, consider just the placement of the first step, and replace its stochastic choice of heading with an updated value. The original trace was typical under the pose prior model, whereas the modified one may be rather less likely. This plot is annotated with log of how much unlikelier, the score ratio:
 # %%
-
 key, sub_key = jax.random.split(key)
 trace = step_proposal.simulate(
     sub_key,
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
-key, sub_key = jax.random.split(key)
-rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
-    sub_key, C["hd"].set(jnp.pi / 2.0)
-)
 
-# TODO(huebert): try using a slider to choose the heading we set (initial value is 0.0)
+
+def rotate_trace(
+    key: PRNGKey, trace: genjax.Trace[Pose], angle
+) -> tuple[genjax.Trace[Pose], genjax.Weight]:
+    """Returns a modified trace with the heading set to the given angle (in radians), along with the weight difference."""
+    key, sub_key = jax.random.split(key)
+    rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
+        sub_key, C["hd"].set(angle)
+    )
+    return rotated_trace, rotated_trace_weight_diff
+
+
+rotated_trace, rotated_trace_weight_diff = rotate_trace(key, trace, jnp.pi / 2.0)
+
+
+def set_angle(widget: Widget, e):
+    angle = float(e["value"])
+    rotated_trace, rotated_trace_weight_diff = rotate_trace(key, trace, angle)
+    widget.state.update(
+        {
+            "rotated_poses": pose_plot(
+                rotated_trace.get_retval(),
+                fill=Plot.constantly("with heading modified"),
+            ),
+            "angle": angle,
+            "rotated_trace_weight_diff": rotated_trace_weight_diff,
+        }
+    )
+
 
 (
-    Plot.new(
+    Plot.initialState(
+        {
+            "poses": pose_plot(trace.get_retval(), fill=Plot.constantly("some pose")),
+            "rotated_poses": pose_plot(
+                rotated_trace.get_retval(),
+                fill=Plot.constantly("with heading modified"),
+            ),
+            "rotated_trace_weight_diff": rotated_trace_weight_diff,
+            "angle": jnp.pi / 2.0,
+        }
+    )
+    | Plot.new(
         world_plot
-        + pose_plot(trace.get_retval(), fill=Plot.constantly("some pose"))
-        + pose_plot(
-            rotated_trace.get_retval(), fill=Plot.constantly("with heading modified")
-        )
+        + Plot.js("$state.poses")
+        + Plot.js("$state.rotated_poses")
         + Plot.color_map({"some pose": "green", "with heading modified": "red"})
         + Plot.title("Modifying a heading")
     )
-    | html("span.tc", f"score ratio: {rotated_trace_weight_diff}")
-)
+    | html(
+        [
+            "span.tc",
+            Plot.js("`score ratio: ${$state.rotated_trace_weight_diff.toFixed(2)}`"),
+        ]
+    )
+    | (
+        Plot.js("`angle: ${$state.angle.toFixed(2)}`")
+        & [
+            "input",
+            {
+                "type": "range",
+                "name": "angle",
+                "defaultValue": Plot.js("$state.angle"),
+                "min": -jnp.pi / 2,
+                "max": jnp.pi / 2,
+                "step": 0.1,
+                "onChange": set_angle,
+            },
+        ]
+        & {"widths": ["80px", "200px"]}
+    )
+).widget()
 
 # %% [markdown]
 # It is worth carefully thinking through a trickier instance of this.  Suppose instead, within the full path, we replaced the first step's stochastic choice of heading with some specific value.
@@ -811,25 +866,81 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
 
 key, sub_key = jax.random.split(key)
 trace = generate_path_trace(sub_key)
-key, sub_key = jax.random.split(key)
 
-rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
-    sub_key, C[0, "hd"].set(jnp.pi / 2.0)
-)
 
-# %%
+def rotate_first_step(
+    key: PRNGKey, trace: genjax.Trace[Pose], angle
+) -> tuple[genjax.Trace[Pose], genjax.Weight]:
+    """Returns a modified trace with the first step's heading set to the given angle (in radians), along with the weight difference."""
+    key, sub_key = jax.random.split(key)
+    rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
+        sub_key, C[0, "hd"].set(angle)
+    )
+    return rotated_trace, rotated_trace_weight_diff
+
+
+def set_first_step_angle(widget: Widget, e):
+    angle = float(e["value"])
+    rotated_trace, rotated_trace_weight_diff = rotate_first_step(key, trace, angle)
+    widget.state.update(
+        {
+            "rotated_path": [
+                pose_plot(pose, fill=Plot.constantly("with heading modified"))
+                for pose in path_from_trace(rotated_trace)
+            ],
+            "angle": angle,
+            "rotated_trace_weight_diff": rotated_trace_weight_diff,
+        }
+    )
+
+
 (
-    world_plot
-    + [
-        pose_plot(pose, fill=Plot.constantly("with heading modified"))
-        for pose in path_from_trace(rotated_first_step)
-    ]
-    + [
-        pose_plot(pose, fill=Plot.constantly("some path"))
-        for pose in path_from_trace(trace)
-    ]
-    + Plot.color_map({"some path": "green", "with heading modified": "red"})
-) | html("span.tc", f"score ratio: {rotated_first_step_weight_diff}")
+    Plot.initialState(
+        {
+            "original_path": [
+                pose_plot(pose, fill=Plot.constantly("some path"))
+                for pose in path_from_trace(trace)
+            ],
+            "rotated_path": [
+                pose_plot(pose, fill=Plot.constantly("with heading modified"))
+                for pose in path_from_trace(
+                    rotate_first_step(key, trace, jnp.pi / 2.0)[0]
+                )
+            ],
+            "rotated_trace_weight_diff": rotate_first_step(key, trace, jnp.pi / 2.0)[1],
+            "angle": jnp.pi / 2.0,
+        }
+    )
+    | Plot.new(
+        world_plot
+        + Plot.js("$state.rotated_path")
+        + Plot.js("$state.original_path")
+        + Plot.color_map({"some path": "green", "with heading modified": "red"})
+        + Plot.title("Modifying first step heading")
+    )
+    | html(
+        [
+            "span.tc",
+            Plot.js("`score ratio: ${$state.rotated_trace_weight_diff.toFixed(2)}`"),
+        ]
+    )
+    | (
+        Plot.js("`angle: ${$state.angle.toFixed(2)}`")
+        & [
+            "input",
+            {
+                "type": "range",
+                "name": "angle",
+                "defaultValue": Plot.js("$state.angle"),
+                "min": -jnp.pi / 2,
+                "max": jnp.pi / 2,
+                "step": 0.1,
+                "onChange": set_first_step_angle,
+            },
+        ]
+        & {"widths": ["80px", "200px"]}
+    )
+).widget()
 
 # %% [markdown]
 # ### Ideal sensors
@@ -1166,13 +1277,13 @@ key, sub_key = jax.random.split(key)
 sample, log_weight = model_importance(
     sub_key, constraints_low_deviation, (motion_settings_low_deviation,)
 )
-animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
+animate_full_trace(sample) | html(["span.tc", f"log_weight: {log_weight}"])
 # %%
 key, sub_key = jax.random.split(key)
 sample, log_weight = model_importance(
     sub_key, constraints_high_deviation, (motion_settings_high_deviation,)
 )
-animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
+animate_full_trace(sample) | html(["span.tc", f"log_weight: {log_weight}"])
 # %% [markdown]
 # A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key situational difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
 #
@@ -1253,9 +1364,9 @@ w_low, w_high
 Plot.Row(
     *[
         (
-            html("div.f3.b.tc", title)
+            html(["div.f3.b.tc", title])
             | animate_full_trace(trace, frame_key="frame")
-            | html("span.tc", f"score: {score:,.2f}")
+            | html(["span.tc", f"score: {score:,.2f}"])
         )
         for (title, trace, motion_settings, score) in [
             [
@@ -1753,7 +1864,7 @@ Plot.Row(
         motion_settings_high_deviation,
         frame_key="frame",
     ),
-) | Plot.Slider("frame", 0, T - 1, fps=2)
+) | Plot.Slider("frame", 0, T, fps=2)
 
 
 # %%
