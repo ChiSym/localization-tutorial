@@ -197,27 +197,42 @@ def make_world(wall_verts, clutters_vec, start, controls):
 
 def load_world(file_name):
     """
-    Loads the world configuration from a specified file and constructs the world.
+    Loads the world configuration from local JSON files and constructs the world.
 
     Args:
-    - file_name (str): The name of the file containing the world configuration.
+    - file_name (str): Not used, kept for backwards compatibility
 
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
-    with urlopen(
-        "https://raw.githubusercontent.com/probcomp/gen-localization/main/resources/example_20_program.json"
-    ) as url:
-        data = json.load(url)
+    # Try to find the JSON files relative to different possible working directories
+    possible_paths = [
+        '.',  # Current directory
+        '..',  # Parent directory
+        os.path.dirname(__file__),  # Directory containing this file
+        os.path.dirname(os.path.dirname(__file__)),  # Parent of directory containing this file
+    ]
 
-    walls_vec = jnp.array(data["wall_verts"])
-    clutters_vec = jnp.array(data["clutter_vert_groups"])
+    def find_json(filename):
+        for path in possible_paths:
+            full_path = os.path.join(path, filename)
+            if os.path.exists(full_path):
+                with open(full_path, 'r') as f:
+                    return json.load(f)
+        raise FileNotFoundError(f"Could not find {filename} in any of: {possible_paths}")
+
+    # Load both required JSON files
+    world_data = find_json('world.json')
+    program_data = find_json('robot_program.json')
+
+    walls_vec = jnp.array(world_data["wall_verts"])
+    clutters_vec = jnp.array(world_data["clutter_vert_groups"])
     start = Pose(
-        jnp.array(data["start_pose"]["p"], dtype=float),
-        jnp.array(data["start_pose"]["hd"], dtype=float),
+        jnp.array(program_data["start_pose"]["p"], dtype=float),
+        jnp.array(program_data["start_pose"]["hd"], dtype=float),
     )
 
-    cs = jnp.array([[c["ds"], c["dhd"]] for c in data["program_controls"]])
+    cs = jnp.array([[c["ds"], c["dhd"]] for c in program_data["program_controls"]])
     controls = Control(cs[:, 0], cs[:, 1])
 
     return make_world(walls_vec, clutters_vec, start, controls)
@@ -426,7 +441,7 @@ walls_plot = Plot.new(
         strokeWidth=2,
         stroke="#ccc",
     ),
-    {"margin": 0, "inset": 50, "width": 500, "axis": None, "aspectRatio": 1},
+    {"margin": 0, "inset": 50, "maxWidth": 500, "axis": None, "aspectRatio": 1},
     Plot.domain([0, 20]),
 )
 # Plot the world with walls only
@@ -807,7 +822,7 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
         + Plot.color_map({"some pose": "green", "with heading modified": "red"})
         + Plot.title("Modifying a heading")
     )
-    | html("span.tc", f"score ratio: {rotated_trace_weight_diff}")
+    | html(["span.tc", f"score ratio: {rotated_trace_weight_diff}"])
 )
 
 # %% [markdown]
@@ -834,7 +849,7 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
         for pose in path_from_trace(trace)
     ]
     + Plot.color_map({"some path": "green", "with heading modified": "red"})
-) | html("span.tc", f"score ratio: {rotated_first_step_weight_diff}")
+) | html(["span.tc", f"score ratio: {rotated_first_step_weight_diff}"])
 
 # %% [markdown]
 # ### Ideal sensors
@@ -1127,7 +1142,7 @@ def animate_bare_sensors(path, plot_base=[]):
             return Plot.new(
                 plot_base or Plot.domain([0, 20]),
                 plot_sensors(pose, readings),
-                {"width": 400, "height": 400},
+                {"maxWidth": 400, "aspectRatio": 1},
             )
 
         return plt(readings1) & plt(readings2)
@@ -1169,13 +1184,13 @@ key, sub_key = jax.random.split(key)
 sample, log_weight = model_importance(
     sub_key, constraints_low_deviation, (motion_settings_low_deviation,)
 )
-animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
+animate_full_trace(sample) | html(["span.tc", f"log_weight: {log_weight}"])
 # %%
 key, sub_key = jax.random.split(key)
 sample, log_weight = model_importance(
     sub_key, constraints_high_deviation, (motion_settings_high_deviation,)
 )
-animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
+animate_full_trace(sample) | html(["span.tc", f"log_weight: {log_weight}"])
 # %% [markdown]
 # A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key situational difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
 #
@@ -1256,9 +1271,9 @@ w_low, w_high
 Plot.Row(
     *[
         (
-            html("div.f3.b.tc", title)
+            html(["div.f3.b.tc", title])
             | animate_full_trace(trace, frame_key="frame")
-            | html("span.tc", f"score: {score:,.2f}")
+            | html(["span.tc", f"score: {score:,.2f}"])
         )
         for (title, trace, motion_settings, score) in [
             [
@@ -1521,8 +1536,8 @@ class SequentialImportanceSampling(Generic[StateT, ControlT]):
     Given:
      - a functional wrapper for the importance method of a generative function
      - an initial state of type StateT, which should be a PyTree $z_0$
-     - a vector of control inputs, also a PyTree $u_i, of shape $(T, \ldots)$
-     - an array of observations $y_i$, also of shape $(T, \ldots)$
+     - a vector of control inputs, also a PyTree $u_i, of shape $(T, \\ldots)$
+     - an array of observations $y_i$, also of shape $(T, \\ldots)$
     perform the inference technique known as Sequential Importance Sampling.
 
     The signature of the GFI importance method is
