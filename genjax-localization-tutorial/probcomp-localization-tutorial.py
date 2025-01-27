@@ -39,7 +39,6 @@ import itertools
 import jax
 import jax.numpy as jnp
 import genjax
-from urllib.request import urlopen
 from genjax import SelectionBuilder as S
 from genjax import ChoiceMapBuilder as C
 from genjax.typing import Array, FloatArray, PRNGKey, IntArray
