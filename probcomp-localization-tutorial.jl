@@ -361,15 +361,17 @@ exp(assess(sensor_model, (Pose([1., 1.], pi/2.), world.walls, sensor_settings), 
 #
 # These assumptions are modeled by a distribution over poses called the *prior*.  Then, according to Bayes's Law, the key quantity to examine is not the likelihood density $P_\text{sensor}(o;z)$ but rather the *posterior* density
 # $$
-# P_\text{posterior}(z|o) = P_\text{sensor}(o;z) \cdot P_\text{prior}(z) / Z
+# P_\text{posterior}(z|o) = P_\text{sensor}(o;z) \cdot P_\text{prior}(z) / Z(o)
 # $$
-# where $Z > 0$ is a normalizing constant.   Likelihood optimization amounts to assuming a prior having $P_\text{prior}(z) \equiv 1$, a so-called "uniform" prior over the parameter space.
+# where $Z(o) > 0$ is a normalizing constant.   Likelihood optimization amounts to assuming a prior having $P_\text{prior}(z) \equiv 1$, a so-called "uniform" prior over the parameter space.
 #
 # The uniform prior may appear to be a natural expression of "complete ignorance", not preferencing any parameter over another.  The other thing to acknowledge is that this is not the case: the parameterization of the latents itself embodies preferences among parameter values.  Different parametramizations of the latents lead to different "uniform" distributions over them.  For example, parameterizing the spread of a univariate normal distribution by its standard deviation and its variance lead to different "uniform" priors over the parameter space, the square map being nonlinear.  Thus likelihood optimization's second tacit assumption is a particular parametric representation of the latents space, according to which uniformity occurs.
 #
 # Summarizing, likelihood optimization does not lead to *intrinsic* inference conclusions, because it relies on a prior that in turn is not intrinsic, but rather depends on how the parameters are presented.  Intrinsic conclusions are instead drawn by specifying the prior as a distribution, which has a consistent meaning across parameterizations.
 #
 # So let us be upfront that we choose the uniform prior relative to the conventional meaning of the pose parameters.  Here is a view onto the posterior distribution over poses, given a set of sensor measurements.
+#
+# NOTE: Some of this explanation on intrinsicness could be more accurate.
 
 # %% [markdown]
 # POSSIBLE VIZ GOAL: Gather the preceding viz into one view: alpha blend all candidate-match poses by likelihood, so only plausible things appear, with the mode highlighted.
