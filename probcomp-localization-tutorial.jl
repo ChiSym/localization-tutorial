@@ -3043,4 +3043,7 @@ end;
 # %%
 fine_planning_settings = (arrival_radius = 0.1, good_dhd = pi/20., max_dhd = pi/3., max_ds = 1.0)
 
-
+# %% [markdown]
+# ## Modeling an agent
+#
+#
