@@ -50,7 +50,7 @@ from typing import Any, Iterable, TypeVar, Generic, Callable
 import os
 
 html = Plot.Hiccup
-Plot.configure({"display_as": "html", "dev": False})
+#Plot.configure({"display_as": "html", "dev": False})
 
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
@@ -1079,10 +1079,10 @@ motion_settings_low_deviation = {
     "p_noise": 0.05,
     "hd_noise": (1 / 10.0) * 2 * jnp.pi / 360,
 }
-key, k_low, k_high = jax.random.split(key, 3)
-
-trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
 motion_settings_high_deviation = {"p_noise": 0.25, "hd_noise": 2 * jnp.pi / 360}
+
+key, k_low, k_high = jax.random.split(key, 3)
+trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
 trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation,))
 
 animate_full_trace(trace_low_deviation)
@@ -1676,3 +1676,16 @@ low_smc_result = localization_sis(
         for p in low_smc_result.flood_fill()
     ]
 )
+
+# %%
+# demo: recycle traces
+key, k_low, k_high = jax.random.split(key, 3)
+trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
+trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation,))
+path_low_deviation = get_path(trace_low_deviation)
+path_high_deviation = get_path(trace_high_deviation)
+# ...using these data.
+observations_low_deviation = get_sensors(trace_low_deviation)
+observations_high_deviation = get_sensors(trace_high_deviation)
+
+# %%
