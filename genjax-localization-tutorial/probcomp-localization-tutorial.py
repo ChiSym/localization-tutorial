@@ -50,7 +50,7 @@ from typing import Any, Iterable, TypeVar, Generic, Callable
 import os
 
 html = Plot.Hiccup
-#Plot.configure({"display_as": "html", "dev": False})
+# Plot.configure({"display_as": "html", "dev": False})
 
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
