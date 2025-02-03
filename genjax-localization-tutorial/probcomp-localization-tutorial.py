@@ -39,7 +39,6 @@ import itertools
 import jax
 import jax.numpy as jnp
 import genjax
-from urllib.request import urlopen
 from genjax import SelectionBuilder as S
 from genjax import ChoiceMapBuilder as C
 from genjax.typing import Array, FloatArray, PRNGKey, IntArray
@@ -50,7 +49,7 @@ from typing import Any, Iterable, TypeVar, Generic, Callable
 import os
 
 html = Plot.Hiccup
-Plot.configure({"display_as": "html", "dev": False})
+# Plot.configure({"display_as": "html", "dev": False})
 
 # Ensure a location for image generation.
 os.makedirs("imgs", exist_ok=True)
@@ -205,19 +204,20 @@ def load_world(file_name):
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
-    with urlopen(
-        "https://raw.githubusercontent.com/probcomp/gen-localization/main/resources/example_20_program.json"
-    ) as url:
-        data = json.load(url)
+    # TODO: change these to urlopen when the repo becomes public
+    with open("../world.json") as f:
+        world = json.load(f)
+    with open("../robot_program.json") as f:
+        robot_program = json.load(f)
 
-    walls_vec = jnp.array(data["wall_verts"])
-    clutters_vec = jnp.array(data["clutter_vert_groups"])
+    walls_vec = jnp.array(world["wall_verts"])
+    clutters_vec = jnp.array(world["clutter_vert_groups"])
     start = Pose(
-        jnp.array(data["start_pose"]["p"], dtype=float),
-        jnp.array(data["start_pose"]["hd"], dtype=float),
+        jnp.array(robot_program["start_pose"]["p"], dtype=float),
+        jnp.array(robot_program["start_pose"]["hd"], dtype=float),
     )
 
-    cs = jnp.array([[c["ds"], c["dhd"]] for c in data["program_controls"]])
+    cs = jnp.array([[c["ds"], c["dhd"]] for c in robot_program["program_controls"]])
     controls = Control(cs[:, 0], cs[:, 1])
 
     return make_world(walls_vec, clutters_vec, start, controls)
@@ -675,8 +675,6 @@ trace.get_score()
 
 # %% [hide-input]
 
-# jax.random.split(jax.random.PRNGKey(3333), N_samples).shape
-
 ps0 = jax.tree.map(lambda v: v[0], pose_samples)
 (
     ps0.project(jax.random.PRNGKey(2), S[()]),
@@ -1079,10 +1077,10 @@ motion_settings_low_deviation = {
     "p_noise": 0.05,
     "hd_noise": (1 / 10.0) * 2 * jnp.pi / 360,
 }
-key, k_low, k_high = jax.random.split(key, 3)
-
-trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
 motion_settings_high_deviation = {"p_noise": 0.25, "hd_noise": 2 * jnp.pi / 360}
+
+key, k_low, k_high = jax.random.split(key, 3)
+trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
 trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation,))
 
 animate_full_trace(trace_low_deviation)
@@ -1108,9 +1106,6 @@ observations_high_deviation = get_sensors(trace_high_deviation)
 
 def constraint_from_sensors(readings, t: int = T):
     return C["steps", jnp.arange(t + 1), "sensor", :, "distance"].set(readings[: t + 1])
-    # return jax.vmap(
-    #     lambda v: C["steps", :, "sensor", :, "distance"].set(v)
-    # )(readings[:t])
 
 
 constraints_low_deviation = constraint_from_sensors(observations_low_deviation)
@@ -1222,7 +1217,7 @@ def constraint_from_path(path):
     c_hds = jax.vmap(lambda ix, hd: C["steps", ix, "pose", "hd"].set(hd))(
         jnp.arange(T), path.hd
     )
-    return c_ps + c_hds  # + c_p + c_hd
+    return c_ps + c_hds
 
 
 constraints_path_integrated = constraint_from_path(path_integrated)
@@ -1662,6 +1657,16 @@ smc_result = localization_sis(
         for p in smc_result.flood_fill()
     ]
 )
+
+# jay/colin: the inference is pretty good. We could:
+# - add grid search to refine each step, or
+# - let the robot adjust its next control input to make use of
+#   the updated information about its actual pose that the
+#   inference over the sensor data has revealed.
+# the point being:
+#   We can say "using the inference, watch the robot succeed
+#   in entering the room. Without that, the robot's mission
+#   was bound to fail in the high deviation scenario."
 # %%
 # Try it in the low deviation setting
 key, sub_key = jax.random.split(key)
@@ -1676,3 +1681,16 @@ low_smc_result = localization_sis(
         for p in low_smc_result.flood_fill()
     ]
 )
+
+# %%
+# demo: recycle traces
+key, k_low, k_high = jax.random.split(key, 3)
+trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
+trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation,))
+path_low_deviation = get_path(trace_low_deviation)
+path_high_deviation = get_path(trace_high_deviation)
+# ...using these data.
+observations_low_deviation = get_sensors(trace_low_deviation)
+observations_high_deviation = get_sensors(trace_high_deviation)
+
+# %%
