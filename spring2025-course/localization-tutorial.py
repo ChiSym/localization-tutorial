@@ -264,7 +264,7 @@ def poses_to_plots(poses: Iterable[Pose], **plot_opts):
 
 
 # %%
-key = jax.random.PRNGKey(0)
+key = jax.random.key(0)
 
 def random_pose(k):
     k1, k2 = jax.random.split(k)
@@ -762,7 +762,7 @@ default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 # Returning to the code: we find that our function cannot be called directly--it is now a stochastic function!--so we must supply a source of randomness, in the form of a *key*, followed by a tuple of the function's expected arguments, illustrated here:
 
 # %%
-key = jax.random.PRNGKey(0)
+key = jax.random.key(0)
 step_model.simulate(
     key, (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0])
 ).get_retval()
@@ -933,9 +933,9 @@ trace.get_score()
 
 ps0 = jax.tree.map(lambda v: v[0], pose_samples)
 (
-    ps0.project(jax.random.PRNGKey(2), S[()]),
-    ps0.project(jax.random.PRNGKey(2), S["p"]),
-    ps0.project(jax.random.PRNGKey(2), S["p"] | S["hd"]),
+    ps0.project(jax.random.key(2), S[()]),
+    ps0.project(jax.random.key(2), S["p"]),
+    ps0.project(jax.random.key(2), S["p"] | S["hd"]),
 )
 
 key, sub_key = jax.random.split(key)
