@@ -865,39 +865,19 @@ def full_model(motion_settings):
     )
 
 
-def get_path(trace):
-    return trace.get_retval()[1]
-
-
-def get_sensors(trace):
-    return trace.get_choices()["steps", :, "sensor", :, "distance"]
-
-
-key, sub_key = jax.random.split(key)
-tr = full_model.simulate(sub_key, (default_motion_settings,))
-
-pz.ts.display(tr)
-
 # %% [markdown]
-# Again, the trace of the full model contains many choices, so we have used the Penzai visualization library to render the result. Click on the various nesting arrows and see if you can find the path within. For our purposes, we will supply a function `get_path` which will extract the list of Poses that form the path.
-
-# %% [markdown]
-# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}(\ldots)$ and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
-# $$\begin{align*}
-# P_\text{full}(z_{0:T}, o_{0:T})
-# &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
-# &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
-#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
-# \end{align*}$$
-#
-# By this point, visualization is essential.
+# We now see the emergent tree structure of choice maps.  Under the layer `"steps"` (whose indirection allows us to vary `motion_settings` below), there are addresses `"pose"` and `"sensor"`, which respectively have sub-addresses `"hd", "p"` and `"distance"`.  At each leaf is an array resulting from the `scan` operation, in typical PyTree fashion.
 
 # %%
-
 key, sub_key = jax.random.split(key)
-tr = full_model.simulate(sub_key, (default_motion_settings,))
+cm, w, ret = full_model.propose(sub_key, (default_motion_settings,))
+cm
 
 
+# %% [markdown]
+# By this point, visualization is essential.  We will just get a quick picture here, and return shortly to a more principled approach.
+
+# %%
 def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
     frames = [
         plot_path_with_confidence(path, step, motion_settings["p_noise"])
@@ -907,24 +887,16 @@ def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
 
     return Plot.Frames(frames, fps=2, key=frame_key)
 
-
-def animate_full_trace(trace, frame_key=None):
-    path = get_path(trace)
-    readings = get_sensors(trace)
-    motion_settings = trace.get_args()[0]
-    return animate_path_and_sensors(
-        path, readings, motion_settings, frame_key=frame_key
-    )
-
-
-animate_full_trace(tr)
+animate_path_and_sensors(ret[1], cm["steps", "sensor", "distance"], default_motion_settings)
 
 # %% [markdown]
-# ### Traces: choice maps
+# ## Traces and math
 #
-# The actual return value of `step_model.simulate` is a *trace*, which records certain information obtained during execution of the function.
+# Managing the tuple `(choic map, score, return value)` given to us by `propose` can get unwieldy: just see how the call to `animate_path_and_sensors` above needed to pick and choose from its members.  `Gen` saves us a bunch of trouble by wrapping these data—and more—into a structure called a *trace*.  We pause our reasoning about the robot in order to familiarize ourselves with them.
 #
-# The foremost information stored in the trace is the *choice map*, which is tree of labels mapping to the corresponding stochastic choices, i.e. occurrences of the `@` operator, that were encountered.  It is accessed by `get_choices`:
+# ### Sampling traces with `simulate`
+#
+# The `Gen` method `simulate` is called just like `propose` (using a PRNG key plus parameters for the model), and it returns a trace.
 
 # %%
 # `simulate` takes the GF plus a tuple of args to pass to it.
@@ -933,32 +905,37 @@ trace = step_model.simulate(
     sub_key,
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
-trace.get_choices()
 
-
-# %% [markdown]
-# The choice map being the point of focus of the trace in most discussions, we often abusively just speak of a *trace* when we really mean its *choice map*.
 
 # %% [markdown]
 # ### GenJAX API for traces
 #
-# One can access the primitive choices in a trace using the method `get_choices`.
-# One can access from a trace the GF that produced it using `trace.get_gen_fn()`, along with with arguments that were supplied using `trace.get_args()`, and the return value sample of the GF using the method `get_retval()`.  See below the fold for examples of all these.
+# For starters, the trace contains all the information from `propose`.
 
 # %%
-pose_choices = trace.get_choices()
+trace.get_choices()
 # %%
-pose_choices["hd"]
+trace.get_score()
+
 # %%
-pose_choices["p"]
+trace.get_retval()
+# %% [markdown]
+# One can access from a trace the GF that produced it, along with with model parameters that were supplied.
+
 # %%
 trace.get_gen_fn()
 # %%
 trace.get_args()
-# %%
-trace.get_retval()
 # %% [markdown]
-# ### Traces: scores/weights/densities
+# Since the trace object has a lot going on, we use the Penzai visualization library to render the result. Click on the various nesting arrows to explore the structure.
+
+# %%
+pz.ts.display(trace)
+
+# %% [markdown]
+# ### The meaning of scores
+#
+# TODO: drastically cut down!
 #
 # Traced execution of a generative function also produces a particular kind of score/weight/density.  It is very important to be clear about which score/weight/density value is to be expected, and why.  Consider the following generative function
 # ```
@@ -1014,16 +991,14 @@ trace.get_retval()
 # \cdot P_\text{normal}(z_\text{hd}; y_\text{hd} + \eta, \nu_\text{hd}).
 # \end{align*}$$
 #
-# In general, the density of any trace factors as the product of the densities of the individual primitive choices that appear in it.  Since the primitive distributions of the language are equipped with efficient probability density functions, this overall computation is tractable.  It is represented by `Gen.get_score`:
+# In general, the density of any trace factors as the product of the densities of the individual primitive choices that appear in it.  Since the primitive distributions of the language are equipped with efficient probability density functions, this overall computation is tractable.  It is represented by `get_score`:
 
 # %%
 trace.get_score()
 
 
 # %% [markdown]
-# #### Subscores/subweights/subdensities
-#
-# Instead of (the log of) the product of all the primitive choices made in a trace, one can take the product over just a subset using `Gen.project`.  See below the fold for examples.
+# Instead of (the log of) the product of all the primitive choices made in a trace, one can take the product over just a subset using `project`.
 
 # %% [hide-input]
 key, sub_key = jax.random.split(key)
@@ -1038,7 +1013,7 @@ trace.project(key, S["p"] | S["hd"])
 # %% [markdown]
 # ### Modifying traces
 #
-# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `trace.update` takes as inputs a source of randomness, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace. It also returns (the log of) the ratio of the updated trace's density to the original trace's density, together with a precise record of the resulting modifications that played out.
+# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `update` takes as inputs a source of randomness, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace. It also returns (the log of) the ratio of the updated trace's density to the original trace's density, together with a precise record of the resulting modifications that played out.
 #
 # One could, for instance, consider just the placement of the first step, and replace its stochastic choice of heading with an updated value. The original trace was typical under the pose prior model, whereas the modified one may be rather less likely. This plot is annotated with log of how much unlikelier, the score ratio:
 # %%
@@ -1095,6 +1070,44 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
     ]
     + Plot.color_map({"some path": "green", "with heading modified": "red"})
 ) | html("span.tc", f"score ratio: {rotated_first_step_weight_diff}")
+
+# %% [markdown]
+# ### Visualizing traces
+
+# %%
+pz.ts.display(trace)
+
+
+# %% [markdown]
+# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}(\ldots)$ and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
+# $$\begin{align*}
+# P_\text{full}(z_{0:T}, o_{0:T})
+# &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
+# &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
+#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
+# \end{align*}$$
+#
+
+# %%
+def get_path(trace):
+    return trace.get_retval()[1]
+
+def get_sensors(trace):
+    return trace.get_choices()["steps", :, "sensor", :, "distance"]
+
+def animate_full_trace(trace, frame_key=None):
+    path = get_path(trace)
+    readings = get_sensors(trace)
+    motion_settings = trace.get_args()[0]
+    return animate_path_and_sensors(
+        path, readings, motion_settings, frame_key=frame_key
+    )
+
+
+key, sub_key = jax.random.split(key)
+tr = full_model.simulate(sub_key, (default_motion_settings,))
+
+animate_full_trace(tr)
 
 # %% [markdown]
 # ## The data
@@ -1163,7 +1176,7 @@ def animate_bare_sensors(path, plot_base=[]):
     return Plot.Frames(frames, fps=2)
 
 
-animate_bare_sensors(itertools.repeat(world["center_point"]))
+animate_bare_sensors(itertools.repeat(Pose(world["center_point"], 0.0)))
 # %% [markdown]
 # ## Inference
 # ### Why we need inference: in a picture
