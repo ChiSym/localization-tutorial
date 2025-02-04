@@ -726,9 +726,9 @@ clutters_plot = (
 
 
 # %% [markdown]
-# ### Components of the motion model
+# ### Modeling taking steps
 #
-# We start with the two building blocks: the starting pose and individual steps of motion.
+# The following models attempting to step (constrained by the walls) towards a point with some uncertainty about it.
 # %%
 @genjax.gen
 def step_model(motion_settings, start, control):
@@ -746,36 +746,16 @@ def step_model(motion_settings, start, control):
 default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 
 # %% [markdown]
-# Returning to the code: we find that our function cannot be called directly--it is now a stochastic function!--so we must supply a source of randomness, in the form of a *key*, followed by a tuple of the function's expected arguments, illustrated here:
+# Due to our prepending `noop_control` to the robot program, we may express some error in the initial pose as follows.
 
 # %%
-key = jax.random.key(0)
-step_model.simulate(
-    key, (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0])
-).get_retval()
-
-# %% [markdown]
-#
-# We called `get_retval()` on the result, which is a *trace*, a data structure with which we become much more familiar before we are done.
-
-# %%
-
 # Generate N_samples of starting poses from the prior
 N_samples = 50
 key, sub_key = jax.random.split(key)
-pose_samples = jax.vmap(step_model.simulate, in_axes=(0, None))(
+pose_samples = jax.vmap(step_model.propose, in_axes=(0, None))(
     jax.random.split(sub_key, N_samples),
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
-)
-
-
-def pose_list_to_plural_pose(pl: list[Pose]) -> Pose:
-    return Pose(jnp.array([pose.p for pose in pl]), [pose.hd for pose in pl])
-
-
-def poses_to_plots(poses: Iterable[Pose], **plot_opts):
-    return [pose_plot(pose, **plot_opts) for pose in poses]
-
+)[2]
 
 # Plot the world, starting pose samples, and 95% confidence region
 # Calculate the radius of the 95% confidence region
@@ -786,7 +766,6 @@ def confidence_circle(pose: Pose, p_noise: float):
         r=2.5 * p_noise,
     ) + Plot.color_map({"95% confidence region": "rgba(255,0,0,0.25)"})
 
-
 (
     world_plot
     + poses_to_plots([robot_inputs["start"]], fill=Plot.constantly("step from here"))
@@ -794,9 +773,151 @@ def confidence_circle(pose: Pose, p_noise: float):
         robot_inputs["start"].apply_control(robot_inputs["controls"][0]),
         default_motion_settings["p_noise"],
     )
-    + poses_to_plots(pose_samples.get_retval(), fill=Plot.constantly("step samples"))
+    + poses_to_plots(pose_samples, fill=Plot.constantly("step samples"))
     + Plot.color_map({"step from here": "#000", "step samples": "red"})
 )
+
+# %% [markdown]
+# ### Modeling a full path
+#
+# We may succinctly promote a singly-stepping model into a path-stepping model using *generative function combinators*.  In the following code, these transformations take place.
+# * `step_model` starts with signature `(motion_settings, start, control) -> step`.
+# * `partial_apply(default_motion_settings)` substitutes the first parameter, to get signature `(start, control) -> step`.
+# * `.map(diag)` forms a tuple with two copies of the output, to get signature `(start, control) -> (step, step)`.
+# * `.scan()` folds the computation over the second parameter, to get signature `(start, controls) -> (step, steps)`.
+#
+# Thus `path_model` returns a tuple whose second entry is the sampled path (and whose first entry duplicates the final position).
+
+# %%
+path_model = step_model.partial_apply(default_motion_settings).map(diag).scan()
+
+# %%
+key, sub_key = jax.random.split(key)
+path_model.propose(sub_key, (robot_inputs["start"], robot_inputs["controls"]))[2]
+
+
+# %% [markdown]
+# Here is a single path with confidence circles on each step's draw.
+
+# %%
+# Animation showing a single path with confidence circles
+
+# TODO: how about plot the control vector?
+def plot_path_with_confidence(path: Pose, step: int, p_noise: float):
+    prev_step = robot_inputs["start"] if step == 0 else path[step - 1]
+    plot = (
+        world_plot
+        + [pose_plot(path[i]) for i in range(step)]
+        + pose_plot(path[step], fill=Plot.constantly("next pose"))
+        + confidence_circle(
+                prev_step.apply_control(robot_inputs["controls"][step]),
+                p_noise,
+            )
+        + Plot.color_map({"previous poses": "black", "next pose": "red"})
+    )
+    return plot
+
+# Generate a single path
+key, sample_key = jax.random.split(key)
+path = path_model.propose(sample_key, (robot_inputs["start"], robot_inputs["controls"]))[2][1]
+Plot.Frames(
+    [
+        plot_path_with_confidence(path, step, default_motion_settings["p_noise"])
+        + Plot.title("Motion model (samples)")
+        for step in range(len(path))
+    ],
+    fps=2,
+)
+
+# %% [markdown]
+# Here are some independent draws to get an aggregate sense.  Note how the motion noise really piles up!
+
+# %%
+N_samples = 12
+key, sub_key = jax.random.split(key)
+sample_paths_v = jax.vmap(
+    lambda k:
+        path_model.propose(k, (robot_inputs["start"], robot_inputs["controls"]))[2][1]
+)(jax.random.split(sub_key, N_samples))
+
+Plot.Grid(*[walls_plot + poses_to_plots(path) for path in sample_paths_v])
+
+
+# %% [markdown]
+# ### Full model
+#
+# We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
+
+# %%
+@genjax.gen
+def full_model_kernel(motion_settings, state, control):
+    pose = step_model(motion_settings, state, control) @ "pose"
+    sensor_model(pose, sensor_angles) @ "sensor"
+    return pose
+
+@genjax.gen
+def full_model(motion_settings):
+    return (
+        full_model_kernel.partial_apply(motion_settings)
+        .map(diag)
+        .scan()(robot_inputs["start"], robot_inputs["controls"])
+        @ "steps"
+    )
+
+
+def get_path(trace):
+    return trace.get_retval()[1]
+
+
+def get_sensors(trace):
+    return trace.get_choices()["steps", :, "sensor", :, "distance"]
+
+
+key, sub_key = jax.random.split(key)
+tr = full_model.simulate(sub_key, (default_motion_settings,))
+
+pz.ts.display(tr)
+
+# %% [markdown]
+# Again, the trace of the full model contains many choices, so we have used the Penzai visualization library to render the result. Click on the various nesting arrows and see if you can find the path within. For our purposes, we will supply a function `get_path` which will extract the list of Poses that form the path.
+
+# %% [markdown]
+# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}(\ldots)$ and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
+# $$\begin{align*}
+# P_\text{full}(z_{0:T}, o_{0:T})
+# &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
+# &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
+#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
+# \end{align*}$$
+#
+# By this point, visualization is essential.
+
+# %%
+
+key, sub_key = jax.random.split(key)
+tr = full_model.simulate(sub_key, (default_motion_settings,))
+
+
+def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
+    frames = [
+        plot_path_with_confidence(path, step, motion_settings["p_noise"])
+        + plot_sensors(pose, readings[step])
+        for step, pose in enumerate(path)
+    ]
+
+    return Plot.Frames(frames, fps=2, key=frame_key)
+
+
+def animate_full_trace(trace, frame_key=None):
+    path = get_path(trace)
+    readings = get_sensors(trace)
+    motion_settings = trace.get_args()[0]
+    return animate_path_and_sensors(
+        path, readings, motion_settings, frame_key=frame_key
+    )
+
+
+animate_full_trace(tr)
 
 # %% [markdown]
 # ### Traces: choice maps
@@ -905,14 +1026,6 @@ trace.get_score()
 # Instead of (the log of) the product of all the primitive choices made in a trace, one can take the product over just a subset using `Gen.project`.  See below the fold for examples.
 
 # %% [hide-input]
-
-ps0 = jax.tree.map(lambda v: v[0], pose_samples)
-(
-    ps0.project(jax.random.key(2), S[()]),
-    ps0.project(jax.random.key(2), S["p"]),
-    ps0.project(jax.random.key(2), S["p"] | S["hd"]),
-)
-
 key, sub_key = jax.random.split(key)
 trace.project(key, S[()])
 # %%
@@ -921,90 +1034,6 @@ trace.project(key, S[("p")])
 # %%
 key, sub_key = jax.random.split(key)
 trace.project(key, S["p"] | S["hd"])
-
-# %% [markdown]
-# If in fact all of those projections resulted in the same number, you have encountered the issue [GEN-316](https://linear.app/chi-fro/issue/GEN-316/project-is-broken-in-genjax).
-#
-# ### Modeling a full path
-#
-# The model contains all information in its trace, rendering its return value redundant.  The noisy path integration will just be a wrapper around its functionality, extracting what it needs from the trace.
-#
-# (It is worth acknowledging two strange things in the code below: the use of the suffix `.accumulate()` in path_model and the use of that auxiliary function itself.
-# %%
-
-path_model = (
-    step_model.partial_apply(default_motion_settings).map(diag).scan()
-)
-
-
-# result[0] ~~ robot_inputs['start'] + control_step[0] (which is zero) + noise
-# %%
-def generate_path_trace(key: PRNGKey) -> genjax.Trace:
-    return path_model.simulate(key, (robot_inputs["start"], robot_inputs["controls"]))
-
-
-def path_from_trace(tr: genjax.Trace) -> Pose:
-    return tr.get_retval()[1]
-
-
-def generate_path(key: PRNGKey) -> Pose:
-    return path_from_trace(generate_path_trace(key))
-
-
-# %%
-key, sub_key = jax.random.split(key)
-pt = generate_path_trace(sub_key)
-pt
-# %%
-N_samples = 12
-key, sub_key = jax.random.split(key)
-sample_paths_v = jax.vmap(generate_path)(jax.random.split(sub_key, N_samples))
-
-Plot.Grid(*[walls_plot + poses_to_plots(path) for path in sample_paths_v])
-# %%
-# Animation showing a single path with confidence circles
-
-
-# TODO: is there an off-by-one here possibly as a result of the zero initial step?
-# TODO: how about plot the control vector?
-def plot_path_with_confidence(path: Pose, step: int, p_noise: float):
-    plot = (
-        world_plot
-        + [pose_plot(path[i]) for i in range(step + 1)]
-        + Plot.color_map({"next pose": "red"})
-    )
-    if step < len(path) - 1:
-        plot += [
-            confidence_circle(
-                # for a given index, step[index] is current pose, controls[index] is what was applied to prev pose
-                path[step].apply_control(robot_inputs["controls"][step + 1]),
-                p_noise,
-            ),
-            pose_plot(path[step + 1], fill=Plot.constantly("next pose")),
-        ]
-    return plot
-
-
-def animate_path_with_confidence(path: Pose, motion_settings: dict):
-    frames = [
-        plot_path_with_confidence(path, step, motion_settings["p_noise"])
-        for step in range(len(path.p))
-    ]
-
-    return Plot.Frames(frames, fps=2)
-
-
-# Generate a single path
-key, sample_key = jax.random.split(key)
-path = generate_path(sample_key)
-Plot.Frames(
-    [
-        plot_path_with_confidence(path, step, default_motion_settings["p_noise"])
-        + Plot.title("Motion model (samples)")
-        for step in range(len(path))
-    ],
-    fps=2,
-)
 
 # %% [markdown]
 # ### Modifying traces
@@ -1044,7 +1073,7 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
 # %%
 
 key, sub_key = jax.random.split(key)
-trace = generate_path_trace(sub_key)
+trace = path_model.simulate(sub_key, (robot_inputs["start"], robot_inputs["controls"]))
 key, sub_key = jax.random.split(key)
 
 rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
@@ -1052,97 +1081,21 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
 )
 
 # %%
+# path_from_trace(tr) = tr.get_retval()[1]
+
 (
     world_plot
     + [
         pose_plot(pose, fill=Plot.constantly("with heading modified"))
-        for pose in path_from_trace(rotated_first_step)
+        for pose in rotated_first_step.get_retval()[1]
     ]
     + [
         pose_plot(pose, fill=Plot.constantly("some path"))
-        for pose in path_from_trace(trace)
+        for pose in trace.get_retval()[1]
     ]
     + Plot.color_map({"some path": "green", "with heading modified": "red"})
 ) | html("span.tc", f"score ratio: {rotated_first_step_weight_diff}")
 
-# %% [markdown]
-# ### Full model
-#
-# We fold the sensor model into the motion model to form a "full model", whose traces describe simulations of the entire robot situation as we have described it.
-# %%
-
-
-@genjax.gen
-def full_model_kernel(motion_settings, state, control):
-    pose = step_model(motion_settings, state, control) @ "pose"
-    sensor_model(pose, sensor_angles) @ "sensor"
-    return pose
-
-
-@genjax.gen
-def full_model(motion_settings):
-    return (
-        full_model_kernel.partial_apply(motion_settings)
-        .map(lambda r: (r, r))
-        .scan()(robot_inputs["start"], robot_inputs["controls"])
-        @ "steps"
-    )
-
-
-def get_path(trace):
-    ps = trace.get_retval()[1]
-    return ps
-
-
-def get_sensors(trace):
-    ch = trace.get_choices()
-    return ch["steps", :, "sensor", :, "distance"]
-
-
-key, sub_key = jax.random.split(key)
-tr = full_model.simulate(sub_key, (default_motion_settings,))
-
-pz.ts.display(tr)
-# %%
-# %% [markdown]
-# Again, the trace of the full model contains many choices, so we have used the Penzai visualization library to render the result. Click on the various nesting arrows and see if you can find the path within. For our purposes, we will supply a function `get_path` which will extract the list of Poses that form the path.
-
-# %% [markdown]
-# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}(\ldots)$ and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
-# $$\begin{align*}
-# P_\text{full}(z_{0:T}, o_{0:T})
-# &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
-# &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
-#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
-# \end{align*}$$
-#
-# By this point, visualization is essential.
-# %%
-
-key, sub_key = jax.random.split(key)
-tr = full_model.simulate(sub_key, (default_motion_settings,))
-
-
-def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
-    frames = [
-        plot_path_with_confidence(path, step, motion_settings["p_noise"])
-        + plot_sensors(pose, readings[step])
-        for step, pose in enumerate(path)
-    ]
-
-    return Plot.Frames(frames, fps=2, key=frame_key)
-
-
-def animate_full_trace(trace, frame_key=None):
-    path = get_path(trace)
-    readings = get_sensors(trace)
-    motion_settings = trace.get_args()[0]
-    return animate_path_and_sensors(
-        path, readings, motion_settings, frame_key=frame_key
-    )
-
-
-animate_full_trace(tr)
 # %% [markdown]
 # ## The data
 #
@@ -1719,6 +1672,9 @@ def localization_sis(motion_settings, observations):
 
 
 # %%
+
+def pose_list_to_plural_pose(pl: list[Pose]) -> Pose:
+    return Pose(jnp.array([pose.p for pose in pl]), [pose.hd for pose in pl])
 
 key, sub_key = jax.random.split(key)
 smc_result = localization_sis(
