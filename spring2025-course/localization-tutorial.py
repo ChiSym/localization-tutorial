@@ -393,8 +393,6 @@ def animate_path_with_sensor(path, readings):
     ]
     return Plot.Frames(frames, fps=2)
 
-
-key, sample_key = jax.random.split(key)
 readings = jax.vmap(ideal_sensor)(some_poses)
 animate_path_with_sensor(some_poses, readings)
 
@@ -431,7 +429,7 @@ def sensor_model_one(pose, angle):
 # %% [markdown]
 # Under this model, a computed sensor distsance is used as the mean of a Gaussian distribution (representing our uncertainty about it).  *Sampling* from this distribution, using the `@` operator, occurs at the address `"distance"`.
 #
-# We run `sensor_model_one` with `propose` semantics.  This method of the GF is called with a PRNG key plus a tuple of model arguments.  The code is then run, performing the required draws from the sampling operations.  The random draws get organized according to their addresses, forming a *choice map* data structure.  This choice map, a weight (to be discussed below), and the return value are all returned by `propose`.
+# We draw samples from `sensor_model_one` with `propose` semantics.  Since this operation is stochastic, the method is called with a PRNG key in addition to a tuple of model arguments.  The code is then run, performing the required draws from the sampling operations.  The random draws get organized according to their addresses, forming a *choice map* data structure.  This choice map, a weight (to be discussed below), and the return value are all returned by `propose`.
 
 # %%
 sensor_settings["s_noise"] = 0.10
@@ -598,6 +596,8 @@ robot_inputs, T = load_robot_program("robot_program.json")
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
 
 # %%
+def diag(x): return (x, x)
+
 def integrate_controls_unphysical(robot_inputs):
     """
     Integrates the controls to generate a path from the starting pose.
@@ -612,10 +612,7 @@ def integrate_controls_unphysical(robot_inputs):
     - list: A list of Pose instances representing the path taken by applying the controls.
     """
     return jax.lax.scan(
-        lambda pose, control: (
-            pose.apply_control(control),
-            pose.apply_control(control),
-        ),
+        lambda pose, control: diag(pose.apply_control(control)),
         robot_inputs["start"],
         robot_inputs["controls"],
     )[1]
@@ -687,12 +684,9 @@ def integrate_controls_physical(robot_inputs):
     - Pose: A Pose object representing the path taken by applying the controls.
     """
     return jax.lax.scan(
-        lambda pose, control: (
-            new_pose := physical_step(
+        lambda pose, control: diag(physical_step(
                 pose.p, pose.p + control.ds * pose.dp(), pose.hd + control.dhd
-            ),
-            new_pose,
-        ),
+            )),
         robot_inputs["start"],
         robot_inputs["controls"],
     )[1]
@@ -939,7 +933,7 @@ trace.project(key, S["p"] | S["hd"])
 # %%
 
 path_model = (
-    step_model.partial_apply(default_motion_settings).map(lambda r: (r, r)).scan()
+    step_model.partial_apply(default_motion_settings).map(diag).scan()
 )
 
 
