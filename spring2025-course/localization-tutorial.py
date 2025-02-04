@@ -294,9 +294,6 @@ some_poses = jax.vmap(random_pose)(jax.random.split(key, 20))
 # An "ideal" sensor reports the exact distance cast to a wall.  (It is capped off at a max value in case of error.)
 
 # %%
-def det2(u, v):
-    return u[0] * v[1] - u[1] * v[0]
-
 def distance(p, seg, PARALLEL_TOL=1.0e-6):
     """
     Computes the distance from a pose to a segment, considering the pose's direction.
@@ -312,11 +309,14 @@ def distance(p, seg, PARALLEL_TOL=1.0e-6):
     segdp = seg[1] - seg[0]
     # Compute unique s, t such that p.p + s * pdp == seg[0] + t * segdp
     pq = p.p - seg[0]
-    det = det2(pdp, segdp)
+    det = pdp[0] * segdp[1] - pdp[1] * segdp[0]
     st = jnp.where(
         jnp.abs(det) < PARALLEL_TOL,
         jnp.array([jnp.nan, jnp.nan]),
-        jnp.array([det2(segdp, pq) / det, det2(pdp, pq) / det])
+        jnp.array([
+            (segdp[0] * pq[1] - segdp[1] * pq[0]) / det,
+            (pdp[0] * pq[1] - pdp[1] * pq[0]) / det
+        ])
     )
     return jnp.where(
         (st[0] >= 0.0) & (st[1] >= 0.0) & (st[1] <= 1.0),
@@ -730,19 +730,12 @@ clutters_plot = (
     + {"title": "Given Data"}
 )
 
+
 # %% [markdown]
 # ### Components of the motion model
 #
 # We start with the two building blocks: the starting pose and individual steps of motion.
 # %%
-
-# TODO(colin,jay): Originally, we passed motion_settings['p_noise'] ** 2 to
-# mv_normal_diag, but I think this squares the scale twice. TFP documenentation
-# - https://www.tensorflow.org/probability/api_docs/python/tfp/distributions/MultivariateNormalDiag
-# states that: scale = diag(scale_diag); covariance = scale @ scale.T. The second
-# equation will have the effect of squaring the individual diagonal scales.
-
-
 @genjax.gen
 def step_model(motion_settings, start, control):
     p = (
@@ -770,18 +763,6 @@ step_model.simulate(
 # %% [markdown]
 #
 # We called `get_retval()` on the result, which is a *trace*, a data structure with which we become much more familiar before we are done.
-
-# %%
-# Generate points on the unit circle
-theta = jnp.linspace(0, 2 * jnp.pi, 500)
-unit_circle_xs = jnp.cos(theta)
-unit_circle_ys = jnp.sin(theta)
-
-
-# Function to create a circle with center p and radius r
-def make_circle(p, r):
-    return (p[0] + r * unit_circle_xs, p[1] + r * unit_circle_ys)
-
 
 # %%
 
