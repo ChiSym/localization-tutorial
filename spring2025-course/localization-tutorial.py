@@ -429,13 +429,13 @@ def sensor_model_one(pose, angle):
 # %% [markdown]
 # Under this model, a computed sensor distsance is used as the mean of a Gaussian distribution (representing our uncertainty about it).  *Sampling* from this distribution, using the `@` operator, occurs at the address `"distance"`.
 #
-# We draw samples from `sensor_model_one` with `propose` semantics.  Since this operation is stochastic, the method is called with a PRNG key in addition to a tuple of model arguments.  The code is then run, performing the required draws from the sampling operations.  The random draws get organized according to their addresses, forming a *choice map* data structure.  This choice map, a weight (to be discussed below), and the return value are all returned by `propose`.
+# We draw samples from `sensor_model_one` with `propose` semantics.  Since this operation is stochastic, the method is called with a PRNG key in addition to a tuple of model arguments.  The code is then run, performing the required draws from the sampling operations.  The random draws get organized according to their addresses, forming a *choice map* data structure.  This choice map, a score (to be discussed below), and the return value are all returned by `propose`.
 
 # %%
 sensor_settings["s_noise"] = 0.10
 
 key, sub_key = jax.random.split(key)
-cm, w, retval = sensor_model_one.propose(sub_key, (some_pose, sensor_angles[1]))
+cm, score, retval = sensor_model_one.propose(sub_key, (some_pose, sensor_angles[1]))
 retval
 
 # %% [markdown]
@@ -457,7 +457,7 @@ sensor_model = sensor_model_one.vmap(in_axes=(None, 0))
 sensor_settings["s_noise"] = 0.10
 
 key, sub_key = jax.random.split(key)
-cm, weight, retval = sensor_model.propose(sub_key, (some_pose, sensor_angles))
+cm, score, retval = sensor_model.propose(sub_key, (some_pose, sensor_angles))
 retval
 
 # %% [markdown]
@@ -476,8 +476,7 @@ cm
 
 # %%
 def noisy_sensor(key, pose):
-    _, _, retval = sensor_model.propose(key, (pose, sensor_angles))
-    return retval
+    return sensor_model.propose(key, (pose, sensor_angles))[2]
 
 
 # %% [markdown]
@@ -495,7 +494,7 @@ def noisy_sensor(key, pose):
 # As `propose` draws a sample, it simultaneously computes this density or *score* and returns its logarithm:
 
 # %%
-jnp.exp(weight)
+jnp.exp(score)
 
 # %% [markdown]
 # There are many scenarios where one has on hand a full set of data, perhaps via observation, and seeks their score according to the model.  One could write a program by hand to do this—but one would simply recapitulate the code for `noisy_sensor`, where the sampling operations would be replaced with density computations, and their log product would be returned.
@@ -503,8 +502,8 @@ jnp.exp(weight)
 # The construction of a log density function is automated by the `assess` semantics for generative functions.  This method is passed a choice map and a tuple of arguments, and it returns the log score plus the return value.
 
 # %%
-w, retval = sensor_model.assess(cm, (some_pose, sensor_angles))
-jnp.exp(w)
+score, retval = sensor_model.assess(cm, (some_pose, sensor_angles))
+jnp.exp(score)
 
 
 # %% [markdown]
@@ -870,7 +869,7 @@ def full_model(motion_settings):
 
 # %%
 key, sub_key = jax.random.split(key)
-cm, w, ret = full_model.propose(sub_key, (default_motion_settings,))
+cm, score, retval = full_model.propose(sub_key, (default_motion_settings,))
 cm
 
 
@@ -887,7 +886,7 @@ def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
 
     return Plot.Frames(frames, fps=2, key=frame_key)
 
-animate_path_and_sensors(ret[1], cm["steps", "sensor", "distance"], default_motion_settings)
+animate_path_and_sensors(retval[1], cm["steps", "sensor", "distance"], default_motion_settings)
 
 # %% [markdown]
 # ## Traces and math
