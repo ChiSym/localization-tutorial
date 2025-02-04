@@ -926,6 +926,14 @@ trace.get_gen_fn()
 # %%
 trace.get_args()
 # %% [markdown]
+# Instead of (the log of) the product of all the primitive choices made in a trace, one can take the product over just a subset using `project`.
+
+# %%
+key, sub_key = jax.random.split(key)
+selections = [genjax.Selection.none(), S[("p")], S[("hd")], S[("p")] | S[("hd")]]
+[trace.project(k, sel) for k, sel in zip(jax.random.split(sub_key, len(selections)), selections) ]
+
+# %% [markdown]
 # Since the trace object has a lot going on, we use the Penzai visualization library to render the result. Click on the various nesting arrows to explore the structure.
 
 # %%
@@ -995,19 +1003,6 @@ pz.ts.display(trace)
 # %%
 trace.get_score()
 
-
-# %% [markdown]
-# Instead of (the log of) the product of all the primitive choices made in a trace, one can take the product over just a subset using `project`.
-
-# %% [hide-input]
-key, sub_key = jax.random.split(key)
-trace.project(key, S[()])
-# %%
-key, sub_key = jax.random.split(key)
-trace.project(key, S[("p")])
-# %%
-key, sub_key = jax.random.split(key)
-trace.project(key, S["p"] | S["hd"])
 
 # %% [markdown]
 # ### Modifying traces
