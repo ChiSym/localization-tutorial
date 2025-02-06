@@ -591,11 +591,14 @@ def do_MH_step(pose_likelihood, k):
         maxval=jnp.minimum(p_hd + delta, world["bounding_box"][:, 1]))
     new_pose = Pose(new_p_hd[0:2], new_p_hd[2])
     new_likelihood = likelihood_function(new_pose)
-    u = jnp.log(genjax.uniform.sample(k2))
-    return jax.lax.cond(
-                    u <= new_likelihood - likelihood,
-                    lambda: (new_pose, new_likelihood),
-                    lambda: (pose, likelihood)), ()
+    accept = (jnp.log(genjax.uniform.sample(k2)) <= new_likelihood - likelihood)
+    return (
+        jax.tree.map(
+            lambda x, y: jnp.where(accept, x, y),
+            (new_pose, new_likelihood),
+            (pose, likelihood)),
+        None
+    )
 def sample_MH_one(k):
     k1, k2 = jax.random.split(k)
     start_pose = random_pose(k1)
