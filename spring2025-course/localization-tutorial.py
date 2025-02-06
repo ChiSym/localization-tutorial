@@ -201,6 +201,9 @@ class Pose(genjax.PythonicPytree):
     def __repr__(self):
         return f"Pose(p={self.p}, hd={self.hd})"
 
+    def as_array(self):
+        return jnp.append(self.p, self.hd)
+
     def dp(self):
         return jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
 
