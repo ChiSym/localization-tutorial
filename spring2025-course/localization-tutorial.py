@@ -451,7 +451,8 @@ cm
 # %%
 sensor_model = sensor_model_one.vmap(in_axes=(None, 0))
 
-# %% [markdown]
+# VIZ: one sensor interaction?
+
 # Due to the `vmap` combinator, the final argument `sensor_angles` is a vector.
 
 # %%
@@ -514,7 +515,7 @@ jnp.exp(score)
 #
 # ### Gaining an intuition
 #
-# VIZ GOAL: button "draw a batch" secretly chooses a pose and samples sensor data; the data are superimposed (as rays) onto a user-manipulable pose; another "check guess" button reveals the secret pose.
+# VIZ GOAL: button "draw a batch" secretly chooses a pose and samples sensor data; precompute over grid of poses all their scores for that data and make a histogram; the data are superimposed (as rays) onto a user-manipulable pose; another "check guess" button reveals the secret pose.  Data fixed; user moving the fit/assessment.
 #
 # VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
 #
