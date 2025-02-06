@@ -546,15 +546,20 @@ some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
 key, sub_key = jax.random.split(key)
 cm = sensor_model.propose(sub_key, (some_pose, sensor_angles))[0]
 
-N_grid = jnp.array([100, 100, 20])
+N_grid = jnp.array([50, 50, 20])
 grid_xs, grid_ys, grid_hds = make_grid(world["bounding_box"], N_grid)
 grid_poses = Pose(jnp.array([grid_xs, grid_ys]).T, grid_hds)
 
 likelihoods = jax.vmap(likelihood_function)(grid_poses)
+def grid_sample_one(k):
+    return grid_poses[genjax.categorical.sample(k, likelihoods)]
 
 N_samples = 100
 key, sub_key = jax.random.split(key)
-grid_samples = jax.vmap(lambda k: grid_poses[genjax.categorical.sample(k, likelihoods)])(jax.random.split(sub_key, N_samples))
+grid_samples = jax.vmap(grid_sample_one)(jax.random.split(sub_key, N_samples))
+
+# %% [markdown]
+# On the one hand, after precomputing over the grid, drawing samples is cheap.  On the other hand, one never sees any poses that do not belong to the grid.
 
 # %% [markdown]
 # #### importance sampling
