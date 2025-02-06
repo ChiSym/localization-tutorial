@@ -525,7 +525,91 @@ jnp.exp(score)
 #
 # ### Doing some inference
 #
-# Grid search (interactively adjustable slider), importance sampling, one MCMC attempt, little NN, then...
+# We show some ways one might approach this problem computationally.  In each case we just give a first pass at the idea.
+
+# #### Grid search
+#
+# TODO: interactively adjustable slider for grid resolution
+#
+# The idea here is just to search for the good poses by brute force, ranging over a suitable discretization grid of the map.
+
+# +
+def make_grid(bounds, ns):
+    return [dim.reshape(-1) for dim in jnp.meshgrid(*(jnp.linspace(*bound, num=n) for (bound, n) in zip(bounds, ns)))]
+
+likelihood_function = jax.jit(lambda pose: sensor_model.assess(cm, (pose, sensor_angles))[0])
+
+# +
+some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
+
+key, sub_key = jax.random.split(key)
+cm = sensor_model.propose(sub_key, (some_pose, sensor_angles))[0]
+
+N_grid = jnp.array([100, 100, 20])
+grid_xs, grid_ys, grid_hds = make_grid(world["bounding_box"], N_grid)
+grid_poses = Pose(jnp.array([grid_xs, grid_ys]).T, grid_hds)
+
+likelihoods = jax.vmap(likelihood_function)(grid_poses)
+
+N_samples = 100
+key, sub_key = jax.random.split(key)
+grid_samples = jax.vmap(lambda k: grid_poses[genjax.categorical.sample(k, likelihoods)])(jax.random.split(sub_key, N_samples))
+# -
+
+# #### importance sampling
+#
+# What if we need not be systematic---and instead just try a bunch of points?  This allows us to move off the grid, too.
+#
+# Here we first draw `N` pre-samples, assess them, and pick a single representative one in probability proportional to its likelihood, to obtain one sample.  The samples obtained this way are then more closely distributed to the posterior.
+
+# +
+N_presamples = 100
+def importance_sample_one(k):
+    k1, k2 = jax.random.split(k)
+    presamples = jax.vmap(random_pose)(jax.random.split(k1, N_presamples))
+    likelihoods = jax.vmap(likelihood_function)(presamples)
+    return grid_poses[genjax.categorical.sample(k2, likelihoods)]
+
+key, sub_key = jax.random.split(key)
+importance_samples = jax.vmap(importance_sample_one)(jax.random.split(sub_key, N_samples))
+# -
+
+# #### one MCMC attempt
+#
+# We could also explore the space with a simple random walk.  Here we guide the particle using the MH rule.
+
+N_MH_steps = 1000
+def do_MH_step(pose_likelihood, k):
+    pose, likelihood = pose_likelihood
+    k1, k2 = jax.random.split(k)
+    p_hd = pose.as_array()
+    delta = jnp.array([0.5, 0.5, 0.1])
+    new_p_hd = jax.random.uniform(k1, shape=(3,),
+        minval=jnp.maximum(p_hd - delta, world["bounding_box"][:, 0]),
+        maxval=jnp.minimum(p_hd + delta, world["bounding_box"][:, 1]))
+    new_pose = Pose(new_p_hd[0:2], new_p_hd[2])
+    new_likelihood = likelihood_function(new_pose)
+    u = jnp.log(genjax.uniform.sample(k2))
+    return jax.lax.cond(
+                    u <= new_likelihood - likelihood,
+                    lambda: (new_pose, new_likelihood),
+                    lambda: (pose, likelihood)), ()
+def sample_MH_one(k):
+    k1, k2 = jax.random.split(k)
+    start_pose = random_pose(k1)
+    start_likelihood = likelihood_function(start_pose)
+    return jax.lax.scan(do_MH_step, (start_pose, start_likelihood), jax.random.split(k2, N_MH_steps))[0][0]
+
+
+key, sub_key = jax.random.split(key, )
+MH_samples = jax.vmap(sample_MH_one)(jax.random.split(sub_key, N_samples))
+
+
+# #### little NN
+#
+#
+
+# #### Coarse-to-fine
 #
 # "tuning sensor tolerance to make course-to-fine robust" or also Vikash says “do a hierarchical Bayesian relaxation of a coarse-to-fine sampler, where the sensor data model’s variance / expected error is relaxed, i.e. jointly inferred with the other state variables”
 
