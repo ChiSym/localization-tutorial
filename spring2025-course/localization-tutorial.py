@@ -103,7 +103,7 @@ def make_world(wall_verts, clutters_vec):
     x_max, y_max = jnp.max(all_points, axis=0)
 
     # Calculate bounding box, box size, and center point
-    bounding_box = (x_min, x_max, y_min, y_max)
+    bounding_box = jnp.array([[x_min, x_max], [y_min, y_max], [-jnp.pi, +jnp.pi]])
     box_size = max(x_max - x_min, y_max - y_min)
     center_point = jnp.array([(x_min + x_max) / 2.0, (y_min + y_max) / 2.0])
 
@@ -154,7 +154,7 @@ walls_plot = Plot.new(
         stroke="#ccc",
     ),
     {"margin": 0, "inset": 50, "width": 500, "axis": None, "aspectRatio": 1},
-    Plot.domain([world["bounding_box"][0], world["bounding_box"][1]]),
+    Plot.domain(world["bounding_box"][0]),
 )
 
 world_plot = Plot.new(
@@ -270,12 +270,10 @@ def poses_to_plots(poses: Iterable[Pose], **plot_opts):
 key = jax.random.key(0)
 
 def random_pose(k):
-    k1, k2 = jax.random.split(k)
-    p = jax.random.uniform(k1, shape=(2,),
-            minval=jnp.array([world["bounding_box"][0], world["bounding_box"][2]]),
-            maxval=jnp.array([world["bounding_box"][1], world["bounding_box"][3]]))
-    hd = jax.random.uniform(k2, minval=-jnp.pi, maxval=+jnp.pi)
-    return Pose(p, hd)
+    p_hd = jax.random.uniform(k, shape=(3,),
+        minval=world["bounding_box"][:, 0],
+        maxval=world["bounding_box"][:, 1])
+    return Pose(p_hd[0:2], p_hd[2])
 
 some_poses = jax.vmap(random_pose)(jax.random.split(key, 20))
 
