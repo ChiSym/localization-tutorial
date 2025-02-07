@@ -428,7 +428,7 @@ def plot_sensors(pose, readings, sensor_angles):
 
 
 # %%
-def update_sensors(widget, _):
+def update_ideal_sensors(widget, _):
     pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
     widget.state.update({"readings": ideal_sensor(sensor_angles, pose)})
 
@@ -439,7 +439,7 @@ def update_sensors(widget, _):
 ) | Plot.initialState({
     "pose": some_pose, 
     "readings": ideal_sensor(sensor_angles, some_pose)
-}, sync={"pose", "readings"}) | Plot.onChange({"pose": update_sensors})
+}, sync={"pose", "readings"}) | Plot.onChange({"pose": update_ideal_sensors})
 
 # %% [markdown]
 # Some pictures in case of limited interactivity:
@@ -536,6 +536,41 @@ def noisy_sensor(key, pose):
 
 # %% [markdown]
 # POSSIBLE VIZ GOAL: same sensor interactive as before, now with noisy sensors.
+
+# %%
+def update_ideal_sensors(widget, _):
+    pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
+    widget.state.update({"readings": ideal_sensor(sensor_angles, pose)})
+
+(
+    world_plot
+    + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
+    + pose_widget()
+) | Plot.initialState({
+    "pose": some_pose, 
+    "readings": ideal_sensor(sensor_angles, some_pose)
+}, sync={"pose", "readings"}) | Plot.onChange({"pose": update_ideal_sensors})
+
+# %%
+jax.random.wrap_key_data(jax.random.key_data(key)) == key
+
+
+# %%
+def update_noisy_sensors(widget, _):
+    pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
+    k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
+    widget.state.update({"k": jax.random.key_data(k1), "readings": noisy_sensor(k2, pose)})
+
+key, k1, k2 = jax.random.split(key, 3)
+(
+    world_plot
+    + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
+    + pose_widget()
+) | Plot.initialState({
+    "pose": some_pose,
+    "k": jax.random.key_data(k1),
+    "readings": noisy_sensor(k2, some_pose)
+}, sync={"pose", "k", "readings"}) | Plot.onChange({"pose": update_noisy_sensors})
 
 # %% [markdown]
 # ### Weighing data with `assess`
