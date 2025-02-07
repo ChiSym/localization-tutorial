@@ -37,6 +37,7 @@
 
 import json
 import genstudio.plot as Plot
+html = Plot.Hiccup
 import itertools
 import jax
 import jax.numpy as jnp
@@ -48,13 +49,8 @@ from penzai import pz
 from typing import Any, Iterable, TypeVar, Generic, Callable
 from genstudio.plot import js
 
-
-import os
-
-html = Plot.Hiccup
-# Plot.configure({"display_as": "html", "dev": False})
-
 # Ensure a location for image generation.
+import os
 os.makedirs("imgs", exist_ok=True)
 
 
@@ -308,7 +304,7 @@ def pose_plots(poses, wing_opts={}, body_opts={}, **opts):
         body_opts = body_opts | {"fill": opts["color"]}
     return (
         pose_wings(poses, opts | wing_opts) + pose_body(poses, opts | body_opts)
-    )    
+    )
 
 def plot_poses_example(poses, **opts):
     return (
