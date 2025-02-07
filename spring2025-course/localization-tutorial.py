@@ -242,16 +242,6 @@ class Pose(genjax.PythonicPytree):
         return Pose(self.p, self.hd + a)
 
 # %%
-key = jax.random.key(0)
-
-def random_pose(k):
-    p_hd = jax.random.uniform(k, shape=(3,),
-        minval=world["bounding_box"][:, 0],
-        maxval=world["bounding_box"][:, 1])
-    return Pose(p_hd[0:2], p_hd[2])
-
-some_poses = jax.vmap(random_pose)(jax.random.split(key, 20))
-
 def pose_wings(pose, opts={}):        
     return Plot.line(js(f"""
                    const pose = %1;
@@ -306,17 +296,48 @@ def pose_plots(poses, wing_opts={}, body_opts={}, **opts):
         pose_wings(poses, opts | wing_opts) + pose_body(poses, opts | body_opts)
     )
 
-def plot_poses_example(poses, **opts):
-    return (
-        ( world_plot
-          + pose_plots(poses, **opts)
-          + {"title": "Some poses"}
-   )
-)
-plot_poses_example(some_poses[0], color='green')
+def pose_widget(label="pose"):
+    return pose_plots(js(f"$state.{label}"),
+        render=Plot.renderChildEvents({"onDrag": js(
+            f"""
+            (e) => {{
+                if (e.shiftKey) {{
+                    const dx = e.x - $state.{label}.p[0];
+                    const dy = e.y - $state.{label}.p[1];
+                    const angle = Math.atan2(dy, dx);
+                    $state.update({{{label}: {{hd: angle, p: $state.{label}.p}}}})
+                }} else {{
+                    $state.update({{{label}: {{hd: $state.{label}.hd, p: [e.x, e.y]}}}})    
+                }}
+            }}
+            """)}))
+
+# %%
+Plot.html("Click-drag on pose to change location.  Shift-click-drag on pose to change heading.") | (
+    world_plot
+    + pose_widget()
+) | Plot.initialState({"pose": some_pose}, sync={"pose"})
 
 # %% [markdown]
-# POSSIBLE VIZ GOAL: user can manipulate a pose.  (Unconstrained vs. map for now.)
+# A static picture in case of limited interactivity:
+
+# %%
+key = jax.random.key(0)
+
+def random_pose(k):
+    p_hd = jax.random.uniform(k, shape=(3,),
+        minval=world["bounding_box"][:, 0],
+        maxval=world["bounding_box"][:, 1])
+    return Pose(p_hd[0:2], p_hd[2])
+
+some_poses = jax.vmap(random_pose)(jax.random.split(key, 20))
+
+(
+    world_plot
+    + pose_plots(some_poses, color='green')
+    + {"title": "Some poses"}
+)
+
 
 # %% [markdown]
 # ### Ideal sensors
@@ -405,63 +426,35 @@ def plot_sensors(pose, readings, sensor_angles):
         Plot.colorMap({"sensor rays": "rgba(0,0,0,0.1)", "sensor readings": "#f80"})
     )
 
-some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
-(
-    world_plot
-    + plot_sensors(some_pose, ideal_sensor(sensor_angles, some_pose), sensor_angles)
-    + {"title": "Ideal sensors"}
-)
-
 
 # %%
-def animate_path_with_sensor(path, readings):
-    frames = [
-        (
-            world_plot
-            + pose_plots(path[:step])
-            + plot_sensors(pose, readings[step], sensor_angles)
-            + pose_plots(pose, color="red")
-        )
-        for step, pose in enumerate(path)
-    ]
-    return Plot.Frames(frames, fps=2)
-
-readings = jax.vmap(ideal_sensor, in_axes=(None, 0))(sensor_angles, some_poses)
-animate_path_with_sensor(some_poses, readings)
-
-# %%
-
-# VIZ - NEW
-
-def update_widget(widget, _):
-    pose_dict = widget.state.pose
-    angles = widget.state.angles
-    pose = Pose(jnp.array(pose_dict['p']), jnp.array(pose_dict['hd']))
-    widget.state.update({"readings": ideal_sensor(angles, pose)})
+def update_sensors(widget, _):
+    pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
+    widget.state.update({"readings": ideal_sensor(sensor_angles, pose)})
 
 (
     world_plot
-    + plot_sensors(js("$state.pose"), js("$state.readings"), js("$state.angles"))
-    + pose_plots(js("$state.pose"), 
-                 color="red", 
-                 render=Plot.renderChildEvents({"onDrag": js("""(e) => {
-                        if (e.shiftKey) {
-                            const dx = e.x - $state.pose.p[0];
-                            const dy = e.y - $state.pose.p[1];
-                            const angle = Math.atan2(dy, dx);
-                            $state.update({pose: {hd: angle, p: $state.pose.p}})
-                        } else {
-                            $state.update({pose: {hd: $state.pose.hd, p: [e.x, e.y]}})    
-                        }
-                     }""")}))
+    + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
+    + pose_widget()
 ) | Plot.initialState({
     "pose": some_pose, 
-    "angles": sensor_angles,
     "readings": ideal_sensor(sensor_angles, some_pose)
-}, sync={"pose", "angles", "readings"}) | Plot.onChange({"pose": update_widget, "angles": update_widget})
+}, sync={"pose", "readings"}) | Plot.onChange({"pose": update_sensors})
 
 # %% [markdown]
-# POSSIBLE VIZ GOAL: as user manipulates pose, sensors get updated.
+# Some pictures in case of limited interactivity:
+
+# %%
+some_readings = jax.vmap(ideal_sensor, in_axes=(None, 0))(sensor_angles, some_poses)
+
+Plot.Frames([
+    (
+        world_plot
+        + plot_sensors(pose, some_readings[i], sensor_angles)
+        + pose_plots(pose)
+    )
+    for i, pose in enumerate(some_poses)
+], fps=2)
 
 # %% [markdown]
 # ## First steps in modeling uncertainty using Gen
