@@ -189,9 +189,6 @@ clutters_plot = (
 
 
 # %% [markdown]
-# POSSIBLE VIZ GOAL: user-editable map, clutters, etc.
-
-# %% [markdown]
 # ### Robot poses
 #
 # We will model the robot's physical state as a *pose* (or mathematically speaking a ray), defined to be a *position* (2D point relative to the map) plus a *heading* (angle from -$\pi$ to $\pi$).
@@ -534,9 +531,6 @@ def noisy_sensor(key, pose):
     return sensor_model.propose(key, (pose, sensor_angles))[2]
 
 
-# %% [markdown]
-# POSSIBLE VIZ GOAL: same sensor interactive as before, now with noisy sensors.
-
 # %%
 def update_ideal_sensors(widget, _):
     pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
@@ -550,9 +544,6 @@ def update_ideal_sensors(widget, _):
     "pose": some_pose, 
     "readings": ideal_sensor(sensor_angles, some_pose)
 }, sync={"pose", "readings"}) | Plot.onChange({"pose": update_ideal_sensors})
-
-# %%
-jax.random.wrap_key_data(jax.random.key_data(key)) == key
 
 
 # %%
@@ -608,13 +599,13 @@ jnp.exp(score)
 # VIZ GOAL: button "draw a batch" secretly chooses a pose and samples sensor data; precompute over grid of poses all their scores for that data and make a histogram; the data are superimposed (as rays) onto a user-manipulable pose; another "check guess" button reveals the secret pose.  Data fixed; user moving the fit/assessment.
 #
 # VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
-#
+
+# %% [markdown]
 # ### Doing some inference
 #
 # We show some ways one might approach this problem computationally.  In each case we just give a first pass at the idea.
 #
 # Theory point: optimization vs sampling —> "theory exercises".  Pitfalls of optimization.  [List...]  Instead we will give distributions for all our answers.  Moreover, these distributions will be embodied as samplers.
-#
 
 # %% [markdown]
 # #### Grid search
@@ -706,11 +697,6 @@ MH_samples = jax.vmap(sample_MH_one)(jax.random.split(sub_key, N_samples))
 # #### little NN
 #
 #
-
-# %% [markdown]
-# #### Coarse-to-fine
-#
-# "tuning sensor tolerance to make course-to-fine robust" or also Vikash says “do a hierarchical Bayesian relaxation of a coarse-to-fine sampler, where the sensor data model’s variance / expected error is relaxed, i.e. jointly inferred with the other state variables”
 
 # %% [markdown]
 # ## Modeling robot motion
