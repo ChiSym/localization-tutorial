@@ -470,8 +470,6 @@ cm
 
 
 # %% [markdown]
-# [NEED WE SPEAK ABOUT THE `Indexed` LAYER?!]
-#
 # We see the address `"distance"` now associated with the array of Gaussian draws.  
 #
 # With a little wrapping, one gets a function of the same type as `ideal_sensor`, ignoring the PRNG key.
@@ -515,17 +513,18 @@ jnp.exp(score)
 #
 # ### Gaining an intuition
 #
+# Theory point: likelihood versus posterior —> "theory exercises".  Maybe just name here our uniform prior, and point towards later in the nb where we use non-uniform priors.  Encourage students to adapt this part of the notebook to nonuniform priors.
+#
 # VIZ GOAL: button "draw a batch" secretly chooses a pose and samples sensor data; precompute over grid of poses all their scores for that data and make a histogram; the data are superimposed (as rays) onto a user-manipulable pose; another "check guess" button reveals the secret pose.  Data fixed; user moving the fit/assessment.
 #
 # VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
 #
-# Theory point: likelihood versus posterior
-#
-# Theory point: optimization vs sampling
-#
 # ### Doing some inference
 #
 # We show some ways one might approach this problem computationally.  In each case we just give a first pass at the idea.
+#
+# Theory point: optimization vs sampling —> "theory exercises".  Pitfalls of optimization.  [List...]  Instead we will give distributions for all our answers.  Moreover, these distributions will be embodied as samplers.
+#
 
 # %% [markdown]
 # #### Grid search
@@ -562,7 +561,7 @@ grid_samples = jax.vmap(grid_sample_one)(jax.random.split(sub_key, N_samples))
 # On the one hand, after precomputing over the grid, drawing samples is cheap.  On the other hand, one never sees any poses that do not belong to the grid.
 
 # %% [markdown]
-# #### importance sampling
+# #### importance resampling
 #
 # What if we need not be systematic---and instead just try a bunch of points?  This allows us to move off the grid, too.
 #
@@ -591,9 +590,9 @@ def do_MH_step(pose_likelihood, k):
     k1, k2 = jax.random.split(k)
     p_hd = pose.as_array()
     delta = jnp.array([0.5, 0.5, 0.1])
-    new_p_hd = jax.random.uniform(k1, shape=(3,),
-        minval=jnp.maximum(p_hd - delta, world["bounding_box"][:, 0]),
-        maxval=jnp.minimum(p_hd + delta, world["bounding_box"][:, 1]))
+    mins = jnp.maximum(p_hd - delta, world["bounding_box"][:, 0])
+    maxs = jnp.minimum(p_hd + delta, world["bounding_box"][:, 1])
+    new_p_hd = jax.random.uniform(k1, shape=(3,), minval=mins, maxval=maxs)
     new_pose = Pose(new_p_hd[0:2], new_p_hd[2])
     new_likelihood = likelihood_function(new_pose)
     accept = (jnp.log(genjax.uniform.sample(k2)) <= new_likelihood - likelihood)
@@ -610,8 +609,7 @@ def sample_MH_one(k):
     start_likelihood = likelihood_function(start_pose)
     return jax.lax.scan(do_MH_step, (start_pose, start_likelihood), jax.random.split(k2, N_MH_steps))[0][0]
 
-
-key, sub_key = jax.random.split(key, )
+key, sub_key = jax.random.split(key)
 MH_samples = jax.vmap(sample_MH_one)(jax.random.split(sub_key, N_samples))
 
 # %% [markdown]
