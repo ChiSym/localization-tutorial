@@ -714,7 +714,7 @@ def load_robot_program(file_name):
     - tuple: A tuple containing the initial state, and the total number of control steps.
     """
     # TODO: change these to urlopen when the repo becomes public
-    robot_program = load_file("robot_program.json")
+    robot_program = load_file(file_name)
 
     start = Pose(
         jnp.array(robot_program["start_pose"]["p"], dtype=float),
