@@ -46,6 +46,7 @@ from genjax import ChoiceMapBuilder as C
 from genjax.typing import Array, FloatArray, PRNGKey, IntArray
 from penzai import pz
 from typing import Any, Iterable, TypeVar, Generic, Callable
+from genstudio.plot import js
 
 
 import os
@@ -116,6 +117,15 @@ def make_world(wall_verts, clutters_vec):
             "center_point": center_point,
         }
 
+def load_file(file_name):
+    # load from cwd or its parent 
+    # (differs depending on dev environment)
+    try:
+        with open(file_name) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        with open(f"../{file_name}") as f:
+            return json.load(f)
 
 def load_world(file_name):
     """
@@ -127,8 +137,8 @@ def load_world(file_name):
     Returns:
     - tuple: A tuple containing the world configuration, the initial state, and the total number of control steps.
     """
-    with open(file_name) as f:
-        data = json.load(f)
+    # Try both the direct path and one directory up
+    data = load_file(file_name)
 
     walls_vec = jnp.array(data["wall_verts"])
     clutters_vec = jnp.array(data["clutter_vert_groups"])
@@ -139,7 +149,7 @@ def load_world(file_name):
 # %%
 # Specific example code here
 
-world = load_world("../world.json");
+world = load_world("world.json");
 
 # %% [markdown]
 # ### Plotting
@@ -235,37 +245,6 @@ class Pose(genjax.PythonicPytree):
         """
         return Pose(self.p, self.hd + a)
 
-def pose_plot(p, fill: str | Any = "black", **opts):
-    z = opts.get("zoom", 1.0)
-    r = z * 0.15
-    wing_opacity = opts.get("opacity", 0.3)
-    WING_ANGLE, WING_LENGTH = jnp.pi / 12, z * opts.get("wing_length", 0.6)
-    center = p.p
-    angle = jnp.arctan2(*(center - p.step_along(-r).p)[::-1])
-
-    # Calculate wing endpoints
-    wing_ends = [
-        center - WING_LENGTH * jnp.array([jnp.cos(angle + a), jnp.sin(angle + a)])
-        for a in [WING_ANGLE, -WING_ANGLE]
-    ]
-
-    # Draw wings
-    wings = Plot.line(
-        [wing_ends[0], center, wing_ends[1]],
-        strokeWidth=opts.get("strokeWidth", 2),
-        stroke=fill,
-        opacity=wing_opacity,
-    )
-
-    # Draw center dot
-    dot = Plot.ellipse([center], fill=fill, **({"r": r} | opts))
-
-    return wings + dot
-
-def poses_to_plots(poses: Iterable[Pose], **plot_opts):
-    return [pose_plot(pose, **plot_opts) for pose in poses]
-
-
 # %%
 key = jax.random.key(0)
 
@@ -277,12 +256,68 @@ def random_pose(k):
 
 some_poses = jax.vmap(random_pose)(jax.random.split(key, 20))
 
-(
-    world_plot
-    + poses_to_plots(some_poses)
-    + {"title": "Some poses"}
-)
+def pose_wings(pose, opts={}):        
+    return Plot.line(js(f"""
+                   const pose = %1;
+                   let positions = pose.p; 
+                   let angles = pose.hd;
+                   if (typeof angles === 'number') {{
+                       positions = [positions];
+                       angles = [angles];
+                   }}
+                   return Array.from(positions).flatMap((p, i) => {{
+                     const angle = angles[i]
+                     const wingAngle = Math.PI / 12
+                     const wingLength = 0.6
+                     const wing1 = [
+                       p[0] - wingLength * Math.cos(angle + wingAngle),
+                       p[1] - wingLength * Math.sin(angle + wingAngle),
+                       i
+                     ]
+                     const center = [p[0], p[1], i]
+                     const wing2 = [
+                       p[0] - wingLength * Math.cos(angle - wingAngle), 
+                       p[1] - wingLength * Math.sin(angle - wingAngle),
+                       i
+                     ]
+                     return [wing1, center, wing2]
+                   }})
+                   """, pose, expression=False),
+                z="2", 
+                **opts)
+    
+def pose_body(pose, opts={}):
+    return Plot.dot(js(f"typeof %1.hd === 'number' ? [%1.p] : %1.p", pose), {"r": 4} | opts)
 
+def pose_plots(poses, wing_opts={}, body_opts={}, **opts):
+    """
+    Creates a plot visualization for one or more poses.
+
+    Args:
+        poses_or_stateKey: Either a collection of poses or a state key string
+        **opts: Optional styling applied to both lines and dots. If 'color' is provided,
+               it will be used as 'stroke' for lines and 'fill' for dots.
+
+    Returns:
+        A plot object showing the poses with direction indicators
+    """
+    
+    # Handle color -> stroke/fill conversion
+    if 'color' in opts:
+        wing_opts = wing_opts | {"stroke": opts["color"]}
+        body_opts = body_opts | {"fill": opts["color"]}
+    return (
+        pose_wings(poses, opts | wing_opts) + pose_body(poses, opts | body_opts)
+    )    
+
+def plot_poses_example(poses, **opts):
+    return (
+        ( world_plot
+          + pose_plots(poses, **opts)
+          + {"title": "Some poses"}
+   )
+)
+plot_poses_example(some_poses[0], color='green')
 
 # %% [markdown]
 # POSSIBLE VIZ GOAL: user can manipulate a pose.  (Unconstrained vs. map for now.)
@@ -346,7 +381,7 @@ def make_sensor_angles(sensor_settings):
 
 sensor_angles = make_sensor_angles(sensor_settings)
 
-def ideal_sensor(pose):
+def ideal_sensor(sensor_angles, pose):
     return jax.vmap(
         lambda angle: sensor_distance(pose.rotate(angle), world["walls"], sensor_settings["box_size"])
     )(sensor_angles)
@@ -355,28 +390,29 @@ def ideal_sensor(pose):
 # %%
 # Plot sensor data.
 
-def plot_sensors(pose, readings):
-    projections = [
-        pose.rotate(angle).step_along(s) for angle, s in zip(sensor_angles, readings)
-    ]
-
-    return [
+def plot_sensors(pose, readings, sensor_angles):
+    return Plot.Import("""export const projections = (pose, readings, angles) => Array.from({length: readings.length}, (_, i) => {
+                const angle = angles[i] + pose.hd
+                const reading = readings[i]
+                return [pose.p[0] + reading * Math.cos(angle), pose.p[1] + reading * Math.sin(angle)]
+            })""", 
+            refer=["projections"]) | (
         Plot.line(
-            [p for proj in projections for p in [pose.p, proj.p]],
+            js("projections(%1, %2, %3).flatMap((projection, i) => [%1.p, projection, i])", pose, readings, sensor_angles),
             stroke=Plot.constantly("sensor rays"),
-        ),
+        ) +
         Plot.dot(
-            [proj.p for proj in projections],
+            js("projections(%1, %2, %3)", pose, readings, sensor_angles),
             r=2.75,
             fill=Plot.constantly("sensor readings"),
-        ),
-        Plot.color_map({"sensor rays": "rgba(0,0,0,0.1)", "sensor readings": "#f80"}),
-    ]
+        ) +
+        Plot.colorMap({"sensor rays": "rgba(0,0,0,0.1)", "sensor readings": "#f80"})
+    )
 
 some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
 (
     world_plot
-    + plot_sensors(some_pose, ideal_sensor(some_pose))
+    + plot_sensors(some_pose, ideal_sensor(sensor_angles, some_pose), sensor_angles)
     + {"title": "Ideal sensors"}
 )
 
@@ -386,17 +422,47 @@ def animate_path_with_sensor(path, readings):
     frames = [
         (
             world_plot
-            + [pose_plot(pose) for pose in path[:step]]
-            + plot_sensors(pose, readings[step])
-            + [pose_plot(pose, fill="red")]
+            + pose_plots(path[:step])
+            + plot_sensors(pose, readings[step], sensor_angles)
+            + pose_plots(pose, color="red")
         )
         for step, pose in enumerate(path)
     ]
     return Plot.Frames(frames, fps=2)
 
-readings = jax.vmap(ideal_sensor)(some_poses)
+readings = jax.vmap(ideal_sensor, in_axes=(None, 0))(sensor_angles, some_poses)
 animate_path_with_sensor(some_poses, readings)
 
+# %%
+
+# VIZ - NEW
+
+def update_widget(widget, _):
+    pose_dict = widget.state.pose
+    angles = widget.state.angles
+    pose = Pose(jnp.array(pose_dict['p']), jnp.array(pose_dict['hd']))
+    widget.state.update({"readings": ideal_sensor(angles, pose)})
+
+(
+    world_plot
+    + plot_sensors(js("$state.pose"), js("$state.readings"), js("$state.angles"))
+    + pose_plots(js("$state.pose"), 
+                 color="red", 
+                 render=Plot.renderChildEvents({"onDrag": js("""(e) => {
+                        if (e.shiftKey) {
+                            const dx = e.x - $state.pose.p[0];
+                            const dy = e.y - $state.pose.p[1];
+                            const angle = Math.atan2(dy, dx);
+                            $state.update({pose: {hd: angle, p: $state.pose.p}})
+                        } else {
+                            $state.update({pose: {hd: $state.pose.hd, p: [e.x, e.y]}})    
+                        }
+                     }""")}))
+) | Plot.initialState({
+    "pose": some_pose, 
+    "angles": sensor_angles,
+    "readings": ideal_sensor(sensor_angles, some_pose)
+}, sync={"pose", "angles", "readings"}) | Plot.onChange({"pose": update_widget, "angles": update_widget})
 
 # %% [markdown]
 # POSSIBLE VIZ GOAL: as user manipulates pose, sensors get updated.
@@ -648,8 +714,7 @@ def load_robot_program(file_name):
     - tuple: A tuple containing the initial state, and the total number of control steps.
     """
     # TODO: change these to urlopen when the repo becomes public
-    with open("../robot_program.json") as f:
-        robot_program = json.load(f)
+    robot_program = load_file("robot_program.json")
 
     start = Pose(
         jnp.array(robot_program["start_pose"]["p"], dtype=float),
@@ -794,9 +859,9 @@ path_integrated = integrate_controls_physical(robot_inputs)
 
 # %%
 # Plot of the starting pose of the robot
-starting_pose_plot = pose_plot(
+starting_pose_plot = pose_plots(
     robot_inputs["start"],
-    fill=Plot.constantly("given start pose"),
+    color=Plot.constantly("given start pose"),
 ) + Plot.color_map({"given start pose": "blue"})
 
 # Plot of the path from integrating controls
@@ -817,7 +882,6 @@ clutters_plot = (
     + starting_pose_plot
     + {"title": "Given Data"}
 )
-
 
 # %% [markdown]
 # ### Modeling taking steps
@@ -862,12 +926,12 @@ def confidence_circle(pose: Pose, p_noise: float):
 
 (
     world_plot
-    + poses_to_plots([robot_inputs["start"]], fill=Plot.constantly("step from here"))
     + confidence_circle(
         robot_inputs["start"].apply_control(robot_inputs["controls"][0]),
         default_motion_settings["p_noise"],
     )
-    + poses_to_plots(pose_samples, fill=Plot.constantly("step samples"))
+    + pose_plots(pose_samples, color=Plot.constantly("step samples"))
+    + pose_plots(robot_inputs["start"], color=Plot.constantly("step from here"))
     + Plot.color_map({"step from here": "#000", "step samples": "red"})
 )
 
@@ -901,8 +965,8 @@ def plot_path_with_confidence(path: Pose, step: int, p_noise: float):
     prev_step = robot_inputs["start"] if step == 0 else path[step - 1]
     plot = (
         world_plot
-        + [pose_plot(path[i]) for i in range(step)]
-        + pose_plot(path[step], fill=Plot.constantly("next pose"))
+        + [pose_plots(path[i]) for i in range(step)]
+        + pose_plots(path[step], color=Plot.constantly("next pose"))
         + confidence_circle(
                 prev_step.apply_control(robot_inputs["controls"][step]),
                 p_noise,
@@ -934,7 +998,10 @@ sample_paths_v = jax.vmap(
         path_model.propose(k, (robot_inputs["start"], robot_inputs["controls"]))[2][1]
 )(jax.random.split(sub_key, N_samples))
 
-Plot.Grid(*[walls_plot + poses_to_plots(path) for path in sample_paths_v])
+Plot.html([
+    "div.grid.grid-cols-2.gap-4", 
+    *[walls_plot + pose_plots(path) + {"maxWidth": 300, "aspectRatio": 1} for path in sample_paths_v]
+])
 
 
 # %% [markdown]
@@ -975,7 +1042,7 @@ cm
 def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
     frames = [
         plot_path_with_confidence(path, step, motion_settings["p_noise"])
-        + plot_sensors(pose, readings[step])
+        + plot_sensors(pose, readings[step], sensor_angles)
         for step, pose in enumerate(path)
     ]
 
@@ -1057,9 +1124,9 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
 (
     Plot.new(
         world_plot
-        + pose_plot(trace.get_retval(), fill=Plot.constantly("some pose"))
-        + pose_plot(
-            rotated_trace.get_retval(), fill=Plot.constantly("with heading modified")
+        + pose_plots(trace.get_retval(), color=Plot.constantly("some pose"))
+        + pose_plots(
+            rotated_trace.get_retval(), color=Plot.constantly("with heading modified")
         )
         + Plot.color_map({"some pose": "green", "with heading modified": "red"})
         + Plot.title("Modifying a heading")
@@ -1085,11 +1152,11 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
 (
     world_plot
     + [
-        pose_plot(pose, fill=Plot.constantly("with heading modified"))
+        pose_plots(pose, color=Plot.constantly("with heading modified"))
         for pose in rotated_first_step.get_retval()[1]
     ]
     + [
-        pose_plot(pose, fill=Plot.constantly("some path"))
+        pose_plots(pose, color=Plot.constantly("some path"))
         for pose in trace.get_retval()[1]
     ]
     + Plot.color_map({"some path": "green", "with heading modified": "red"})
@@ -1187,7 +1254,7 @@ def animate_bare_sensors(path, plot_base=[]):
         def plt(readings):
             return Plot.new(
                 plot_base or Plot.domain([0, 20]),
-                plot_sensors(pose, readings),
+                plot_sensors(pose, readings, sensor_angles),
                 {"width": 400, "height": 400},
             )
 
@@ -1211,7 +1278,7 @@ animate_bare_sensors(itertools.repeat(Pose(world["center_point"], 0.0)))
 
 animate_bare_sensors(path_integrated, world_plot)
 # %%
-world_plot + plot_sensors(robot_inputs["start"], observations_low_deviation[0])
+world_plot + plot_sensors(robot_inputs["start"], observations_low_deviation[0], sensor_angles)
 # %% [markdown]
 # It would seem that the fit is reasonable in low motion deviation, but really breaks down in high motion deviation.
 #
@@ -1375,11 +1442,11 @@ high_deviation_paths = jax.vmap(get_path)(traces_generated_high_deviation)
 Plot.new(
     world_plot,
     [
-        poses_to_plots(pose, fill="blue", opacity=0.1)
+        pose_plots(pose, color="blue", opacity=0.1)
         for pose in high_deviation_paths[:20]
     ],
     [
-        poses_to_plots(pose, fill="green", opacity=0.1)
+        pose_plots(pose, color="green", opacity=0.1)
         for pose in low_deviation_paths[:20]
     ],
 )
@@ -1523,13 +1590,13 @@ def path_to_polyline(path, **options):
         path_to_polyline(path, opacity=0.2, strokeWidth=2, stroke="blue")
         for path in jax.vmap(get_path)(high_posterior)
     ]
-    + poses_to_plots(
+    + pose_plots(
         path_low_deviation, fill=Plot.constantly("low deviation path"), opacity=0.2
     )
-    + poses_to_plots(
+    + pose_plots(
         path_high_deviation, fill=Plot.constantly("high deviation path"), opacity=0.2
     )
-    + poses_to_plots(
+    + pose_plots(
         path_integrated, fill=Plot.constantly("integrated path"), opacity=0.2
     )
     + Plot.color_map(
