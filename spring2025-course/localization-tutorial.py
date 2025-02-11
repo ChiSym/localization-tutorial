@@ -310,6 +310,8 @@ def pose_widget(label="pose"):
             """)}))
 
 # %%
+some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
+
 Plot.html("Click-drag on pose to change location.  Shift-click-drag on pose to change heading.") | (
     world_plot
     + pose_widget()
@@ -532,21 +534,6 @@ def noisy_sensor(key, pose):
 
 
 # %%
-def update_ideal_sensors(widget, _):
-    pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
-    widget.state.update({"readings": ideal_sensor(sensor_angles, pose)})
-
-(
-    world_plot
-    + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
-    + pose_widget()
-) | Plot.initialState({
-    "pose": some_pose, 
-    "readings": ideal_sensor(sensor_angles, some_pose)
-}, sync={"pose", "readings"}) | Plot.onChange({"pose": update_ideal_sensors})
-
-
-# %%
 def update_noisy_sensors(widget, _):
     pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
     k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
@@ -595,6 +582,10 @@ jnp.exp(score)
 # ### Gaining an intuition
 #
 # Theory point: likelihood versus posterior —> "theory exercises".  Maybe just name here our uniform prior, and point towards later in the nb where we use non-uniform priors.  Encourage students to adapt this part of the notebook to nonuniform priors.
+#
+# App where a secret pose is randomly drawn, and its noisy sensor data taken.  Then the user is presented with a blank map with a movable pose; the secret pose's sensor data are drawn from the movable visible pose.  Toggle between "new random draw" and "reveal secret pose".
+#
+# This whole paragraph could be toggled with a checkbox.  Next iteration gives the user some hints using the likelihood data.  This could be: when the noisy sensor data are taken, also do a sweep of the grid of poses and compute all of their likelihoods for the data.  The user can be shown a histogram of these numbers (or their logs), along with the position of their movable pose's likelihood within the historgram.  Further, when the user hits "reveal", the grid is then drawn with alpha blending (etc.) for the likelihoods, so one could see where the possible solutions were.
 #
 # VIZ GOAL: button "draw a batch" secretly chooses a pose and samples sensor data; precompute over grid of poses all their scores for that data and make a histogram; the data are superimposed (as rays) onto a user-manipulable pose; another "check guess" button reveals the secret pose.  Data fixed; user moving the fit/assessment.
 #
@@ -1102,7 +1093,7 @@ trace.get_args()
 
 # %%
 key, sub_key = jax.random.split(key)
-selections = [genjax.Selection.none(), S[("p")], S[("hd")], S[("p")] | S[("hd")]]
+selections = [genjax.Selection.none(), S["p"], S["hd"], S["p"] | S["hd"]]
 [trace.project(k, sel) for k, sel in zip(jax.random.split(sub_key, len(selections)), selections) ]
 
 # %% [markdown]
@@ -1247,8 +1238,8 @@ observations_high_deviation = get_sensors(trace_high_deviation)
 # Encode sensor readings into choice map.
 
 
-def constraint_from_sensors(readings, t: int = T):
-    return C["steps", jnp.arange(t + 1), "sensor", :, "distance"].set(readings[: t + 1])
+def constraint_from_sensors(readings):
+    return C["steps", :, "sensor", :, "distance"].set(readings)
 
 
 constraints_low_deviation = constraint_from_sensors(observations_low_deviation)
@@ -1287,8 +1278,6 @@ animate_bare_sensors(itertools.repeat(Pose(world["center_point"], 0.0)))
 # %%
 
 animate_bare_sensors(path_integrated, world_plot)
-# %%
-world_plot + plot_sensors(robot_inputs["start"], observations_low_deviation[0], sensor_angles)
 # %% [markdown]
 # It would seem that the fit is reasonable in low motion deviation, but really breaks down in high motion deviation.
 #
@@ -1340,8 +1329,9 @@ animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 #
 #   In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
 # %%
-# TODO: this calculation doesn't work in GenJAX currently
-# log_weight - project(trace, select([prefix_address(i, :sensor) for i in 1:(T+1)]...))
+key, sub_key = jax.random.split(key)
+log_weight - sample.project(sub_key, S["steps", "sensor", "distance"])
+
 
 # %% [markdown]
 # ### Why we need inference: in numbers
@@ -1351,8 +1341,6 @@ animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # In words, the data are incongruously unlikely for the integrated path.  The (log) density of the measurement data, given the integrated path...
 
 # %%
-
-
 def constraint_from_path(path):
     c_ps = jax.vmap(lambda ix, p: C["steps", ix, "pose", "p"].set(p))(
         jnp.arange(T), path.p
@@ -1362,7 +1350,6 @@ def constraint_from_path(path):
         jnp.arange(T), path.hd
     )
     return c_ps + c_hds
-
 
 constraints_path_integrated = constraint_from_path(path_integrated)
 constraints_path_integrated_observations_low_deviation = (
@@ -1391,7 +1378,6 @@ w_low, w_high
 # by the two models. Unfortunately we can't, and so we should raise the priority of the
 # blocking bug
 # %%
-
 Plot.Row(
     *[
         (
@@ -1544,8 +1530,6 @@ Plot.new(
 # ment over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guesses among these.
 
 # %%
-
-
 def importance_sample(
     key: PRNGKey, constraints: genjax.ChoiceMap, motion_settings, N: int, K: int
 ):
@@ -1577,9 +1561,8 @@ high_posterior = jit_resample(
     sub_key, constraints_high_deviation, motion_settings_high_deviation, 2000, 20
 )
 
+
 # %%
-
-
 def path_to_polyline(path, **options):
     if len(path.p.shape) > 1:
         x_coords = path.p[:, 0]
@@ -1660,8 +1643,8 @@ class SequentialImportanceSampling(Generic[StateT, ControlT]):
     Given:
      - a functional wrapper for the importance method of a generative function
      - an initial state of type StateT, which should be a PyTree $z_0$
-     - a vector of control inputs, also a PyTree $u_i, of shape $(T, \ldots)$
-     - an array of observations $y_i$, also of shape $(T, \ldots)$
+     - a vector of control inputs, also a PyTree $u_i, of shape $(T, \\ldots)$
+     - an array of observations $y_i$, also of shape $(T, \\ldots)$
     perform the inference technique known as Sequential Importance Sampling.
 
     The signature of the GFI importance method is
@@ -1685,7 +1668,7 @@ class SequentialImportanceSampling(Generic[StateT, ControlT]):
     create a particle filter. Favorable importance draws are likely to
     be replicated, and unfavorable ones discarded. The resampled vector of
     states is sent the the next step, while the values drawn from the
-    importance sample and the indices chosen are emitted from teh scan step,
+    importance sample and the indices chosen are emitted from the scan step,
     where, at the end of the process, they will be available as matrices
     of shape (N, T).
     """

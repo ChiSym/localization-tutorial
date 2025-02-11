@@ -10,7 +10,7 @@ package-mode = false
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
 jupytext = "^1.16.1"
-genjax = "0.8.2.dev1"
+genjax = "0.9.1"
 genstudio = "2025.2.2"
 
 [tool.pyright]
