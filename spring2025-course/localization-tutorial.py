@@ -114,7 +114,7 @@ def make_world(wall_verts, clutters_vec):
         }
 
 def load_file(file_name):
-    # load from cwd or its parent 
+    # load from cwd or its parent
     # (differs depending on dev environment)
     try:
         with open(file_name) as f:
@@ -239,10 +239,10 @@ class Pose(genjax.PythonicPytree):
         return Pose(self.p, self.hd + a)
 
 # %%
-def pose_wings(pose, opts={}):        
+def pose_wings(pose, opts={}):
     return Plot.line(js(f"""
                    const pose = %1;
-                   let positions = pose.p; 
+                   let positions = pose.p;
                    let angles = pose.hd;
                    if (typeof angles === 'number') {{
                        positions = [positions];
@@ -259,16 +259,16 @@ def pose_wings(pose, opts={}):
                      ]
                      const center = [p[0], p[1], i]
                      const wing2 = [
-                       p[0] - wingLength * Math.cos(angle - wingAngle), 
+                       p[0] - wingLength * Math.cos(angle - wingAngle),
                        p[1] - wingLength * Math.sin(angle - wingAngle),
                        i
                      ]
                      return [wing1, center, wing2]
                    }})
                    """, pose, expression=False),
-                z="2", 
+                z="2",
                 **opts)
-    
+
 def pose_body(pose, opts={}):
     return Plot.dot(js(f"typeof %1.hd === 'number' ? [%1.p] : %1.p", pose), {"r": 4} | opts)
 
@@ -284,7 +284,7 @@ def pose_plots(poses, wing_opts={}, body_opts={}, **opts):
     Returns:
         A plot object showing the poses with direction indicators
     """
-    
+
     # Handle color -> stroke/fill conversion
     if 'color' in opts:
         wing_opts = wing_opts | {"stroke": opts["color"]}
@@ -304,7 +304,7 @@ def pose_widget(label="pose"):
                     const angle = Math.atan2(dy, dx);
                     $state.update({{{label}: {{hd: angle, p: $state.{label}.p}}}})
                 }} else {{
-                    $state.update({{{label}: {{hd: $state.{label}.hd, p: [e.x, e.y]}}}})    
+                    $state.update({{{label}: {{hd: $state.{label}.hd, p: [e.x, e.y]}}}})
                 }}
             }}
             """)}))
@@ -411,7 +411,7 @@ def plot_sensors(pose, readings, sensor_angles):
                 const angle = angles[i] + pose.hd
                 const reading = readings[i]
                 return [pose.p[0] + reading * Math.cos(angle), pose.p[1] + reading * Math.sin(angle)]
-            })""", 
+            })""",
             refer=["projections"]) | (
         Plot.line(
             js("projections(%1, %2, %3).flatMap((projection, i) => [%1.p, projection, i])", pose, readings, sensor_angles),
@@ -436,7 +436,7 @@ def update_ideal_sensors(widget, _):
     + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
     + pose_widget()
 ) | Plot.initialState({
-    "pose": some_pose, 
+    "pose": some_pose,
     "readings": ideal_sensor(sensor_angles, some_pose)
 }, sync={"pose", "readings"}) | Plot.onChange({"pose": update_ideal_sensors})
 
@@ -524,7 +524,7 @@ cm
 
 
 # %% [markdown]
-# We see the address `"distance"` now associated with the array of Gaussian draws.  
+# We see the address `"distance"` now associated with the array of Gaussian draws.
 #
 # With a little wrapping, one gets a function of the same type as `ideal_sensor`, ignoring the PRNG key.
 
@@ -1007,7 +1007,7 @@ sample_paths_v = jax.vmap(
 )(jax.random.split(sub_key, N_samples))
 
 Plot.html([
-    "div.grid.grid-cols-2.gap-4", 
+    "div.grid.grid-cols-2.gap-4",
     *[walls_plot + pose_plots(path) + {"maxWidth": 300, "aspectRatio": 1} for path in sample_paths_v]
 ])
 
@@ -1903,7 +1903,7 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
                 antecedents,
                 control
             )
-            return (rejuvenated.get_retval(), new_log_weights), (sample, indices)
+            return (rejuvenated.get_retval(), new_log_weights), (samples, indices)
 
         init_array = jax.tree.map(
             lambda a: jnp.broadcast_to(a, (N,) + a.shape), self.init
@@ -1917,8 +1917,8 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
                 self.observations,
             ),
         )
-        # return SISwithRejuvenation.Result(N, end, samples, indices)
-        return N, end, samples, indices
+        return SISwithRejuvenation.Result(N, end, samples, indices)
+        #return N, end, samples, indices
 
 
 # %%
@@ -1975,7 +1975,7 @@ def grid_bwd_proposal(new_sample, args):
             )[0]
     )(*base_grid)
 
-    bwd_index = genjax.categorical(log_weights) @ "bwd_index"
+    _ = genjax.categorical(log_weights) @ "bwd_index"
     # Since the backward proposal is only used for assessing the above choice,
     # no further computation is necessary.
 
@@ -2006,34 +2006,40 @@ def localization_sis_plus_grid_rejuv(motion_settings, M_grid, N_grid, observatio
 
 
 # %%
-M_grid = jnp.array([0.01, 0.01, jnp.pi/600.0])
-N_grid = jnp.array([5, 5, 5])
+M_grid = jnp.array([0.5, 0.5, jnp.pi/600.0])
+N_grid = jnp.array([15, 15, 15])
 
 key, sub_key = jax.random.split(key)
 smc_result = localization_sis_plus_grid_rejuv(
     motion_settings_high_deviation, M_grid, N_grid, observations_high_deviation
 ).run(sub_key, 100)
+imp_result = localization_sis(
+    motion_settings_high_deviation, observations_high_deviation
+).run(sub_key, 100)
 
-# (
-#     world_plot
-#     + path_to_polyline(path_high_deviation, stroke="blue", strokeWidth=2)
-#     + [
-#         path_to_polyline(pose_list_to_plural_pose(p), opacity=0.1, stroke="green")
-#         for p in smc_result.flood_fill()
-#     ]
-# )
+def plot_result(sis_result):
+    return (
+        world_plot
+        + path_to_polyline(path_high_deviation, stroke="blue", strokeWidth=2)
+        + [
+            path_to_polyline(pose_list_to_plural_pose(p), opacity=0.1, stroke="green")
+            for p in sis_result.backtrack()
+        ]
+    )
 
-smc_result
-
-# %%
-for row in smc_result[-1]:
-    print(row)
-
-# %%
-saved_keys = (key, sub_key)
+plot_result(smc_result) | plot_result(imp_result)
 
 # %%
-# (Array((), dtype=key<fry>) overlaying:
-#  [2909172187   45468761],
-#  Array((), dtype=key<fry>) overlaying:
-#  [4077753732  989812849])
+# demo: recycle traces
+motion_settings_wack_deviation = {'p_noise': 0.5, 'hd_noise':0.08}
+# %%
+key, k_low, k_high = jax.random.split(key, 3)
+trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
+trace_high_deviation = full_model.simulate(k_high, (motion_settings_wack_deviation,))
+path_low_deviation = get_path(trace_low_deviation)
+path_high_deviation = get_path(trace_high_deviation)
+# ...using these data.
+observations_low_deviation = get_sensors(trace_low_deviation)
+observations_high_deviation = get_sensors(trace_high_deviation)
+
+# %%
