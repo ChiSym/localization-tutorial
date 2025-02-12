@@ -1794,16 +1794,6 @@ smc_result = localization_sis(
         for p in smc_result.flood_fill()
     ]
 )
-
-# jay/colin: the inference is pretty good. We could:
-# - add grid search to refine each step, or
-# - let the robot adjust its next control input to make use of
-#   the updated information about its actual pose that the
-#   inference over the sensor data has revealed.
-# the point being:
-#   We can say "using the inference, watch the robot succeed
-#   in entering the room. Without that, the robot's mission
-#   was bound to fail in the high deviation scenario."
 # %%
 # Try it in the low deviation setting
 key, sub_key = jax.random.split(key)
@@ -1906,7 +1896,7 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
                 ks[1], log_weights + log_weight_increments
             )
             (resamples, antecedents) = jax.tree.map(lambda v: v[indices], (samples, particles))
-            rejuvenated, new_log_weights = jax.vmap(rejuvenate, in_axes=(0, 0, None, 0, None))(
+            rejuvenated, new_log_weights = jax.vmap(self.rejuvenate, in_axes=(0, 0, None, 0, None))(
                 ks[2],
                 resamples,
                 observation,
@@ -1920,26 +1910,27 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
         )
         (end, _), (samples, indices) = jax.lax.scan(
             step,
-            (init_array, jnp.zeros(init_array.shape)),
+            (init_array, jnp.zeros(N)),
             (
                 jax.random.split(key, len(self.controls)),
                 self.controls,
                 self.observations,
             ),
         )
-        return SISwithRejuvenation.Result(N, end, samples, indices)
+        # return SISwithRejuvenation.Result(N, end, samples, indices)
+        return N, end, samples, indices
 
 
 # %%
 # This is the general SMCP3 algorithm in the case where there is no Jacobian term.
 def run_SMCP3_step(fwd_proposal, bwd_proposal, key, sample, proposal_args):
-    k1, k2, k3 = jax.random.split(key, 3)
+    k1, k2 = jax.random.split(key, 2)
 
     _, fwd_proposal_weight, (fwd_update, bwd_choices) = fwd_proposal.propose(k1, (sample, proposal_args))
 
     new_sample, model_weight_diff, _, _ = sample.update(k2, fwd_update)
 
-    bwd_proposal_weight, _ = bwd_proposal.assess(k3, (new_sample, proposal_args), bwd_choices)
+    bwd_proposal_weight, _ = bwd_proposal.assess(bwd_choices, (new_sample, proposal_args))
 
     new_log_weight = model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
     return new_sample, new_log_weight
@@ -1948,69 +1939,101 @@ def run_SMCP3_step(fwd_proposal, bwd_proposal, key, sample, proposal_args):
 # and returns an importance-resampled member.
 @genjax.gen
 def grid_fwd_proposal(sample, args):
-    M_grid, N_grid, observation, model_args = args
+    base_grid, observation, model_args = args
+    observation_cm = C["sensor", "distance"].set(observation)
 
-    center = sample.as_array()
-    grid_ps, grid_hds = make_poses_grid_array(
-        jnp.array([
-            center - M_grid / 2.0,
-            center + M_grid / 2.0
-        ]).T,
-        N_grid
-    )
-
-    observation_cm = C["steps", "sensor", "distance"].set(observation)
-    cms, log_weights = jax.vmap(
-        lambda p, hd: (
-            cm := (
-                C["steps", "pose", "p"].set(grid_ps[fwd_index])
-                | C["steps", "pose", "hd"].set(grid_hds[fwd_index])
-            ),
-            full_model_kernel.assess(observation_cm | cm, model_args)[0]
-        )
-    )(grid_ps, grid_hds)
+    log_weights = jax.vmap(
+        lambda p, hd:
+            full_model_kernel.assess(
+                observation_cm
+                | C["pose", "p"].set(p + sample.get_retval().p)
+                | C["pose", "hd"].set(hd + sample.get_retval().hd),
+                model_args
+            )[0]
+    )(*base_grid)
     fwd_index = genjax.categorical(log_weights) @ "fwd_index"
 
     return (
-        cms[fwd_index],
-        C["bwd_index"].set(len(grid_ps) - 1 - fwd_index)
+        (
+            C["pose", "p"].set(base_grid[0][fwd_index] + sample.get_retval().p)
+            | C["pose", "hd"].set(base_grid[1][fwd_index] + sample.get_retval().hd)
+        ),
+        C["bwd_index"].set(len(log_weights) - 1 - fwd_index)
     )
 
 # Backwards proposal simply guesses according to the prior over steps, nothing fancier.
 @genjax.gen
 def grid_bwd_proposal(new_sample, args):
-    M_grid, N_grid, _, step_model_args = args
-
-    center = new_sample.as_array()
-    grid_ps, grid_hds = make_poses_grid_array(
-        jnp.array([
-            center - M_grid / 2.0,
-            center + M_grid / 2.0
-        ]).T,
-        N_grid
-    )
+    base_grid, _, model_args = args
 
     log_weights = jax.vmap(
         lambda p, hd:
             step_model.assess(
-                C["pose", "p"].set(grid_ps[fwd_index])
-                | C["pose", "hd"].set(grid_hds[fwd_index]),
+                C["p"].set(p + new_sample.get_retval().p)
+                | C["hd"].set(hd + new_sample.get_retval().hd),
                 model_args
             )[0]
-    )(grid_ps, grid_hds)
+    )(*base_grid)
 
     bwd_index = genjax.categorical(log_weights) @ "bwd_index"
     # Since the backward proposal is only used for assessing the above choice,
     # no further computation is necessary.
 
-# Shuttle the parameters into place and return a rejuvenator in the form expected
-# by `SISwithRejuvenation`.
-def make_grid_rejuvenation(M_grid, N_grid, motion_settings)
-    return lambda key, sample, observation, start, control:
-        run_SMCP3_step(
+
+# %%
+def localization_sis_plus_grid_rejuv(motion_settings, M_grid, N_grid, observations):
+    base_grid = make_poses_grid_array(
+        jnp.array([M_grid / 2.0, M_grid / 2.0]).T,
+        N_grid
+    )
+    return SISwithRejuvenation(
+        lambda key, pose, control, observation: full_model_kernel.importance(
+            key,
+            C["sensor", :, "distance"].set(observation),
+            (motion_settings, pose, control),
+        ),
+        lambda key, sample, observation, start, control: run_SMCP3_step(
             grid_fwd_proposal,
             grid_bwd_proposal,
             key,
             sample,
-            (M_grid, N_grid, observation, (motion_settings, start, control))
-        )
+            (base_grid, observation, (motion_settings, start, control))
+        ),
+        robot_inputs["start"],
+        robot_inputs["controls"],
+        observations,
+    )
+
+
+# %%
+M_grid = jnp.array([0.01, 0.01, jnp.pi/600.0])
+N_grid = jnp.array([5, 5, 5])
+
+key, sub_key = jax.random.split(key)
+smc_result = localization_sis_plus_grid_rejuv(
+    motion_settings_high_deviation, M_grid, N_grid, observations_high_deviation
+).run(sub_key, 100)
+
+# (
+#     world_plot
+#     + path_to_polyline(path_high_deviation, stroke="blue", strokeWidth=2)
+#     + [
+#         path_to_polyline(pose_list_to_plural_pose(p), opacity=0.1, stroke="green")
+#         for p in smc_result.flood_fill()
+#     ]
+# )
+
+smc_result
+
+# %%
+for row in smc_result[-1]:
+    print(row)
+
+# %%
+saved_keys = (key, sub_key)
+
+# %%
+# (Array((), dtype=key<fry>) overlaying:
+#  [2909172187   45468761],
+#  Array((), dtype=key<fry>) overlaying:
+#  [4077753732  989812849])
