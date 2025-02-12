@@ -678,7 +678,8 @@ def do_MH_step(pose_likelihood, k):
         jax.tree.map(
             lambda x, y: jnp.where(accept, x, y),
             (new_pose, new_likelihood),
-            (pose, likelihood)),
+            (pose, likelihood)
+        ),
         None
     )
 def sample_MH_one(k):
@@ -1839,7 +1840,7 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
             [PRNGKey, StateT, ControlT, Array], tuple[genjax.Trace[StateT], float]
         ],
         rejuvenate: Callable[
-            [PRNGKey, genjax.Trace[StateT], Array], tuple[genjax.Trace[StateT], float]
+            [PRNGKey, genjax.Trace[StateT], Array, StateT, ControlT], tuple[genjax.Trace[StateT], float]
         ],
         init: StateT,
         controls: ControlT,
@@ -1904,11 +1905,14 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
             indices = jax.vmap(genjax.categorical.sampler, in_axes=(0, None))(
                 ks[1], log_weights + log_weight_increments
             )
-            (resampled, antecedents) = jax.tree.map(lambda v: v[indices], (samples, particles))
-            rejuvenated, new_log_weights = jax.vmap(
-                rejuvenate(antecedents, control, observation),
-                in_axes=(0, None, None)
-            )(ks[2], resampled)
+            (resamples, antecedents) = jax.tree.map(lambda v: v[indices], (samples, particles))
+            rejuvenated, new_log_weights = jax.vmap(rejuvenate, in_axes=(0, 0, None, 0, None))(
+                ks[2],
+                resamples,
+                observation,
+                antecedents,
+                control
+            )
             return (rejuvenated.get_retval(), new_log_weights), (sample, indices)
 
         init_array = jax.tree.map(
@@ -1916,7 +1920,7 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
         )
         (end, _), (samples, indices) = jax.lax.scan(
             step,
-            init_array,
+            (init_array, jnp.zeros(init_array.shape)),
             (
                 jax.random.split(key, len(self.controls)),
                 self.controls,
@@ -1925,53 +1929,54 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
         )
         return SISwithRejuvenation.Result(N, end, samples, indices)
 
-# %%
-jax.tree.map(lambda v: v[jnp.array([2,7])], (jnp.arange(10), jnp.arange(10,20)))
-
 
 # %%
 # This is the general SMCP3 algorithm in the case where there is no Jacobian term.
-def step_SMCP3(fwd_proposal, bwd_proposal, proposal_args):
-    def step(key, sample):
+def build_SMCP3_step(fwd_proposal, bwd_proposal):
+    def step(key, sample, proposal_args):
         k1, k2, k3 = jax.random.split(key, 3)
-        _, fwd_proposal_weight, (fwd_update, bwd_update) = fwd_proposal.propose(k1, (sample, proposal_args))
+
+        _, fwd_proposal_weight, (fwd_update, bwd_choices) = fwd_proposal.propose(k1, (sample, proposal_args))
+
         new_sample, model_weight_diff, _, _ = sample.update(k2, fwd_update)
-        bwd_proposal_weight, _ = bwd_proposal.assess(k3, (new_sample, proposal_args), bwd_update)
+
+        bwd_proposal_weight, _ = bwd_proposal.assess(k3, (new_sample, proposal_args), bwd_choices)
+
         new_log_weight = model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
         return new_sample, new_log_weight
 
     return step
 
-# Forward proposal searches a nearby grid around the sample, and returns an importance-resampled member.
+# Forward proposal searches a nearby grid around the sample,
+# and returns an importance-resampled member.
 def grid_fwd_proposal(sample, args):
     M_grid, N_grid, observation, model_args = args
 
     center = sample.as_array()
     grid_ps, grid_hds = make_poses_grid_array(
-        jnp.array(
-            [
-                center - M_grid / 2.0,
-                center + M_grid / 2.0
-            ]
-        ).T,
+        jnp.array([
+            center - M_grid / 2.0,
+            center + M_grid / 2.0
+        ]).T,
         N_grid
     )
 
     observation_cm = C["steps", "sensor", "distance"].set(observation)
     cms, log_weights = jax.vmap(
-        lambda p, hd:
-            (
-                cm := (
-                    C["steps", "pose", "p"].set(grid_ps[fwd_index])
-                    | C["steps", "pose", "hd"].set(grid_hds[fwd_index])
-                ),
-                full_model_kernel.assess(observation_cm | cm, model_args)[0]
-            )
+        lambda p, hd: (
+            cm := (
+                C["steps", "pose", "p"].set(grid_ps[fwd_index])
+                | C["steps", "pose", "hd"].set(grid_hds[fwd_index])
+            ),
+            full_model_kernel.assess(observation_cm | cm, model_args)[0]
+        )
     )(grid_ps, grid_hds)
     fwd_index = genjax.categorical(log_weights) @ "fwd_index"
 
-    bwd_index = len(grid_ps) - 1 - fwd_index
-    return cms[fwd_index], C["bwd_index"].set(bwd_index)
+    return (
+        cms[fwd_index],
+        C["bwd_index"].set(len(grid_ps) - 1 - fwd_index)
+    )
 
 # Backwards proposal simply guesses according to the prior over steps, nothing fancier.
 def grid_bwd_proposal(new_sample, args):
@@ -1979,12 +1984,10 @@ def grid_bwd_proposal(new_sample, args):
 
     center = new_sample.as_array()
     grid_ps, grid_hds = make_poses_grid_array(
-        jnp.array(
-            [
-                center - M_grid / 2.0,
-                center + M_grid / 2.0
-            ]
-        ).T,
+        jnp.array([
+            center - M_grid / 2.0,
+            center + M_grid / 2.0
+        ]).T,
         N_grid
     )
 
@@ -2001,13 +2004,16 @@ def grid_bwd_proposal(new_sample, args):
     # Since the backward proposal is only used for assessing the above choice,
     # no further computation is necessary.
 
-# Shuttle the paramters into place and return a rejuvenator in the form expected
+# Shuttle the parameters into place and return a rejuvenator in the form expected
 # by `SISwithRejuvenation`.
-def make_grid_rejuvenate(M_grid, N_grid, motion_settings)
-    return lambda start, control, observation:
-        step_SMCP3(
+def make_grid_rejuvenation(M_grid, N_grid, motion_settings)
+    return lambda key, sample, observation, start, control:
+        build_SMCP3_step(
             grid_fwd_proposal,
-            grid_bwd_proposal,
+            grid_bwd_proposal
+        )(
+            key,
+            sample,
             (M_grid, N_grid, observation, (motion_settings, start, control))
         )
 
