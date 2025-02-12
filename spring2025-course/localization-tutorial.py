@@ -1932,23 +1932,21 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
 
 # %%
 # This is the general SMCP3 algorithm in the case where there is no Jacobian term.
-def build_SMCP3_step(fwd_proposal, bwd_proposal):
-    def step(key, sample, proposal_args):
-        k1, k2, k3 = jax.random.split(key, 3)
+def run_SMCP3_step(fwd_proposal, bwd_proposal, key, sample, proposal_args):
+    k1, k2, k3 = jax.random.split(key, 3)
 
-        _, fwd_proposal_weight, (fwd_update, bwd_choices) = fwd_proposal.propose(k1, (sample, proposal_args))
+    _, fwd_proposal_weight, (fwd_update, bwd_choices) = fwd_proposal.propose(k1, (sample, proposal_args))
 
-        new_sample, model_weight_diff, _, _ = sample.update(k2, fwd_update)
+    new_sample, model_weight_diff, _, _ = sample.update(k2, fwd_update)
 
-        bwd_proposal_weight, _ = bwd_proposal.assess(k3, (new_sample, proposal_args), bwd_choices)
+    bwd_proposal_weight, _ = bwd_proposal.assess(k3, (new_sample, proposal_args), bwd_choices)
 
-        new_log_weight = model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
-        return new_sample, new_log_weight
-
-    return step
+    new_log_weight = model_weight_diff + bwd_proposal_weight - fwd_proposal_weight
+    return new_sample, new_log_weight
 
 # Forward proposal searches a nearby grid around the sample,
 # and returns an importance-resampled member.
+@genjax.gen
 def grid_fwd_proposal(sample, args):
     M_grid, N_grid, observation, model_args = args
 
@@ -1979,6 +1977,7 @@ def grid_fwd_proposal(sample, args):
     )
 
 # Backwards proposal simply guesses according to the prior over steps, nothing fancier.
+@genjax.gen
 def grid_bwd_proposal(new_sample, args):
     M_grid, N_grid, _, step_model_args = args
 
@@ -2008,12 +2007,10 @@ def grid_bwd_proposal(new_sample, args):
 # by `SISwithRejuvenation`.
 def make_grid_rejuvenation(M_grid, N_grid, motion_settings)
     return lambda key, sample, observation, start, control:
-        build_SMCP3_step(
+        run_SMCP3_step(
             grid_fwd_proposal,
-            grid_bwd_proposal
-        )(
+            grid_bwd_proposal,
             key,
             sample,
             (M_grid, N_grid, observation, (motion_settings, start, control))
         )
-
