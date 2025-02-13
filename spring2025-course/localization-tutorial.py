@@ -431,16 +431,21 @@ def plot_sensors(pose, readings, sensor_angles):
 
 
 # %%
-def update_ideal_sensors(widget, _):
-    pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
-    widget.state.update({"readings": ideal_sensor(sensor_angles, pose)})
+def pose_at(state, label):
+    pose_dict = getattr(state, label)
+    return Pose(jnp.array(pose_dict["p"]), jnp.array(pose_dict["hd"]))
+
+def update_ideal_sensors(widget, _, label="pose"):
+    widget.state.update({
+        (label + "_readings"): ideal_sensor(sensor_angles, pose_at(widget.state, label))
+    })
 
 (
     world_plot
-    + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
+    + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
     + pose_widget("pose", some_pose)
 ) | Plot.initialState({
-    "readings": ideal_sensor(sensor_angles, some_pose)
+    "pose_readings": ideal_sensor(sensor_angles, some_pose)
 }) | Plot.onChange({"pose": update_ideal_sensors})
 
 # %% [markdown]
@@ -537,16 +542,11 @@ def noisy_sensor(key, pose):
 
 
 # %%
-def pose_at(state, label):
-    pose_dict = getattr(state, label)
-    return Pose(jnp.array(pose_dict["p"]), jnp.array(pose_dict["hd"]))
-
 def update_noisy_sensors(widget, _, label="pose"):
-    pose = pose_at(widget.state, label)
     k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
     widget.state.update({
         "k": jax.random.key_data(k1),
-        (label + "_readings"): noisy_sensor(k2, pose)
+        (label + "_readings"): noisy_sensor(k2, pose_at(widget.state, label))
     })
 
 key, k1, k2 = jax.random.split(key, 3)
@@ -600,32 +600,45 @@ jnp.exp(score)
 #
 # VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
 
+# %% [markdown]
+# In the following widget, a hidden "target" pose has been chosen, and the goal is to reason about where it might be.  You are given aids in reasoning:
+# * Sensor readings have been taken at the target pose, and attached to a manipulable "guess" pose that you may move around and try to fit.
+# * These readings are plotted on the right, in comparison with the would-be wall distances from the "guess" pose.
+# * The difference beetween these two data sets goes into the computation of the *likelihood* of the guess, which is also shown.
+
 # %%
 key, k1, k2, k3 = jax.random.split(key, 4)
 
-user_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
+guess_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
 
 def likelihood_function(cm, pose):
     return sensor_model.assess(cm, (pose, sensor_angles))[0]
 
-def on_pose_chage(label):
-    def handler(widget, _):
-        update_noisy_sensors(widget, None, label=label)
-        widget.state.update({"likelihood":
-            likelihood_function(
-                C["distance"].set(widget.state.target_readings),
-                pose_at(widget.state, "user")
-            )
-        })
-    return handler
+def on_guess_pose_chage(widget, _):
+    update_ideal_sensors(widget, None, label="guess")
+    widget.state.update({"likelihood":
+        likelihood_function(
+            C["distance"].set(widget.state.target_readings),
+            pose_at(widget.state, "guess")
+        )
+    })
+
+def on_target_pose_chage(widget, _):
+    update_noisy_sensors(widget, None, label="target")
+    widget.state.update({"likelihood":
+        likelihood_function(
+            C["distance"].set(widget.state.target_readings),
+            pose_at(widget.state, "guess")
+        )
+    })
 
 (
     Plot.Grid(
         (
             world_plot
-            + plot_sensors(js("$state.user"), js("$state.target_readings"), sensor_angles)
-            + pose_widget("user", user_pose)
+            + plot_sensors(js("$state.guess"), js("$state.target_readings"), sensor_angles)
+            + pose_widget("guess", guess_pose)
             + Plot.cond(js("$state.show_target_pose"), 
                     pose_widget("target", target_pose, color="red"))
         ),
@@ -633,21 +646,21 @@ def on_pose_chage(label):
             Plot.rectY(
                 Plot.js("""
                 const data = [];
-                for (let i = 0; i < $state.user_readings.length; i++) {
+                for (let i = 0; i < $state.guess_readings.length; i++) {
                     data.push({
-                        "sensor": i - 0.15,
-                        "distance": $state.user_readings[i],
-                        "group": "Readings from guess pose"
+                        "sensor index": i - 0.15,
+                        "distance": $state.guess_readings[i],
+                        "group": "wall distances from guess pose"
                     });
                     data.push({
-                        "sensor": i + 0.15,
+                        "sensor index": i + 0.15,
                         "distance": $state.target_readings[i],
-                        "group": "Readings from hidden pose"
+                        "group": "sensor readings from hidden pose"
                     });
                 }
                 return data;
                 """, expression=False),
-                x="sensor",
+                x="sensor index",
                 y="distance",
                 fill="group",
                 interval=0.5
@@ -659,7 +672,7 @@ def on_pose_chage(label):
             | [
                 "div",
                 {"class": "text-lg mt-2 text-center w-full"},
-                Plot.js("'Log likelihood (greater is better): ' + $state.likelihood.toFixed(2)")
+                Plot.js("'log likelihood (greater is better): ' + $state.likelihood.toFixed(2)")
             ]
         ),
         cols=2
@@ -678,19 +691,19 @@ def on_pose_chage(label):
                     "onChange": js("(e) => $state.show_target_pose = e.target.checked")
                 }
             ],
-            "Show Target Pose"
+            "show target pose"
         ]
     ]
 ) | Plot.initialState(
     {
         "k": jax.random.key_data(k1),
-        "user_readings": noisy_sensor(k2, user_pose),
+        "guess_readings": ideal_sensor(sensor_angles, guess_pose),
         "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose)),
-        "likelihood": likelihood_function(C["distance"].set(initial_target_readings), user_pose),
+        "likelihood": likelihood_function(C["distance"].set(initial_target_readings), guess_pose),
         "show_target_pose": False,
     }, sync={"k", "target_readings"}) | Plot.onChange({
-        "user": on_pose_chage("user"), 
-        "target": on_pose_chage("target")
+        "guess": on_guess_pose_chage, 
+        "target": on_target_pose_chage
     }
 )
 
