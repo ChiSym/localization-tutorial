@@ -600,12 +600,9 @@ jnp.exp(score)
 # VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
 
 # %%
-def calculate_score(selected_pose, target_pose, target_readings):
+def calculate_score(user_pose, target_pose, target_readings):
     choices = C["distance"].set(target_readings)
-    return float(
-        sensor_model.assess(choices, (selected_pose, sensor_angles))[0]
-        - sensor_model.assess(choices, (target_pose, sensor_angles))[0]
-    )
+    return sensor_model.assess(choices, (user_pose, sensor_angles))[0]
 
 def on_pose_chage(label):
     def handler(widget, _):
@@ -614,13 +611,8 @@ def on_pose_chage(label):
         user_pose = pose_at(widget.state, 'user')
         target_pose = pose_at(widget.state, 'target')
 
-        choices = C["distance"].set(widget.state.target_readings)
-        score = float(
-            sensor_model.assess(choices, (user_pose, sensor_angles))[0]
-            - sensor_model.assess(choices, (target_pose, sensor_angles))[0]
-        )
         widget.state.update({"score":
-            calculate_score(selected_pose, target_pose, widget.state.target_readings)})
+            calculate_score(user_pose, target_pose, widget.state.target_readings)})
     return handler
 
 
@@ -645,22 +637,21 @@ target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
                 Plot.js("""
                 const data = [];
                 for (let i = 0; i < $state.user_readings.length; i++) {
-                    const x = i;
                     data.push({
-                        "x": x - 0.15,
-                        "value": $state.user_readings[i],
+                        "sensor": i - 0.15,
+                        "distance": $state.user_readings[i],
                         "group": "Readings from guess pose"
                     });
                     data.push({
-                        "x": x + 0.15,
-                        "value": $state.target_readings[i],
+                        "sensor": i + 0.15,
+                        "distance": $state.target_readings[i],
                         "group": "Readings from hidden pose"
                     });
                 }
                 return data;
                 """, expression=False),
-                x="x",
-                y="value",
+                x="sensor",
+                y="distance",
                 fill="group",
                 interval=0.5
             ) 
@@ -671,7 +662,7 @@ target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
             | [
                 "div",
                 {"class": "text-lg mt-2 text-center w-full"},
-                Plot.js("'Score: ' + $state.score.toFixed(2)")
+                Plot.js("'Log score (greater is better): ' + $state.score.toFixed(2)")
             ]
         ),
         cols=2
@@ -700,7 +691,7 @@ target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
     "user_readings": noisy_sensor(k2, user_pose),
     "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose)),
     "show_hidden_pose": False,
-    "score": calculate_score(target_pose, user_pose, initial_target_readings),
+    "score": calculate_score(user_pose, target_pose, initial_target_readings),
 }, sync={"pose", "k", "readings", "target_readings", "target_pose", "score"}) | Plot.onChange({
     "user": on_pose_chage("user"), 
     "target": on_pose_chage("target")
