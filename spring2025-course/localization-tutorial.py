@@ -37,11 +37,11 @@
 
 import json
 import genstudio.plot as Plot
-html = Plot.Hiccup
 import itertools
 import jax
 import jax.numpy as jnp
 import genjax
+import os
 from genjax import SelectionBuilder as S
 from genjax import ChoiceMapBuilder as C
 from genjax.typing import Array, FloatArray, PRNGKey, IntArray
@@ -49,8 +49,7 @@ from penzai import pz
 from typing import Any, Iterable, TypeVar, Generic, Callable
 from genstudio.plot import js
 
-# Ensure a location for image generation.
-import os
+html = Plot.Hiccup
 
 # %% [markdown]
 # ## Sensing a robot's location on a map
@@ -1229,7 +1228,7 @@ pz.ts.display(trace)
 # %% [markdown]
 # ### Modifying traces
 #
-# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, `update` takes as inputs a source of randomness, together with modifications to its arguments and primitive choice values, and returns an accordingly modified trace. It also returns (the log of) the ratio of the updated trace's density to the original trace's density, together with a precise record of the resulting modifications that played out.
+# The metaprogramming approach of Gen affords the opportunity to explore alternate stochastic execution histories.  Namely, the `update` method of a trace takes modifications to its arguments and primitive choice values, and returns an accordingly modified trace. It also returns (the log of) the ratio of the updated trace's density to the original trace's density, together with a precise record of the resulting modifications that played out.
 #
 # One could, for instance, consider just the placement of the first step, and replace its stochastic choice of heading with an updated value. The original trace was typical under the pose prior model, whereas the modified one may be rather less likely. This plot is annotated with log of how much unlikelier, the score ratio:
 # %%
@@ -1973,6 +1972,8 @@ def run_SMCP3_step(fwd_proposal, bwd_proposal, key, sample, proposal_args):
 
 # Forward proposal searches a nearby grid around the sample,
 # and returns an importance-resampled member.
+# The joint density (= the density from the full model) serves as
+# the unnormalized posterior density over steps.
 @genjax.gen
 def grid_fwd_proposal(sample, args):
     base_grid, observation, model_args = args
