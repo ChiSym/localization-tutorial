@@ -286,7 +286,7 @@ def pose_plots(poses, wing_opts={}, body_opts={}, **opts):
     """
 
     # Handle color -> stroke/fill conversion
-    if 'color' in opts:
+    if "color" in opts:
         wing_opts = wing_opts | {"stroke": opts["color"]}
         body_opts = body_opts | {"fill": opts["color"]}
     return (
@@ -294,29 +294,32 @@ def pose_plots(poses, wing_opts={}, body_opts={}, **opts):
     )
 
 
-def pose_widget(label="pose", **opts):
-    return pose_plots(js(f"$state.{label}"),
-        render=Plot.renderChildEvents({"onDrag": js(
-            f"""
-            (e) => {{
-                if (e.shiftKey) {{
-                    const dx = e.x - $state.{label}.p[0];
-                    const dy = e.y - $state.{label}.p[1];
-                    const angle = Math.atan2(dy, dx);
-                    $state.update({{{label}: {{hd: angle, p: $state.{label}.p}}}})
-                }} else {{
-                    $state.update({{{label}: {{hd: $state.{label}.hd, p: [e.x, e.y]}}}})
+def pose_widget(label, initial_pose, **opts):
+    return (
+        pose_plots(js(f"$state.{label}"),
+            render=Plot.renderChildEvents({"onDrag": js(
+                f"""
+                (e) => {{
+                    if (e.shiftKey) {{
+                        const dx = e.x - $state.{label}.p[0];
+                        const dy = e.y - $state.{label}.p[1];
+                        const angle = Math.atan2(dy, dx);
+                        $state.update({{{label}: {{hd: angle, p: $state.{label}.p}}}})
+                    }} else {{
+                        $state.update({{{label}: {{hd: $state.{label}.hd, p: [e.x, e.y]}}}})
+                    }}
                 }}
-            }}
-            """)}), **opts)
+                """)}), **opts)
+        | Plot.initialState({label: initial_pose.as_dict()})
+    )
 
 # %%
 some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
 
 Plot.html("Click-drag on pose to change location.  Shift-click-drag on pose to change heading.") | (
     world_plot
-    + pose_widget()
-) | Plot.initialState({"pose": some_pose.as_dict()}, sync={"pose"})
+    + pose_widget("pose", some_pose)
+)
 
 # %% [markdown]
 # A static picture in case of limited interactivity:
@@ -334,7 +337,7 @@ some_poses = jax.vmap(random_pose)(jax.random.split(key, 20))
 
 (
     world_plot
-    + pose_plots(some_poses, color='green')
+    + pose_plots(some_poses, color="green")
     + {"title": "Some poses"}
 )
 
@@ -435,11 +438,10 @@ def update_ideal_sensors(widget, _):
 (
     world_plot
     + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
-    + pose_widget()
+    + pose_widget("pose", some_pose)
 ) | Plot.initialState({
-    "pose": some_pose.as_dict(),
     "readings": ideal_sensor(sensor_angles, some_pose)
-}, sync={"pose", "readings"}) | Plot.onChange({"pose": update_ideal_sensors})
+}) | Plot.onChange({"pose": update_ideal_sensors})
 
 # %% [markdown]
 # Some pictures in case of limited interactivity:
@@ -551,12 +553,11 @@ key, k1, k2 = jax.random.split(key, 3)
 (
     world_plot
     + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
-    + pose_widget()
+    + pose_widget("pose", some_pose)
 ) | Plot.initialState({
-    "pose": some_pose.as_dict(),
     "k": jax.random.key_data(k1),
     "pose_readings": noisy_sensor(k2, some_pose)
-}, sync={"pose", "k", "pose_readings"}) | Plot.onChange({"pose": update_noisy_sensors})
+}, sync={"k"}) | Plot.onChange({"pose": update_noisy_sensors})
 
 # %% [markdown]
 # ### Weighing data with `assess`
@@ -600,37 +601,33 @@ jnp.exp(score)
 # VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
 
 # %%
-def calculate_score(user_pose, target_pose, target_readings):
-    choices = C["distance"].set(target_readings)
-    return sensor_model.assess(choices, (user_pose, sensor_angles))[0]
-
-def on_pose_chage(label):
-    def handler(widget, _):
-        update_noisy_sensors(widget, None, label=label)
-
-        user_pose = pose_at(widget.state, 'user')
-        target_pose = pose_at(widget.state, 'target')
-
-        widget.state.update({"score":
-            calculate_score(user_pose, target_pose, widget.state.target_readings)})
-    return handler
-
-
-
-# %%
 key, k1, k2, k3 = jax.random.split(key, 4)
 
 user_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
+
+def likelihood_function(cm, pose):
+    return sensor_model.assess(cm, (pose, sensor_angles))[0]
+
+def on_pose_chage(label):
+    def handler(widget, _):
+        update_noisy_sensors(widget, None, label=label)
+        widget.state.update({"likelihood":
+            likelihood_function(
+                C["distance"].set(widget.state.target_readings),
+                pose_at(widget.state, "user")
+            )
+        })
+    return handler
 
 (
     Plot.Grid(
         (
             world_plot
             + plot_sensors(js("$state.user"), js("$state.target_readings"), sensor_angles)
-            + pose_widget("user")
+            + pose_widget("user", user_pose)
             + Plot.cond(js("$state.show_target_pose"), 
-                       pose_widget(label="target", opts={'color': "red"}))
+                    pose_widget("target", target_pose, color="red"))
         ),
         (
             Plot.rectY(
@@ -662,7 +659,7 @@ target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
             | [
                 "div",
                 {"class": "text-lg mt-2 text-center w-full"},
-                Plot.js("'Log score (greater is better): ' + $state.score.toFixed(2)")
+                Plot.js("'Log likelihood (greater is better): ' + $state.likelihood.toFixed(2)")
             ]
         ),
         cols=2
@@ -684,18 +681,18 @@ target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
             "Show Target Pose"
         ]
     ]
-) | Plot.initialState({
-    "user": user_pose.as_dict(),
-    "target": target_pose.as_dict(),
-    "k": jax.random.key_data(k1),
-    "user_readings": noisy_sensor(k2, user_pose),
-    "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose)),
-    "show_hidden_pose": False,
-    "score": calculate_score(user_pose, target_pose, initial_target_readings),
-}, sync={"pose", "k", "readings", "target_readings", "target_pose", "score"}) | Plot.onChange({
-    "user": on_pose_chage("user"), 
-    "target": on_pose_chage("target")
-})
+) | Plot.initialState(
+    {
+        "k": jax.random.key_data(k1),
+        "user_readings": noisy_sensor(k2, user_pose),
+        "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose)),
+        "likelihood": likelihood_function(C["distance"].set(initial_target_readings), user_pose),
+        "show_target_pose": False,
+    }, sync={"k", "target_readings"}) | Plot.onChange({
+        "user": on_pose_chage("user"), 
+        "target": on_pose_chage("target")
+    }
+)
 
 
 # %% [markdown]
@@ -723,18 +720,18 @@ def make_poses_grid_array(bounds, ns):
 def make_poses_grid(bounds, ns):
     return Pose(*make_poses_grid_array(bounds, ns))
 
-likelihood_function = jax.jit(lambda pose: sensor_model.assess(cm, (pose, sensor_angles))[0])
 
 # %%
 some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
 
 key, sub_key = jax.random.split(key)
 cm = sensor_model.propose(sub_key, (some_pose, sensor_angles))[0]
+jitted_likelihood = jax.jit(lambda pose: likelihood_function(cm, pose))
 
 N_grid = jnp.array([50, 50, 20])
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 
-likelihoods = jax.vmap(likelihood_function)(grid_poses)
+likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
 def grid_sample_one(k):
     return grid_poses[genjax.categorical.sample(k, likelihoods)]
 
@@ -757,7 +754,7 @@ N_presamples = 100
 def importance_sample_one(k):
     k1, k2 = jax.random.split(k)
     presamples = jax.vmap(random_pose)(jax.random.split(k1, N_presamples))
-    likelihoods = jax.vmap(likelihood_function)(presamples)
+    likelihoods = jax.vmap(jitted_likelihood)(presamples)
     return grid_poses[genjax.categorical.sample(k2, likelihoods)]
 
 key, sub_key = jax.random.split(key)
@@ -779,7 +776,7 @@ def do_MH_step(pose_likelihood, k):
     maxs = jnp.minimum(p_hd + delta, world["bounding_box"][:, 1])
     new_p_hd = jax.random.uniform(k1, shape=(3,), minval=mins, maxval=maxs)
     new_pose = Pose(new_p_hd[0:2], new_p_hd[2])
-    new_likelihood = likelihood_function(new_pose)
+    new_likelihood = jitted_likelihood(new_pose)
     accept = (jnp.log(genjax.uniform.sample(k2)) <= new_likelihood - likelihood)
     return (
         jax.tree.map(
@@ -792,7 +789,7 @@ def do_MH_step(pose_likelihood, k):
 def sample_MH_one(k):
     k1, k2 = jax.random.split(k)
     start_pose = random_pose(k1)
-    start_likelihood = likelihood_function(start_pose)
+    start_likelihood = jitted_likelihood(start_pose)
     return jax.lax.scan(do_MH_step, (start_pose, start_likelihood), jax.random.split(k2, N_MH_steps))[0][0]
 
 key, sub_key = jax.random.split(key)
