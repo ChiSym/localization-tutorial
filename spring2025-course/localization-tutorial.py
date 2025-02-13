@@ -291,7 +291,8 @@ def pose_plots(poses, wing_opts={}, body_opts={}, **opts):
         pose_wings(poses, opts | wing_opts) + pose_body(poses, opts | body_opts)
     )
 
-def pose_widget(label="pose"):
+
+def pose_widget(label="pose", **opts):
     return pose_plots(js(f"$state.{label}"),
         render=Plot.renderChildEvents({"onDrag": js(
             f"""
@@ -305,7 +306,7 @@ def pose_widget(label="pose"):
                     $state.update({{{label}: {{hd: $state.{label}.hd, p: [e.x, e.y]}}}})
                 }}
             }}
-            """)}))
+            """)}), **opts)
 
 # %%
 some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
@@ -588,6 +589,123 @@ jnp.exp(score)
 # VIZ GOAL: button "draw a batch" secretly chooses a pose and samples sensor data; precompute over grid of poses all their scores for that data and make a histogram; the data are superimposed (as rays) onto a user-manipulable pose; another "check guess" button reveals the secret pose.  Data fixed; user moving the fit/assessment.
 #
 # VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
+
+key, k1, k2, k3 = jax.random.split(key, 4)
+
+random_pose = Pose(jnp.array([15, 4.0]), jnp.array(-1.6))
+some_pose =   Pose(jnp.array([2, 16]), jnp.array(0.0))
+target_readings = noisy_sensor(k3, some_pose)
+
+
+def pose_at(state, pose_attribute):
+    pose = getattr(state, pose_attribute)
+    if isinstance(pose, Pose):
+        return pose
+    else:
+        return Pose(jnp.array(pose['p']), jnp.array(pose['hd']))
+
+
+def update_noisy_sensors_2(widget, _, pose_attribute='pose', readings_attribute='readings'):
+    pose = pose_at(widget.state, pose_attribute)
+    k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
+    
+    widget.state.update({
+        "k": jax.random.key_data(k1), 
+        readings_attribute: noisy_sensor(k2, pose),
+    })
+
+
+def calculate_score(selected_pose, target_pose, target_readings):
+    choices = C["distance"].set(target_readings)
+
+    return float(sensor_model.assess(choices, (selected_pose, sensor_angles))[0] - sensor_model.assess(choices, (target_pose, sensor_angles))[0])
+
+
+def on_change(widget, _):
+    update_noisy_sensors_2(widget, _)
+    update_noisy_sensors_2(widget, _, pose_attribute='target_pose', readings_attribute='target_readings')
+
+    selected_pose = pose_at(widget.state, 'pose')
+    target_pose = pose_at(widget.state, 'target_pose')
+
+    widget.state.update({
+        "score": calculate_score(selected_pose, target_pose, widget.state.target_readings)
+    })
+
+(
+    Plot.Grid(
+        (
+            world_plot
+            + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
+            + pose_widget()
+            + Plot.cond(js("$state.show_target_pose"), 
+                       pose_widget(label="target_pose", opts={'color': "red"}))
+        ),
+        (
+            Plot.rectY(
+                Plot.js("""
+                const data = [];
+                for (let i = 0; i < $state.readings.length; i++) {
+                    const x = i;
+                    data.push({
+                        "x": x - 0.15,
+                        "value": $state.readings[i],
+                        "group": "Current Readings"
+                    });
+                    data.push({
+                        "x": x + 0.15,
+                        "value": $state.target_readings[i],
+                        "group": "True Readings"
+                    });
+                }
+                return data;
+                """, expression=False),
+                x="x",
+                y="value",
+                fill="group",
+                interval=0.5
+            ) 
+            + Plot.domainY([0, 15])
+            + {"height": 300, "marginBottom": 50}
+            + Plot.colorLegend()
+            + {"legend": {"anchor": "middle", "x": 0.5, "y": 1.2}}
+            | [
+                "div",
+                {"class": "text-lg mt-2 text-center w-full"},
+                Plot.js("'Score: ' + $state.score.toFixed(2)")
+            ]
+        ),
+        cols=2
+    )
+    | [
+        "div",
+        {"class": "flex flex-col gap-4"},
+        [
+            "label",
+            {"class": "flex items-center gap-2 cursor-pointer"},
+            [
+                "input",
+                {
+                    "type": "checkbox",
+                    "checked": js("$state.show_target_pose"),
+                    "onChange": js("(e) => $state.show_target_pose = e.target.checked")
+                }
+            ],
+            "Show Target Pose"
+        ]
+    ]
+) | Plot.initialState({
+    "pose": some_pose,
+    "target_pose": random_pose,
+    "k": jax.random.key_data(k1),
+    "readings": noisy_sensor(k2, some_pose),
+    "target_readings": target_readings,
+    "show_hidden_pose": False,
+    "score": calculate_score(random_pose, some_pose, target_readings),
+}, sync={"pose", "k", "readings", "target_readings", "target_pose", "score"}) | Plot.onChange({
+    "pose": on_change, 
+    "target_pose": on_change
+})
 
 # %% [markdown]
 # ### Doing some inference
