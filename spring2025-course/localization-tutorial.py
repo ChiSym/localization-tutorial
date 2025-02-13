@@ -204,6 +204,9 @@ class Pose(genjax.PythonicPytree):
 
     def as_array(self):
         return jnp.append(self.p, self.hd)
+    
+    def as_dict(self):
+        return {"p": self.p, "hd": self.hd}
 
     def dp(self):
         return jnp.array([jnp.cos(self.hd), jnp.sin(self.hd)])
@@ -314,7 +317,7 @@ some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
 Plot.html("Click-drag on pose to change location.  Shift-click-drag on pose to change heading.") | (
     world_plot
     + pose_widget()
-) | Plot.initialState({"pose": some_pose}, sync={"pose"})
+) | Plot.initialState({"pose": some_pose.as_dict()}, sync={"pose"})
 
 # %% [markdown]
 # A static picture in case of limited interactivity:
@@ -435,7 +438,7 @@ def update_ideal_sensors(widget, _):
     + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
     + pose_widget()
 ) | Plot.initialState({
-    "pose": some_pose,
+    "pose": some_pose.as_dict(),
     "readings": ideal_sensor(sensor_angles, some_pose)
 }, sync={"pose", "readings"}) | Plot.onChange({"pose": update_ideal_sensors})
 
@@ -533,21 +536,28 @@ def noisy_sensor(key, pose):
 
 
 # %%
-def update_noisy_sensors(widget, _):
-    pose = Pose(jnp.array(widget.state.pose['p']), jnp.array(widget.state.pose['hd']))
+def pose_at(state, label):
+    pose_dict = getattr(state, label)
+    return Pose(jnp.array(pose_dict["p"]), jnp.array(pose_dict["hd"]))
+
+def update_noisy_sensors(widget, _, label="pose"):
+    pose = pose_at(widget.state, label)
     k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
-    widget.state.update({"k": jax.random.key_data(k1), "readings": noisy_sensor(k2, pose)})
+    widget.state.update({
+        "k": jax.random.key_data(k1),
+        (label + "_readings"): noisy_sensor(k2, pose)
+    })
 
 key, k1, k2 = jax.random.split(key, 3)
 (
     world_plot
-    + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
+    + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
     + pose_widget()
 ) | Plot.initialState({
-    "pose": some_pose,
+    "pose": some_pose.as_dict(),
     "k": jax.random.key_data(k1),
-    "readings": noisy_sensor(k2, some_pose)
-}, sync={"pose", "k", "readings"}) | Plot.onChange({"pose": update_noisy_sensors})
+    "pose_readings": noisy_sensor(k2, some_pose)
+}, sync={"pose", "k", "pose_readings"}) | Plot.onChange({"pose": update_noisy_sensors})
 
 # %% [markdown]
 # ### Weighing data with `assess`
@@ -590,72 +600,62 @@ jnp.exp(score)
 #
 # VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
 
-key, k1, k2, k3 = jax.random.split(key, 4)
-
-random_pose = Pose(jnp.array([15, 4.0]), jnp.array(-1.6))
-some_pose =   Pose(jnp.array([2, 16]), jnp.array(0.0))
-target_readings = noisy_sensor(k3, some_pose)
-
-
-def pose_at(state, pose_attribute):
-    pose = getattr(state, pose_attribute)
-    if isinstance(pose, Pose):
-        return pose
-    else:
-        return Pose(jnp.array(pose['p']), jnp.array(pose['hd']))
-
-
-def update_noisy_sensors_2(widget, _, pose_attribute='pose', readings_attribute='readings'):
-    pose = pose_at(widget.state, pose_attribute)
-    k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
-    
-    widget.state.update({
-        "k": jax.random.key_data(k1), 
-        readings_attribute: noisy_sensor(k2, pose),
-    })
-
-
+# %%
 def calculate_score(selected_pose, target_pose, target_readings):
     choices = C["distance"].set(target_readings)
+    return float(
+        sensor_model.assess(choices, (selected_pose, sensor_angles))[0]
+        - sensor_model.assess(choices, (target_pose, sensor_angles))[0]
+    )
 
-    return float(sensor_model.assess(choices, (selected_pose, sensor_angles))[0] - sensor_model.assess(choices, (target_pose, sensor_angles))[0])
+def on_pose_chage(label):
+    def handler(widget, _):
+        update_noisy_sensors(widget, None, label=label)
+
+        user_pose = pose_at(widget.state, 'user')
+        target_pose = pose_at(widget.state, 'target')
+
+        choices = C["distance"].set(widget.state.target_readings)
+        score = float(
+            sensor_model.assess(choices, (user_pose, sensor_angles))[0]
+            - sensor_model.assess(choices, (target_pose, sensor_angles))[0]
+        )
+        widget.state.update({"score":
+            calculate_score(selected_pose, target_pose, widget.state.target_readings)})
+    return handler
 
 
-def on_change(widget, _):
-    update_noisy_sensors_2(widget, _)
-    update_noisy_sensors_2(widget, _, pose_attribute='target_pose', readings_attribute='target_readings')
 
-    selected_pose = pose_at(widget.state, 'pose')
-    target_pose = pose_at(widget.state, 'target_pose')
+# %%
+key, k1, k2, k3 = jax.random.split(key, 4)
 
-    widget.state.update({
-        "score": calculate_score(selected_pose, target_pose, widget.state.target_readings)
-    })
+user_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
+target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
 
 (
     Plot.Grid(
         (
             world_plot
-            + plot_sensors(js("$state.pose"), js("$state.readings"), sensor_angles)
-            + pose_widget()
+            + plot_sensors(js("$state.user"), js("$state.target_readings"), sensor_angles)
+            + pose_widget("user")
             + Plot.cond(js("$state.show_target_pose"), 
-                       pose_widget(label="target_pose", opts={'color': "red"}))
+                       pose_widget(label="target", opts={'color': "red"}))
         ),
         (
             Plot.rectY(
                 Plot.js("""
                 const data = [];
-                for (let i = 0; i < $state.readings.length; i++) {
+                for (let i = 0; i < $state.user_readings.length; i++) {
                     const x = i;
                     data.push({
                         "x": x - 0.15,
-                        "value": $state.readings[i],
-                        "group": "Current Readings"
+                        "value": $state.user_readings[i],
+                        "group": "Readings from guess pose"
                     });
                     data.push({
                         "x": x + 0.15,
                         "value": $state.target_readings[i],
-                        "group": "True Readings"
+                        "group": "Readings from hidden pose"
                     });
                 }
                 return data;
@@ -695,17 +695,18 @@ def on_change(widget, _):
         ]
     ]
 ) | Plot.initialState({
-    "pose": some_pose,
-    "target_pose": random_pose,
+    "user": user_pose.as_dict(),
+    "target": target_pose.as_dict(),
     "k": jax.random.key_data(k1),
-    "readings": noisy_sensor(k2, some_pose),
-    "target_readings": target_readings,
+    "user_readings": noisy_sensor(k2, user_pose),
+    "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose)),
     "show_hidden_pose": False,
-    "score": calculate_score(random_pose, some_pose, target_readings),
+    "score": calculate_score(target_pose, user_pose, initial_target_readings),
 }, sync={"pose", "k", "readings", "target_readings", "target_pose", "score"}) | Plot.onChange({
-    "pose": on_change, 
-    "target_pose": on_change
+    "user": on_pose_chage("user"), 
+    "target": on_pose_chage("target")
 })
+
 
 # %% [markdown]
 # ### Doing some inference
