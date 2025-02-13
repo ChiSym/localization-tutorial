@@ -591,14 +591,6 @@ jnp.exp(score)
 # ### Gaining an intuition
 #
 # Theory point: likelihood versus posterior —> "theory exercises".  Maybe just name here our uniform prior, and point towards later in the nb where we use non-uniform priors.  Encourage students to adapt this part of the notebook to nonuniform priors.
-#
-# App where a secret pose is randomly drawn, and its noisy sensor data taken.  Then the user is presented with a blank map with a movable pose; the secret pose's sensor data are drawn from the movable visible pose.  Toggle between "new random draw" and "reveal secret pose".
-#
-# This whole paragraph could be toggled with a checkbox.  Next iteration gives the user some hints using the likelihood data.  This could be: when the noisy sensor data are taken, also do a sweep of the grid of poses and compute all of their likelihoods for the data.  The user can be shown a histogram of these numbers (or their logs), along with the position of their movable pose's likelihood within the historgram.  Further, when the user hits "reveal", the grid is then drawn with alpha blending (etc.) for the likelihoods, so one could see where the possible solutions were.
-#
-# VIZ GOAL: button "draw a batch" secretly chooses a pose and samples sensor data; precompute over grid of poses all their scores for that data and make a histogram; the data are superimposed (as rays) onto a user-manipulable pose; another "check guess" button reveals the secret pose.  Data fixed; user moving the fit/assessment.
-#
-# VIZ GOAL: Have a likelihood function, which we can start plotting and interacting with.
 
 # %% [markdown]
 # In the following widget, a hidden "target" pose has been chosen, and the goal is to reason about where it might be.  You are given aids in reasoning:
