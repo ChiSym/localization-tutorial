@@ -719,9 +719,12 @@ def make_poses_grid(bounds, ns):
 
 
 # %%
-key, k1, k2, k3 = jax.random.split(key, 4)
+key, k1 = jax.random.split(key)
 
 guess_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
+
+N_grid = jnp.array([50, 50, 20])
+N_keep = 100
 
 def on_snapshot(widget, _):
     widget.state.update({
@@ -731,11 +734,10 @@ def on_snapshot(widget, _):
     readings = update_noisy_sensors(widget, None, label="target")
     cm = C["distance"].set(readings)
     jitted_likelihood = jax.jit(lambda pose: likelihood_function(cm, pose))
-    N_grid = jnp.array([50, 50, 20])
     grid_poses = make_poses_grid(world["bounding_box"], N_grid)
     likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
     best = jnp.argsort(likelihoods, descending=True)
-    widget.state.update({"snapshot": grid_poses[best[0:100]].as_dict()})
+    widget.state.update({"snapshot": grid_poses[best[0:N_keep]].as_dict()})
 
 def on_guess_pose_chage(widget, _):
     update_ideal_sensors(widget, None, label="guess")
@@ -747,7 +749,7 @@ def on_guess_pose_chage(widget, _):
         + Plot.cond(js("$state.snapshot_exists"),
             plot_sensors(js("$state.target"), js("$state.target_readings"), sensor_angles)
             + pose_plots(js("$state.target"), color="red")
-            + pose_plots(js("$state.snapshot"), color="green", opacity=jnp.arange(1.0, 0.0, -0.01)))
+            + pose_plots(js("$state.snapshot"), color="green", opacity=jnp.arange(1.0, 0.0, -1.0/N_keep)))
         + pose_widget("guess", guess_pose)
     )
     | [
