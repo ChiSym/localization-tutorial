@@ -739,9 +739,6 @@ def on_snapshot(widget, _):
     best = jnp.argsort(likelihoods, descending=True)
     widget.state.update({"snapshot": grid_poses[best[0:N_keep]].as_dict()})
 
-def on_guess_pose_chage(widget, _):
-    update_ideal_sensors(widget, None, label="guess")
-
 (
     (
         world_plot
@@ -777,7 +774,7 @@ def on_guess_pose_chage(widget, _):
             "target_readings": [],
             "snapshot": {"p": [], "hd": []},
         }, sync={"k", "guess", "guess_readings", "target", "snapshot"}) | Plot.onChange({
-            "guess": on_guess_pose_chage,
+            "guess": (lambda widget, _: update_ideal_sensors(widget, None, label="guess")),
         }
     )
 )
