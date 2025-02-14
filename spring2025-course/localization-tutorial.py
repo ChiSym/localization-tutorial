@@ -310,7 +310,7 @@ def pose_widget(label, initial_pose, **opts):
                     }}
                 }}
                 """)}), **opts)
-        | Plot.initialState({label: initial_pose.as_dict()})
+        | Plot.initialState({label: initial_pose.as_dict()}, sync=label)
     )
 
 # %%
@@ -319,7 +319,7 @@ some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
 Plot.html("Click-drag on pose to change location.  Shift-click-drag on pose to change heading.") | (
     world_plot
     + pose_widget("pose", some_pose)
-)
+) | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
 
 # %% [markdown]
 # A static picture in case of limited interactivity:
@@ -441,12 +441,17 @@ def update_ideal_sensors(widget, _, label="pose"):
     })
 
 (
-    world_plot
-    + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
-    + pose_widget("pose", some_pose)
-) | Plot.initialState({
-    "pose_readings": ideal_sensor(sensor_angles, some_pose)
-}) | Plot.onChange({"pose": update_ideal_sensors})
+    (
+        world_plot
+        + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
+        + pose_widget("pose", some_pose)
+    )
+    | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
+    | Plot.initialState({
+        "pose_readings": ideal_sensor(sensor_angles, some_pose)
+    })
+    | Plot.onChange({"pose": update_ideal_sensors})
+)
 
 # %% [markdown]
 # Some pictures in case of limited interactivity:
@@ -553,13 +558,18 @@ def update_noisy_sensors(widget, _, label="pose"):
 
 key, k1, k2 = jax.random.split(key, 3)
 (
-    world_plot
-    + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
-    + pose_widget("pose", some_pose)
-) | Plot.initialState({
-    "k": jax.random.key_data(k1),
-    "pose_readings": noisy_sensor(k2, some_pose)
-}, sync={"k"}) | Plot.onChange({"pose": update_noisy_sensors})
+    (
+        world_plot
+        + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
+        + pose_widget("pose", some_pose)
+    )
+    | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
+    | Plot.initialState({
+        "k": jax.random.key_data(k1),
+        "pose_readings": noisy_sensor(k2, some_pose)
+    }, sync={"k"})
+    | Plot.onChange({"pose": update_noisy_sensors})
+)
 
 # %% [markdown]
 # ### Weighing data with `assess`
@@ -633,7 +643,8 @@ def on_target_pose_chage(widget, _):
             world_plot
             + plot_sensors(js("$state.guess"), js("$state.target_readings"), sensor_angles)
             + pose_widget("guess", guess_pose)
-            + Plot.cond(js("$state.show_target_pose"), pose_widget("target", target_pose, color="red"))
+            + Plot.cond(js("$state.show_target_pose"),
+                pose_widget("target", target_pose, color="red"))
         ),
         (
             Plot.rectY(
@@ -670,41 +681,138 @@ def on_target_pose_chage(widget, _):
         ),
         cols=2
     )
-    | [
-        "div",
-        {"class": "flex flex-col gap-4"},
-        [
-            "label",
-            {"class": "flex items-center gap-2 cursor-pointer"},
+    | (
+        Plot.html([
+            "div",
+            {"class": "flex flex-col gap-4"},
             [
-                "input",
-                {
-                    "type": "checkbox",
-                    "checked": js("$state.show_target_pose"),
-                    "onChange": js("(e) => $state.show_target_pose = e.target.checked")
-                }
-            ],
-            "show target pose"
-        ]
-    ]
-) | Plot.initialState(
-    {
-        "k": jax.random.key_data(k1),
-        "guess_readings": ideal_sensor(sensor_angles, guess_pose),
-        "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose)),
-        "likelihood": likelihood_function(C["distance"].set(initial_target_readings), guess_pose),
-        "show_target_pose": False,
-    }, sync={"k", "target_readings"}) | Plot.onChange({
-        "guess": on_guess_pose_chage, 
-        "target": on_target_pose_chage
-    }
+                "label",
+                {"class": "flex items-center gap-2 cursor-pointer"},
+                [
+                    "input",
+                    {
+                        "type": "checkbox",
+                        "checked": js("$state.show_target_pose"),
+                        "onChange": js("(e) => $state.show_target_pose = e.target.checked")
+                    }
+                ],
+                "show target pose"
+            ]
+        ])
+        & Plot.html(js("`guess = Pose([${$state.guess.p.map((x) => x.toFixed(2))}], ${$state.guess.hd.toFixed(2)})`"))
+        & Plot.html(js("`target = Pose([${$state.target.p.map((x) => x.toFixed(2))}], ${$state.target.hd.toFixed(2)})`"))
+    )
+    | Plot.initialState(
+        {
+            "k": jax.random.key_data(k1),
+            "guess_readings": ideal_sensor(sensor_angles, guess_pose),
+            "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose)),
+            "likelihood": likelihood_function(C["distance"].set(initial_target_readings), guess_pose),
+            "show_target_pose": False,
+        }, sync={"k", "target_readings"})
+    | Plot.onChange({
+            "guess": on_guess_pose_chage, 
+            "target": on_target_pose_chage
+    })
 )
 
 
 # %% [markdown]
-# Now let's explore what the solution space looks like, all at once.
+# ### Visualization setup
 #
-# The following widget again shows a manipulable "guess" pose, with its wall distances.  Hitting the "snapshot" button fixes the "target" pose to the guess pose, samples a batch of sensor readings at the target, and plots these.  It then sweeps over a grid of possible "guess" poses and computes each's likelihood.  The highest likelihood poses are shown, with opacity representative of their likelihood.
+# The next few widgets all operate on the same principle.  A manipulable "camera" pose is shown.  Hitting the button at bottom fixes the "target" pose to the camera pose and samples a batch of sensor readings at the target.  It then performs some computation (optimization or inference) on those sensor readings and displays everything: the target, its sensor readings, and the computation results.
+
+# %%
+def on_snapshot(button_handler):
+    def handler(widget, _):
+        k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
+        widget.state.update({
+            "k": jax.random.key_data(k1),
+            "target": widget.state.camera,
+        })
+        readings = update_noisy_sensors(widget, None, label="target")
+        button_handler(widget, k2, readings)
+        widget.state.update({
+            "snapshot_exists": True,
+        })
+    return handler
+
+def button_widget(k, button_label, button_handler):
+    return (
+        (
+            world_plot
+            + Plot.cond(js("$state.snapshot_exists"),
+                # + pose_plots(js("$state.snapshot"), color="green", opacity=jnp.arange(1.0, 0.0, -1.0/N_keep))
+                # + pose_plots(js("$state.best"), color="purple")
+                plot_sensors(js("$state.target"), js("$state.target_readings"), sensor_angles)
+                + pose_plots(js("$state.target"), color="red")
+                )
+            + pose_widget("camera", camera_pose)
+        )
+        | (
+            Plot.html([
+                "div",
+                {"class": "flex flex-col gap-4"},
+                [
+                    "button",  # Changed from 'input' to 'button'
+                    {
+                        "class": "w-24 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 active:bg-blue-700",
+                        "onClick": on_snapshot(button_handler)
+                    },
+                    button_label  # Text as child element, not label
+                ]
+            ])
+            & Plot.html([
+                "div",
+                Plot.js("""$state.snapshot_exists ?
+                                `target = Pose([${$state.target.p.map((x) => x.toFixed(2))}], ${$state.target.hd.toFixed(2)})` : ''""")
+            ])
+            # & Plot.html([
+            #     "div",
+            #     Plot.js("""$state.snapshot_exists ?
+            #                     `best = Pose([${$state.best.p.map((x) => x.toFixed(2))}], ${$state.best.hd.toFixed(2)})` : ''""")
+            # ])
+        )
+        | Plot.initialState({
+            "k": jax.random.key_data(k),
+            "snapshot_exists": False,
+            "target": {"p": None, "hd": None},
+            "target_readings": [],
+            # "snapshot": {"p": [], "hd": []},
+            # "best": {"p": None, "hd": None},
+        }, sync={"k", "target", "camera_readings"})
+    )
+
+
+# %%
+key, sub_key = jax.random.split(key)
+
+camera_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
+
+# N_grid = jnp.array([50, 50, 20])
+# grid_poses = make_poses_grid(world["bounding_box"], N_grid)
+# N_keep = 1000
+def grid_search_handler(widet, k, readings):
+    # jitted_likelihood = jax.jit(
+    #     lambda pose: likelihood_function(C["distance"].set(readings), pose)
+    # )
+    # likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
+    # best = jnp.argsort(likelihoods, descending=True)[0:N_keep]
+    # widget.state.update({
+    #     "snapshot": grid_poses[best].as_dict(),
+    #     "best": grid_poses[best[0]].as_dict()
+    # })
+    pass
+
+button_widget(sub_key, "optimize!", grid_search_handler)
+
+
+# %% [markdown]
+# ### Doing optimization
+#
+# A common response is to optimize the likelihood.  The field of optimization is vast, but it is not the path for us here, so we just take a quick look.
+#
+# The idea here is just to search for the good poses by brute force, ranging over a suitable discretization grid of the map.  So in this widget, the button fires a sweep over a grid of possible poses, computing the likelihood of each.  The top `N_keep` are kept, and shown with opacity proportional to their position in that sublist.  Moreover, the best fit is shown in purple.
 
 # %%
 def make_grid(bounds, ns):
@@ -721,60 +829,71 @@ def make_poses_grid(bounds, ns):
 # %%
 key, k1 = jax.random.split(key)
 
-guess_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
+camera_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 
 N_grid = jnp.array([50, 50, 20])
-N_keep = 5000
+grid_poses = make_poses_grid(world["bounding_box"], N_grid)
+N_keep = 1000
 
 def on_snapshot(widget, _):
     widget.state.update({
-        "snapshot_exists": True,
-        "target": widget.state.guess,
+        "target": widget.state.camera,
     })
     readings = update_noisy_sensors(widget, None, label="target")
-    cm = C["distance"].set(readings)
-    jitted_likelihood = jax.jit(lambda pose: likelihood_function(cm, pose))
-    grid_poses = make_poses_grid(world["bounding_box"], N_grid)
+    jitted_likelihood = jax.jit(
+        lambda pose: likelihood_function(C["distance"].set(readings), pose)
+    )
     likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
-    best = jnp.argsort(likelihoods, descending=True)
-    widget.state.update({"snapshot": grid_poses[best[0:N_keep]].as_dict()})
+    best = jnp.argsort(likelihoods, descending=True)[0:N_keep]
+    widget.state.update({
+        "snapshot": grid_poses[best].as_dict(),
+        "best": grid_poses[best[0]].as_dict()
+    })
+    widget.state.update({
+        "snapshot_exists": True,
+    })
 
 (
     (
         world_plot
-        + plot_sensors(js("$state.guess"), js("$state.guess_readings"), sensor_angles)
         + Plot.cond(js("$state.snapshot_exists"),
             plot_sensors(js("$state.target"), js("$state.target_readings"), sensor_angles)
+            + pose_plots(js("$state.snapshot"), color="green", opacity=jnp.arange(1.0, 0.0, -1.0/N_keep))
             + pose_plots(js("$state.target"), color="red")
-            + pose_plots(js("$state.snapshot"), color="green", opacity=jnp.arange(1.0, 0.0, -1.0/N_keep)))
-        + pose_widget("guess", guess_pose)
+            + pose_plots(js("$state.best"), color="purple")
+            )
+        + pose_widget("camera", camera_pose)
     )
-    | [
+    | (Plot.html([
         "div",
         {"class": "flex flex-col gap-4"},
         [
-            "label",
-            {"class": "flex items-center gap-2 cursor-pointer"},
-            [
-                "input",
-                {
-                    "type": "button",
-                    "onClick": on_snapshot
-                }
-            ],
-            "Snapshot"
+            "button",  # Changed from 'input' to 'button'
+            {
+                "class": "w-24 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 active:bg-blue-700",
+                "onClick": on_snapshot
+            },
+            "Snapshot"  # Text as child element, not label
         ]
-    ]
-    | Plot.initialState(
+    ]) & Plot.html([
+        "div",
+        Plot.js("""$state.snapshot_exists ?
+                        `target: Pose([${$state.target.p.map((x) => x.toFixed(2))}], ${$state.target.hd.toFixed(2)})` : ''""")
+    ]) & Plot.html([
+        "div",
+        Plot.js("""$state.snapshot_exists ?
+                        `best: Pose([${$state.best.p.map((x) => x.toFixed(2))}], ${$state.best.hd.toFixed(2)})` : ''""")
+    ])) | Plot.initialState(
         {
             "snapshot_exists": False,
             "k": jax.random.key_data(k1),
-            "guess_readings": ideal_sensor(sensor_angles, guess_pose),
-            "target": None,
+            "camera_readings": ideal_sensor(sensor_angles, camera_pose),
+            "target": {"p": None, "hd": None},
             "target_readings": [],
             "snapshot": {"p": [], "hd": []},
-        }, sync={"k", "guess", "guess_readings", "target", "snapshot"}) | Plot.onChange({
-            "guess": (lambda widget, _: update_ideal_sensors(widget, None, label="guess")),
+            "best": {"p": None, "hd": None},
+        }, sync={"k", "camera", "camera_readings", "target", "snapshot"}) | Plot.onChange({
+            "camera": (lambda widget, _: update_ideal_sensors(widget, None, label="camera")),
         }
     )
 )
@@ -784,58 +903,74 @@ def on_snapshot(widget, _):
 #
 # We show some ways one might approach this problem computationally.  In each case we just give a first pass at the idea.
 #
-# Theory point: optimization vs sampling —> "theory exercises".  Pitfalls of optimization.  [List...]  Instead we will give distributions for all our answers.  Moreover, these distributions will be embodied as samplers.
+# The widgets operate in the following way.  A manipulable "camera" pose is shown.  Hitting the "snapshot" button fixes the "target" pose to the camera pose and samples a batch of sensor readings at the target.  It then sweeps over a grid of possible "guess" poses and computes each's likelihood.  All these computed data are shown: the target, its sensor readings, and the highest likelihood guess poses, with the latter's opacity made indicative of their relative likelihood.
+
+# %% [markdown]
+# TODO: optimization vs sampling —> "theory exercises".  Pitfalls of optimization.  [List...]  Instead we will give distributions for all our answers.  Moreover, these distributions will be embodied as samplers.
 
 # %% [markdown]
 # #### Grid search
 #
-# TODO: interactively adjustable slider for grid resolution
+# Although computing the grid takes work, afterwards drawing samples from it is cheap.
 #
-# The idea here is just to search for the good poses by brute force, ranging over a suitable discretization grid of the map.
+# Here is a picture of the secret target pose in red, plus samples from the grid approximate posterior distribution over its sensor readings.
 
 # %%
-some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
+some_pose = Pose(jnp.array([5.2, 13.5]), jnp.array(0.7))
 
-key, sub_key = jax.random.split(key)
-cm = sensor_model.propose(sub_key, (some_pose, sensor_angles))[0]
+key, k1, k2 = jax.random.split(key, 3)
+
+cm = sensor_model.propose(k1, (some_pose, sensor_angles))[0]
 jitted_likelihood = jax.jit(lambda pose: likelihood_function(cm, pose))
-
-N_grid = jnp.array([50, 50, 20])
-grid_poses = make_poses_grid(world["bounding_box"], N_grid)
-
 likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
 def grid_sample_one(k):
     return grid_poses[genjax.categorical.sample(k, likelihoods)]
 
-N_samples = 100
-key, sub_key = jax.random.split(key)
-grid_samples = jax.vmap(grid_sample_one)(jax.random.split(sub_key, N_samples))
+N_samples = 1000
+grid_samples = jax.vmap(grid_sample_one)(jax.random.split(k2, N_samples))
+
+(
+    world_plot
+    + pose_plots(grid_samples, color="green")
+    + plot_sensors(some_pose, cm["distance"], sensor_angles)
+    + pose_plots(some_pose, color="red")
+)
 
 # %% [markdown]
-# On the one hand, after precomputing over the grid, drawing samples is cheap.  On the other hand, one never sees any poses that do not belong to the grid.
+# On the other hand, one never sees any poses that do not belong to the grid.
 
 # %% [markdown]
-# #### importance resampling
+# #### Importance resampling
 #
-# What if we need not be systematic---and instead just try a bunch of points?  This allows us to move off the grid, too.
+# What if we need not be systematic---and instead just try a bunch of points, uniformly over all poses, instead of constrained to a grid?
 #
 # Here we first draw `N` pre-samples, assess them, and pick a single representative one in probability proportional to its likelihood, to obtain one sample.  The samples obtained this way are then more closely distributed to the posterior.
 
 # %%
-N_presamples = 100
+N_presamples = 1000
 def importance_sample_one(k):
     k1, k2 = jax.random.split(k)
     presamples = jax.vmap(random_pose)(jax.random.split(k1, N_presamples))
     likelihoods = jax.vmap(jitted_likelihood)(presamples)
-    return grid_poses[genjax.categorical.sample(k2, likelihoods)]
+    return presamples[genjax.categorical.sample(k2, likelihoods)]
 
 key, sub_key = jax.random.split(key)
 importance_samples = jax.vmap(importance_sample_one)(jax.random.split(sub_key, N_samples))
 
+(
+    world_plot
+    + pose_plots(importance_samples, color="green")
+    + plot_sensors(some_pose, cm["distance"], sensor_angles)
+    + pose_plots(some_pose, color="red")
+)
+
 # %% [markdown]
-# #### one MCMC attempt
+# Amusingly, this technique accidentally finds plenty of points *inside the walls*!
+
+# %% [markdown]
+# #### Markov chain Monte Carlo
 #
-# We could also explore the space with a simple random walk.  Here we guide the particle using the MH rule.
+# We could also explore the space with a random walk.  Here we guide the particle using the MH rule.
 
 # %%
 N_MH_steps = 1000
@@ -867,10 +1002,12 @@ def sample_MH_one(k):
 key, sub_key = jax.random.split(key)
 MH_samples = jax.vmap(sample_MH_one)(jax.random.split(sub_key, N_samples))
 
-# %% [markdown]
-# #### little NN
-#
-#
+(
+    world_plot
+    + pose_plots(MH_samples, color="green")
+    + plot_sensors(some_pose, cm["distance"], sensor_angles)
+    + pose_plots(some_pose, color="red")
+)
 
 # %% [markdown]
 # ## Modeling robot motion
