@@ -724,7 +724,7 @@ key, k1 = jax.random.split(key)
 guess_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 
 N_grid = jnp.array([50, 50, 20])
-N_keep = 100
+N_keep = 5000
 
 def on_snapshot(widget, _):
     widget.state.update({
