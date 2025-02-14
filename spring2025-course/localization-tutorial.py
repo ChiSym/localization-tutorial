@@ -544,10 +544,12 @@ def noisy_sensor(key, pose):
 # %%
 def update_noisy_sensors(widget, _, label="pose"):
     k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
+    readings = noisy_sensor(k1, pose_at(widget.state, label))
     widget.state.update({
-        "k": jax.random.key_data(k1),
-        (label + "_readings"): noisy_sensor(k2, pose_at(widget.state, label))
+        "k": jax.random.key_data(k2),
+        (label + "_readings"): readings
     })
+    return readings
 
 key, k1, k2 = jax.random.split(key, 3)
 (
@@ -631,8 +633,7 @@ def on_target_pose_chage(widget, _):
             world_plot
             + plot_sensors(js("$state.guess"), js("$state.target_readings"), sensor_angles)
             + pose_widget("guess", guess_pose)
-            + Plot.cond(js("$state.show_target_pose"), 
-                    pose_widget("target", target_pose, color="red"))
+            + Plot.cond(js("$state.show_target_pose"), pose_widget("target", target_pose, color="red"))
         ),
         (
             Plot.rectY(
@@ -701,18 +702,9 @@ def on_target_pose_chage(widget, _):
 
 
 # %% [markdown]
-# ### Doing some inference
+# Now let's explore what the solution space looks like, all at once.
 #
-# We show some ways one might approach this problem computationally.  In each case we just give a first pass at the idea.
-#
-# Theory point: optimization vs sampling —> "theory exercises".  Pitfalls of optimization.  [List...]  Instead we will give distributions for all our answers.  Moreover, these distributions will be embodied as samplers.
-
-# %% [markdown]
-# #### Grid search
-#
-# TODO: interactively adjustable slider for grid resolution
-#
-# The idea here is just to search for the good poses by brute force, ranging over a suitable discretization grid of the map.
+# The following widget again shows a manipulable "guess" pose, with its wall distances.  Hitting the "snapshot" button fixes the "target" pose to the guess pose, samples a batch of sensor readings at the target, and plots these.  It then sweeps over a grid of possible "guess" poses and computes each's likelihood.  The highest likelihood poses are shown, with opacity representative of their likelihood.
 
 # %%
 def make_grid(bounds, ns):
@@ -725,6 +717,82 @@ def make_poses_grid_array(bounds, ns):
 def make_poses_grid(bounds, ns):
     return Pose(*make_poses_grid_array(bounds, ns))
 
+
+# %%
+key, k1, k2, k3 = jax.random.split(key, 4)
+
+guess_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
+
+def on_snapshot(widget, _):
+    widget.state.update({
+        "snapshot_exists": True,
+        "target": widget.state.guess,
+    })
+    readings = update_noisy_sensors(widget, None, label="target")
+    cm = C["distance"].set(readings)
+    jitted_likelihood = jax.jit(lambda pose: likelihood_function(cm, pose))
+    N_grid = jnp.array([50, 50, 20])
+    grid_poses = make_poses_grid(world["bounding_box"], N_grid)
+    likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
+    best = jnp.argsort(likelihoods, descending=True)
+    widget.state.update({"snapshot": grid_poses[best[0:100]].as_dict()})
+
+def on_guess_pose_chage(widget, _):
+    update_ideal_sensors(widget, None, label="guess")
+
+(
+    (
+        world_plot
+        + plot_sensors(js("$state.guess"), js("$state.guess_readings"), sensor_angles)
+        + Plot.cond(js("$state.snapshot_exists"),
+            plot_sensors(js("$state.target"), js("$state.target_readings"), sensor_angles)
+            + pose_plots(js("$state.target"), color="red")
+            + pose_plots(js("$state.snapshot"), color="green", opacity=jnp.arange(1.0, 0.0, -0.01)))
+        + pose_widget("guess", guess_pose)
+    )
+    | [
+        "div",
+        {"class": "flex flex-col gap-4"},
+        [
+            "label",
+            {"class": "flex items-center gap-2 cursor-pointer"},
+            [
+                "input",
+                {
+                    "type": "button",
+                    "onClick": on_snapshot
+                }
+            ],
+            "Snapshot"
+        ]
+    ]
+    | Plot.initialState(
+        {
+            "snapshot_exists": False,
+            "k": jax.random.key_data(k1),
+            "guess_readings": ideal_sensor(sensor_angles, guess_pose),
+            "target": None,
+            "target_readings": [],
+            "snapshot": {"p": [], "hd": []},
+        }, sync={"k", "guess", "guess_readings", "target", "snapshot"}) | Plot.onChange({
+            "guess": on_guess_pose_chage,
+        }
+    )
+)
+
+# %% [markdown]
+# ### Doing some inference
+#
+# We show some ways one might approach this problem computationally.  In each case we just give a first pass at the idea.
+#
+# Theory point: optimization vs sampling —> "theory exercises".  Pitfalls of optimization.  [List...]  Instead we will give distributions for all our answers.  Moreover, these distributions will be embodied as samplers.
+
+# %% [markdown]
+# #### Grid search
+#
+# TODO: interactively adjustable slider for grid resolution
+#
+# The idea here is just to search for the good poses by brute force, ranging over a suitable discretization grid of the map.
 
 # %%
 some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
