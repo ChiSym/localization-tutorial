@@ -318,7 +318,7 @@ some_pose = Pose(jnp.array([6.0, 15.0]), jnp.array(0.0))
 
 Plot.html("Click-drag on pose to change location.  Shift-click-drag on pose to change heading.") | (
     world_plot
-    + pose_widget("pose", some_pose)
+    + pose_widget("pose", some_pose, color="blue")
 ) | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
 
 # %% [markdown]
@@ -444,7 +444,7 @@ def update_ideal_sensors(widget, _, label="pose"):
     (
         world_plot
         + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
-        + pose_widget("pose", some_pose)
+        + pose_widget("pose", some_pose, color="blue")
     )
     | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
     | Plot.initialState({
@@ -561,7 +561,7 @@ key, k1, k2 = jax.random.split(key, 3)
     (
         world_plot
         + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
-        + pose_widget("pose", some_pose)
+        + pose_widget("pose", some_pose, color="blue")
     )
     | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
     | Plot.initialState({
@@ -642,9 +642,9 @@ def on_target_pose_chage(widget, _):
         (
             world_plot
             + plot_sensors(js("$state.guess"), js("$state.target_readings"), sensor_angles)
-            + pose_widget("guess", guess_pose)
+            + pose_widget("guess", guess_pose, color="blue")
             + Plot.cond(js("$state.show_target_pose"),
-                pose_widget("target", target_pose, color="red"))
+                pose_widget("target", target_pose, color="gold"))
         ),
         (
             Plot.rectY(
@@ -671,6 +671,10 @@ def on_target_pose_chage(widget, _):
             ) 
             + Plot.domainY([0, 15])
             + {"height": 300, "marginBottom": 50}
+            + Plot.color_map({
+                "wall distances from guess pose": "blue",
+                "sensor readings from hidden pose": "gold"
+            })
             + Plot.colorLegend()
             + {"legend": {"anchor": "middle", "x": 0.5, "y": 1.2}}
             | [
@@ -752,7 +756,7 @@ def camera_widget(
                 + plot_sensors(js("$state.target"), js("$state.target_readings"), sensor_angles)
                 + pose_plots(js("$state.target"), color="red")
             )
-            + pose_widget("camera", camera_pose)
+            + pose_widget("camera", camera_pose, color="blue")
         )
         | (
             Plot.html([
@@ -1089,8 +1093,8 @@ def update_unphysical_path(widget, _):
     (
         world_plot
         + pose_plots(js("$state.path"), color=Plot.constantly("path from integrating controls (UNphysical)"))
-        + Plot.color_map({"start pose": "blue", "path from integrating controls (UNphysical)": "green"})
         + pose_widget("start", robot_inputs["start"], color=Plot.constantly("start pose"))
+        + Plot.color_map({"start pose": "blue", "path from integrating controls (UNphysical)": "green"})
     )
     | Plot.html(js("`start = Pose([${$state.start.p.map((x) => x.toFixed(2))}], ${$state.start.hd.toFixed(2)})`"))
     | Plot.initialState({
@@ -1186,8 +1190,8 @@ def update_physical_path(widget, _):
     (
         world_plot
         + pose_plots(js("$state.path"), color=Plot.constantly("path from integrating controls (physical)"))
-        + Plot.color_map({"start pose": "blue", "path from integrating controls (physical)": "green"})
         + pose_widget("start", robot_inputs["start"], color=Plot.constantly("start pose"))
+        + Plot.color_map({"start pose": "blue", "path from integrating controls (physical)": "green"})
     )
     | Plot.html(js("`start = Pose([${$state.start.p.map((x) => x.toFixed(2))}], ${$state.start.hd.toFixed(2)})`"))
     | Plot.initialState({
@@ -1217,35 +1221,71 @@ def step_model(motion_settings, start, control):
 default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 
 # %% [markdown]
-# Due to our prepending `noop_control` to the robot program, we may express some error in the initial pose as follows.
+# The reader is especially encouraged, in the following widget, to drag the attempted step beyond a wall, to get a feel for how this model handles the physics.
 
 # %%
-# Generate N_samples of starting poses from the prior
-N_samples = 50
-key, sub_key = jax.random.split(key)
-pose_samples = jax.vmap(step_model.propose, in_axes=(0, None))(
-    jax.random.split(sub_key, N_samples),
-    (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
-)[2]
+key, k1, k2 = jax.random.split(key, 3)
 
-# Plot the world, starting pose samples, and 95% confidence region
-# Calculate the radius of the 95% confidence region
-def confidence_circle(pose: Pose, p_noise: float):
-    return Plot.scaled_circle(
-        *pose.p,
-        fill=Plot.constantly("95% confidence region"),
+def confidence_circle(p, p_noise):
+    return Plot.ellipse(
+        p,
         r=2.5 * p_noise,
+        fill=Plot.constantly("95% confidence region"),
     ) + Plot.color_map({"95% confidence region": "rgba(255,0,0,0.25)"})
 
+N_samples = 50
+
+def update_confidence_circle(widget, _):
+    step = pose_at(widget.state, "step")
+    step_vector = step.p - robot_inputs["start"].p
+
+    tilted_start_hd = jnp.atan2(step_vector[1], step_vector[0])
+    tilted_start = Pose(robot_inputs["start"].p, tilted_start_hd)
+
+    ds = jnp.linalg.norm(step_vector)
+    dhd = (step.hd - tilted_start_hd + jnp.pi) % (2.0 * jnp.pi) - jnp.pi
+
+    widget.state.update({
+        "start": tilted_start.as_dict(),
+        "control": {"ds": ds, "dhd": dhd}
+    })
+
+    k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
+    samples = jax.vmap(step_model.propose, in_axes=(0, None))(
+        jax.random.split(k1, N_samples),
+        (default_motion_settings, tilted_start, Control(ds, dhd)),
+    )[2]
+    widget.state.update({
+        "k": jax.random.key_data(k2),
+        "samples": samples.as_dict()
+    })
+
 (
-    world_plot
-    + confidence_circle(
-        robot_inputs["start"].apply_control(robot_inputs["controls"][0]),
-        default_motion_settings["p_noise"],
+    (
+        world_plot
+        + confidence_circle(js("[$state.step.p]"), default_motion_settings["p_noise"])
+        + pose_plots(js("$state.samples"), color=Plot.constantly("samples from the step model"))
+        + pose_plots(js("$state.start"), color=Plot.constantly("start pose"))
+        + pose_widget("step", robot_inputs["start"], color=Plot.constantly("attempt to step to here"))
+        + Plot.color_map({
+            "start pose": "black",
+            "attempt to step to here": "blue",
+            "samples from the step model": "green",
+        })
     )
-    + pose_plots(pose_samples, color=Plot.constantly("step samples"))
-    + pose_plots(robot_inputs["start"], color=Plot.constantly("step from here"))
-    + Plot.color_map({"step from here": "#000", "step samples": "red"})
+    | Plot.html(js("`control = Control(${$state.control.ds.toFixed(2)}, ${$state.control.dhd.toFixed(2)})`"))
+    | Plot.initialState({
+        "start": robot_inputs["start"].as_dict(),
+        "control": {"ds": 0.0, "dhd": 0.0},
+        "k": jax.random.key_data(k1),
+        "samples": (
+            jax.vmap(step_model.propose, in_axes=(0, None))(
+                jax.random.split(k2, N_samples),
+                (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
+            )[2].as_dict()
+        ),
+    }, sync={"k"})
+    | Plot.onChange({"step": update_confidence_circle})
 )
 
 # %% [markdown]
@@ -1262,6 +1302,9 @@ def confidence_circle(pose: Pose, p_noise: float):
 # %%
 path_model = step_model.partial_apply(default_motion_settings).map(diag).scan()
 
+# %% [markdown]
+# Note how the model returns a tuple with the terminus of the sampled path, followed by the path itself vectorized into a single `Pose` object.
+
 # %%
 key, sub_key = jax.random.split(key)
 path_model.propose(sub_key, (robot_inputs["start"], robot_inputs["controls"]))[2]
@@ -1271,29 +1314,24 @@ path_model.propose(sub_key, (robot_inputs["start"], robot_inputs["controls"]))[2
 # Here is a single path with confidence circles on each step's draw.
 
 # %%
-# Animation showing a single path with confidence circles
-
-# TODO: how about plot the control vector?
-def plot_path_with_confidence(path: Pose, step: int, p_noise: float):
+def plot_path_with_confidence(path, step):
     prev_step = robot_inputs["start"] if step == 0 else path[step - 1]
-    plot = (
+    return (
         world_plot
+        + confidence_circle(
+            [prev_step.apply_control(robot_inputs["controls"][step]).p],
+            default_motion_settings["p_noise"]
+        )
         + [pose_plots(path[i]) for i in range(step)]
         + pose_plots(path[step], color=Plot.constantly("next pose"))
-        + confidence_circle(
-                prev_step.apply_control(robot_inputs["controls"][step]),
-                p_noise,
-            )
-        + Plot.color_map({"previous poses": "black", "next pose": "red"})
+        + Plot.color_map({"previous poses": "black", "next pose": "green"})
     )
-    return plot
 
-# Generate a single path
 key, sample_key = jax.random.split(key)
 path = path_model.propose(sample_key, (robot_inputs["start"], robot_inputs["controls"]))[2][1]
 Plot.Frames(
     [
-        plot_path_with_confidence(path, step, default_motion_settings["p_noise"])
+        plot_path_with_confidence(path, step)
         + Plot.title("Motion model (samples)")
         for step in range(len(path))
     ],
@@ -1305,15 +1343,16 @@ Plot.Frames(
 
 # %%
 N_samples = 12
+
 key, sub_key = jax.random.split(key)
-sample_paths_v = jax.vmap(
+sample_paths = jax.vmap(
     lambda k:
         path_model.propose(k, (robot_inputs["start"], robot_inputs["controls"]))[2][1]
 )(jax.random.split(sub_key, N_samples))
 
 Plot.html([
     "div.grid.grid-cols-2.gap-4",
-    *[walls_plot + pose_plots(path) + {"maxWidth": 300, "aspectRatio": 1} for path in sample_paths_v]
+    *[walls_plot + pose_plots(path) + {"maxWidth": 300, "aspectRatio": 1} for path in sample_paths]
 ])
 
 
@@ -1353,13 +1392,11 @@ cm
 
 # %%
 def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
-    frames = [
-        plot_path_with_confidence(path, step, motion_settings["p_noise"])
+    return Plot.Frames([
+        plot_path_with_confidence(path, step)
         + plot_sensors(pose, readings[step], sensor_angles)
         for step, pose in enumerate(path)
-    ]
-
-    return Plot.Frames(frames, fps=2, key=frame_key)
+    ], fps=2, key=frame_key)
 
 animate_path_and_sensors(retval[1], cm["steps", "sensor", "distance"], default_motion_settings)
 
