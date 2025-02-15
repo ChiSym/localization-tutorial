@@ -1650,9 +1650,9 @@ sample, log_weight = model_importance(
 )
 animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # %% [markdown]
-# A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key situational difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
+# A trace resulting from a call to `importance` is structurally indistinguishable from one drawn from `simulate`.  But there is a key *situational* difference: while `get_score` always returns the frequency with which `simulate` stochastically produces the trace, this value is **no longer equal to** the frequency with which the trace is stochastically produced by `importance`.  This is both true in an obvious and less relevant sense, as well as true in a more subtle and extremely germane sense.
 #
-# On the superficial level, since all traces produced by `importance` are consistent with the constraints, those traces that are inconsistent with the constraints do not occur at all, and in aggregate the traces that are consistent with the constraints are more common.
+# On the superficial level, since all traces produced by `importance` are consistent with the constraints, those traces that are inconsistent with the constraints do not occur at all, and in balance the traces that are consistent with the constraints are more common.
 #
 # More deeply and importantly, the stochastic choice of the *constraints* under a run of `simulate` might have any density, perhaps very low.  This constraints density contributes as always to the `get_score`, whereas it does not influence the frequency of producing this trace under `importance`.
 #
@@ -1660,19 +1660,21 @@ animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 #
 # We stress the basic invariant:
 # $$
+# (\text{frequency simulate creates this trace})
+# =
 # \text{get\_score}(\text{trace})
 # =
 # (\text{weight from importance})
 # \cdot
-# (\text{frequency simulate creates this trace}).
+# (\text{frequency importance creates this trace}).
 # $$
 # %% [markdown]
 # The preceding comments apply to generative functions in wide generality.  We can say even more about our present examples, because further assumptions hold.
-# 1. There is no untraced randomness.  Given a full choice map for constraints, everything else is deterministic.  In particular, the importance weight is the `get_score`.
-# 2. The generative function was constructed using GenJAX's DSL and primitive distributions.  Ancestral sampling; `importance` with empty constraints reduces to `simulate` with importance weight $1$.
+# 1. There is no untraced randomness.  Given a *full choice map* for constraints, `importance` is rendered deterministic.  In particular, the importance weight is the `get_score`.
+# 2. The generative function was constructed using GenJAX's DSL and primitive distributions.  Under ancestral sampling, `importance` with *empty constraints* reduces to `simulate` plus importance weight $1$.
 # 3. Combined, the importance weight is directly computed as the `project` of the trace upon the choice map addresses that were constrained in the call to `importance`.
 #
-#   In our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
+# Thus in our running example, the projection in question is $\prod_{t=0}^T P_\text{sensor}(o_t)$.
 # %%
 key, sub_key = jax.random.split(key)
 log_weight - sample.project(sub_key, S["steps", "sensor", "distance"])
@@ -1838,7 +1840,7 @@ Plot.new(
 #
 # The pair $(Q,f)$ is said to implement *importance sampling* for $P$, and the values of $f$ are called *importance weights*.  Generic inference attempts to use knowledge of $f$ to correct for the difference in behavior between $P$ and $Q$, and thereby use $Q$ to produce samples from (approximately) $P$.
 #
-# So in our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, the proposal $Q$ is the path prior $\text{path}$, and the importance weight $f$ is the product of the sensor model densities.  We seek a computational model of the first; the second and third are computationally modeled by calling `importance` on `full_model` constrained by the observations $o_{0:T}$.  (The computation of the second, on its own, simplifies to `path_prior`.)
+# So in our running example, the target $P$ is the posterior distribution on paths $\text{full}(\cdot | o_{0:T})$, the proposal $Q$ is the path prior $\text{path}$, and the importance weight $f$ is the product of the sensor model densities.  We seek a computational model of the first; the second and third are computationally modeled by calling `importance` on `full_model` constrained by the observations $o_{0:T}$.  (The computation of the second, on its own, simplifies to `path_model`.)
 #
 
 # %% [markdown]
