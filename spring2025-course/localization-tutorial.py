@@ -518,13 +518,7 @@ cm
 # %%
 sensor_model = sensor_model_one.vmap(in_axes=(None, 0))
 
-# VIZ: one sensor interaction?
-
-# Due to the `vmap` combinator, the final argument `sensor_angles` is a vector.
-
 # %%
-sensor_settings["s_noise"] = 0.10
-
 key, sub_key = jax.random.split(key)
 cm, score, retval = sensor_model.propose(sub_key, (some_pose, sensor_angles))
 retval
@@ -813,13 +807,14 @@ def make_poses_grid(bounds, ns):
 
 
 # %%
+N_grid = jnp.array([50, 50, 20])
+N_keep = 1000  # keep the top this many out of the total `jnp.prod(N_grid)` of them
+
 key, sub_key = jax.random.split(key)
 
 camera_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 
-N_grid = jnp.array([50, 50, 20])
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
-N_keep = 1000
 def grid_search_handler(widget, k, readings):
     jitted_likelihood = jax.jit(
         lambda pose: likelihood_function(C["distance"].set(readings), pose)
@@ -868,14 +863,15 @@ camera_widget(
 # Although computing the grid takes work, afterwards accessing its members is cheap.  Instead of only taking the best fit, we can draw members from the grid with probability in proportion to their likelihood.  The result is the following sampler.
 
 # %%
+N_grid = jnp.array([50, 50, 20])
+N_samples = 100
+
 key, sub_key = jax.random.split(key)
 
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
-N_grid = jnp.array([50, 50, 20])
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 
-N_samples = 100
 def grid_approximation_handler(widget, k, readings):
     jitted_likelihood = jax.jit(
         lambda pose: likelihood_function(C["distance"].set(readings), pose)
@@ -910,11 +906,13 @@ camera_widget(
 # Here we first draw `N` pre-samples, assess them, and pick a single representative one in probability proportional to its likelihood, to obtain one sample.  The samples obtained this way are then more closely distributed to the posterior.
 
 # %%
+N_presamples = 1000
+N_samples = 100
+
 key, sub_key = jax.random.split(key)
 
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
-N_presamples = 1000
 def importance_resampling_handler(widget, k, readings):
     jitted_likelihood = jax.jit(
         lambda pose: likelihood_function(C["distance"].set(readings), pose)
@@ -946,11 +944,13 @@ camera_widget(
 # We could also explore the space with a random walk.  Here we guide the particle using the MH rule.
 
 # %%
+N_MH_steps = 1000
+N_samples = 100
+
 key, sub_key = jax.random.split(key)
 
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
-N_MH_steps = 1000
 def MCMC_handler(widget, k, readings):
     jitted_likelihood = jax.jit(
         lambda pose: likelihood_function(C["distance"].set(readings), pose)
@@ -1224,6 +1224,8 @@ default_motion_settings = {"p_noise": 0.5, "hd_noise": 2 * jnp.pi / 36.0}
 # The reader is especially encouraged, in the following widget, to drag the attempted step beyond a wall, to get a feel for how this model handles the physics.
 
 # %%
+N_samples = 50
+
 key, k1, k2 = jax.random.split(key, 3)
 
 def confidence_circle(p, p_noise):
@@ -1232,8 +1234,6 @@ def confidence_circle(p, p_noise):
         r=2.5 * p_noise,
         fill=Plot.constantly("95% confidence region"),
     ) + Plot.color_map({"95% confidence region": "rgba(255,0,0,0.25)"})
-
-N_samples = 50
 
 def update_confidence_circle(widget, _):
     step = pose_at(widget.state, "step")
@@ -1459,7 +1459,10 @@ selections = [
     S["hd"],
     S["p"] | S["hd"]
 ]
-[trace.project(k, sel) for k, sel in zip(jax.random.split(sub_key, len(selections)), selections) ]
+[
+    trace.project(k, sel)
+    for k, sel in zip(jax.random.split(sub_key, len(selections)), selections)
+]
 
 # %% [markdown]
 # Since the trace object has a lot going on, we use the Penzai visualization library to render the result. Click on the various nesting arrows to explore the structure.
@@ -1547,7 +1550,6 @@ def animate_full_trace(trace, frame_key=None):
     return animate_path_and_sensors(
         path, readings, motion_settings, frame_key=frame_key
     )
-
 
 key, sub_key = jax.random.split(key)
 tr = full_model.simulate(sub_key, (default_motion_settings,))
@@ -1780,7 +1782,6 @@ Plot.new(
     ],
 )
 
-
 # %% [markdown]
 # ## Generic strategies for inference
 #
@@ -1861,11 +1862,14 @@ Plot.new(
 # ment over rejection sampling: intead of indefinitely constructing and rejecting samples, we can guarantee to use at least some of them after a fixed time, and we are using the best guesses among these.
 
 # %%
+N_presamples = 2000
+N_samples = 20
+
 def importance_sample(
     key: PRNGKey, constraints: genjax.ChoiceMap, motion_settings, N: int, K: int
 ):
-    """Produce N importance samples of depth K from the model. That is, N times, we
-    generate K importance samples conditioned by the constraints, and categorically
+    """Produce K importance samples of depth N from the model. That is, K times, we
+    generate N importance samples conditioned by the constraints, and categorically
     select one of them."""
     key1, key2 = jax.random.split(key)
     samples, log_weights = jax.vmap(model_importance, in_axes=(0, None, None))(
@@ -1885,11 +1889,11 @@ jit_resample = jax.jit(importance_sample, static_argnums=(3, 4))
 
 key, sub_key = jax.random.split(key)
 low_posterior = jit_resample(
-    sub_key, constraints_low_deviation, motion_settings_low_deviation, 2000, 20
+    sub_key, constraints_low_deviation, motion_settings_low_deviation, N_presamples, N_samples
 )
 key, sub_key = jax.random.split(key)
 high_posterior = jit_resample(
-    sub_key, constraints_high_deviation, motion_settings_high_deviation, 2000, 20
+    sub_key, constraints_high_deviation, motion_settings_high_deviation, N_presamples, N_samples
 )
 
 
@@ -2129,18 +2133,19 @@ path_high_deviation = get_path(trace_high_deviation)
 observations_low_deviation = get_sensors(trace_low_deviation)
 observations_high_deviation = get_sensors(trace_high_deviation)
 
-
 # %% [markdown]
 # Below, totality of sampled partial paths are shown in green, those surviving to the end appearing the thickest, while the ground truth is shown in blue.
 
 # %%
+N_particles = 100
+
 def pose_list_to_plural_pose(pl: list[Pose]) -> Pose:
     return Pose(jnp.array([pose.p for pose in pl]), [pose.hd for pose in pl])
 
 key, sub_key = jax.random.split(key)
 smc_result = localization_sis(
     motion_settings_high_deviation, observations_high_deviation
-).run(sub_key, 100)
+).run(sub_key, N_particles)
 
 def plot_sis_result(ground_truth, smc_result):
     return (
@@ -2154,10 +2159,12 @@ def plot_sis_result(ground_truth, smc_result):
 
 plot_sis_result(path_high_deviation, smc_result)
 # %%
+N_particles = 20
+
 key, sub_key = jax.random.split(key)
 low_smc_result = localization_sis(
     motion_settings_low_deviation, observations_low_deviation
-).run(sub_key, 20)
+).run(sub_key, N_particles)
 
 plot_sis_result(path_low_deviation, low_smc_result)
 
@@ -2257,15 +2264,16 @@ def localization_sis_plus_grid_rejuv(motion_settings, M_grid, N_grid, observatio
 # The following plots compare the performance of this local grid search rejuvenation scheme (first) versus vanilla sequential importance sampling (second).
 
 # %%
+N_particles = 100
 M_grid = jnp.array([0.5, 0.5, jnp.pi/600.0])
 N_grid = jnp.array([15, 15, 15])
 
 key, sub_key = jax.random.split(key)
 smc_result = localization_sis_plus_grid_rejuv(
     motion_settings_high_deviation, M_grid, N_grid, observations_high_deviation
-).run(sub_key, 100)
+).run(sub_key, N_particles)
 imp_result = localization_sis(
     motion_settings_high_deviation, observations_high_deviation
-).run(sub_key, 100)
+).run(sub_key, N_particles)
 
 plot_sis_result(path_high_deviation, smc_result) | plot_sis_result(path_high_deviation, imp_result)
