@@ -896,7 +896,7 @@ camera_widget(
 )
 
 # %% [markdown]
-# On the other hand, one never sees any poses that do not belong to the grid.
+# Two shortcomings are clear.  One is that a single pose tends to dominate the samples, regardless of whether other poses in the grid seem to be plausible fits.  The other is that one never sees any poses that do not belong to the grid!
 
 # %% [markdown]
 # #### Importance resampling
@@ -1051,9 +1051,6 @@ robot_inputs, T = load_robot_program("robot_program.json")
 # Before we can visualize such a program, we will need to model robot motion.
 
 # %% [markdown]
-# POSSIBLE VIZ GOAL: user can manipulate a pose, and independently a control (vecor-like relative to it), with new pose in shadow.
-
-# %% [markdown]
 # ### Integrate a path from a starting pose and controls
 #
 # If the motion of the robot is determined in an ideal manner by the controls, then we may simply integrate to determine the resulting path.  Naïvely, this results in the following.
@@ -1081,8 +1078,27 @@ def integrate_controls_unphysical(robot_inputs):
     )[1]
 
 
-# %% [markdown]
-# POSSIBLE VIZ GOAL: user can manipulate a whole path, still ignoring walls.
+# %%
+def update_unphysical_path(widget, _):
+    start = pose_at(widget.state, "start")
+    widget.state.update({
+        "path": integrate_controls_unphysical(robot_inputs | {"start": start})
+    })
+
+(
+    (
+        world_plot
+        + pose_plots(js("$state.path"), color=Plot.constantly("path from integrating controls (UNphysical)"))
+        + Plot.color_map({"start pose": "blue", "path from integrating controls (UNphysical)": "green"})
+        + pose_widget("start", robot_inputs["start"], color=Plot.constantly("start pose"))
+    )
+    | Plot.html(js("`start = Pose([${$state.start.p.map((x) => x.toFixed(2))}], ${$state.start.hd.toFixed(2)})`"))
+    | Plot.initialState({
+        "path": integrate_controls_unphysical(robot_inputs)
+    })
+    | Plot.onChange({"start": update_unphysical_path})
+)
+
 
 # %% [markdown]
 # This code has the problem that it is **unphysical**: the walls in no way constrain the robot motion.
@@ -1158,33 +1174,26 @@ def integrate_controls_physical(robot_inputs):
 # %%
 path_integrated = integrate_controls_physical(robot_inputs)
 
-# %% [markdown]
-# ADD MORE INTERESTING VIZ
 
 # %%
-# Plot of the starting pose of the robot
-starting_pose_plot = pose_plots(
-    robot_inputs["start"],
-    color=Plot.constantly("given start pose"),
-) + Plot.color_map({"given start pose": "blue"})
-
-# Plot of the path from integrating controls
-controls_path_plot = Plot.dot(
-    [pose.p for pose in path_integrated],
-    fill=Plot.constantly("path from integrating controls"),
-) + Plot.color_map({"path from integrating controls": "#0c0"})
-
-# Plot of the clutters
-clutters_plot = (
-    [Plot.line(c[:, 0], fill=Plot.constantly("clutters")) for c in world["clutters"]],
-    Plot.color_map({"clutters": "magenta"}),
-)
+def update_physical_path(widget, _):
+    start = pose_at(widget.state, "start")
+    widget.state.update({
+        "path": integrate_controls_physical(robot_inputs | {"start": start})
+    })
 
 (
-    world_plot
-    + controls_path_plot
-    + starting_pose_plot
-    + {"title": "Given Data"}
+    (
+        world_plot
+        + pose_plots(js("$state.path"), color=Plot.constantly("path from integrating controls (physical)"))
+        + Plot.color_map({"start pose": "blue", "path from integrating controls (physical)": "green"})
+        + pose_widget("start", robot_inputs["start"], color=Plot.constantly("start pose"))
+    )
+    | Plot.html(js("`start = Pose([${$state.start.p.map((x) => x.toFixed(2))}], ${$state.start.hd.toFixed(2)})`"))
+    | Plot.initialState({
+        "path": integrate_controls_physical(robot_inputs)
+    })
+    | Plot.onChange({"start": update_physical_path})
 )
 
 # %% [markdown]
