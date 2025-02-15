@@ -1479,6 +1479,7 @@ trace = step_model.simulate(
     sub_key,
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
+
 key, sub_key = jax.random.split(key)
 rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
     sub_key, C["hd"].set(jnp.pi / 2.0)
@@ -1500,7 +1501,6 @@ rotated_trace, rotated_trace_weight_diff, _, _ = trace.update(
 # %% [markdown]
 # It is worth carefully thinking through a trickier instance of this.  Suppose instead, within the full path, we replaced the first step's stochastic choice of heading with some specific value.
 # %%
-
 key, sub_key = jax.random.split(key)
 trace = path_model.simulate(sub_key, (robot_inputs["start"], robot_inputs["controls"]))
 key, sub_key = jax.random.split(key)
@@ -1509,9 +1509,10 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
     sub_key, C[0, "hd"].set(jnp.pi / 2.0)
 )
 
-# %%
-# path_from_trace(tr) = tr.get_retval()[1]
+# %% [markdown]
+# Note carefully how, below, the green path has perfectly overdrawn the red path, except for the first pose.  Why has modifying the first pose not modified the rest of the path?  Trace through the execution of the code in detail to understand why.
 
+# %%
 (
     world_plot
     + [
@@ -1530,7 +1531,7 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
 # ### Visualizing traces
 
 # %% [markdown]
-# In addition to the handy data structure inspection `pz.ts.display(trace)` shown above, it is important to develop, ongoing in one's work, visualization code *as a function of the trace*, since all the information is on one place here.
+# In addition to the handy data structure inspection `pz.ts.display(trace)` shown above, it is important to develop, ongoing in one's work, visualization code *as a function of the trace*, since all the information is on one place here, and *in the context of the human meaning of the information*.
 
 # %%
 def get_path(trace):
