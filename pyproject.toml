@@ -1,23 +1,25 @@
-[tool.poetry]
-name = "genjax-localization-tutorial"
+[project]
+authors = [{name = "Aaron Steele", email = "eightysteele@gmail.com"}]
+name = "localization-tutorial"
+requires-python = ">= 3.11"
 version = "0.1.0"
-description = ""
-authors = ["Matthew Huebert <mhuebert@gmail.com>"]
-readme = "README.md"
-
-package-mode = false
-
-[tool.poetry.dependencies]
-python = ">=3.11,<3.13"
-jupytext = "^1.16.1"
-genjax = "0.9.1"
-genstudio = "2025.2.2"
-
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
-include = ["genjax-localization-tutorial"]
+dependencies = [ "genjax==0.9.1", "jax>=0.4.38,<0.5", "genstudio==2025.2.2"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["osx-arm64"]
+
+[tool.pixi.pypi-dependencies]
+localization_tutorial = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+jupytext = ">=1.16.7,<2"
+ipykernel = ">=6.29.5,<7"
+ipython = ">=8.32.0,<9"
+numpy = "<2.0.0"
