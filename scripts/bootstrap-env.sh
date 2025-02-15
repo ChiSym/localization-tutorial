@@ -17,6 +17,11 @@ PIPX_BIN="$HOME/.local/bin"
 BASHRC="$HOME/.bashrc"
 export PATH="$PIXI_BIN:$PIPX_BIN:$PATH"
 
+# Check if the host is osx-arm64
+is_osx_arm64() {
+  [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]
+}
+
 # Deactivates the "base" conda environment
 deactivate-conda() {
   if command -v conda >/dev/null 2>&1; then
@@ -47,9 +52,9 @@ update-pixi-global() {
 
 # Install global pixi environment
 install-pixi-global() {
-    info "Installing pixi global environment..."
-    pixi global add --environment genparse-dev \
-      make git gh rust coverage pdoc pre-commit ruff gcc "python<=3.11" 
+  info "Installing pixi global environment..."
+  pixi global install \
+    git gh coverage pdoc pre-commit ruff
 }
 
 # Authenticate gcloud
@@ -93,7 +98,7 @@ authenticate-github() {
 # Clone GenParse repo
 clone-repo() {
   info "Cloning repo..."
-  read -p "Enter the branch name activate [main]: " BRANCH_NAME
+  read -p "Enter the branch name to activate [main]: " BRANCH_NAME
   BRANCH_NAME=${BRANCH_NAME:-main}
   echo "Activating branch: $BRANCH_NAME"
   gh repo clone chisym/localization-tutorial || error_exit "Failed to clone genparse repository."
@@ -118,10 +123,10 @@ update-dependencies() {
 upgrade-system-packages() {
   info "Updating system packages..."
   if ! sudo apt update -y; then
-    exit_error "Failed to update package lists"
+    error_exit "Failed to update package lists"
   fi
   if ! sudo apt upgrade -y; then
-    exit_error "Failed to upgrade packages"
+    error_exit "Failed to upgrade packages"
   fi
 }
 
@@ -149,13 +154,18 @@ install() {
   configure-git
   authenticate-github
   if [[ $flag == "clone" ]]; then
-    clone-repo 
+    clone-repo
     cd localization-tutorial
   fi
   pre-commit-install-hooks
   update-dependencies
-  upgrade-system-packages
-  prompt_reboot
+
+  if is_osx_arm64; then
+    info "osx-arm64 detected: Skipping system package upgrade and reboot."
+  else
+    upgrade-system-packages
+    prompt_reboot
+  fi
 }
 
 parse-and-execute() {
