@@ -1379,7 +1379,14 @@ def full_model(motion_settings):
 
 
 # %% [markdown]
-# We now see the emergent tree structure of choice maps.  Under the layer `"steps"` (whose indirection allows us to vary `motion_settings` below), there are addresses `"pose"` and `"sensor"`, which respectively have sub-addresses `"hd", "p"` and `"distance"`.  At each leaf is an array resulting from the `scan` operation, in typical PyTree fashion.
+# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}(\ldots)$ and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
+# $$\begin{align*}
+# P_\text{full}(z_{0:T}, o_{0:T})
+# &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
+# &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
+#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
+# \end{align*}$$
+#
 
 # %%
 key, sub_key = jax.random.split(key)
@@ -1388,7 +1395,10 @@ cm
 
 
 # %% [markdown]
-# By this point, visualization is essential.  We will just get a quick picture here, and return shortly to a more principled approach.
+# We now see the emergent tree structure of choice maps.  Under the layer `"steps"` (whose indirection allows us to vary `motion_settings` below), there are addresses `"pose"` and `"sensor"`, which respectively have sub-addresses `"hd", "p"` and `"distance"`.  At each leaf is an array resulting from the `scan` operation, in typical PyTree fashion.
+
+# %% [markdown]
+# By this point, visualization is essential.  We will just get a quick picture here, and turn toward a more principled approach immediately thereafter.
 
 # %%
 def animate_path_and_sensors(path, readings, motion_settings, frame_key=None):
@@ -1403,7 +1413,7 @@ animate_path_and_sensors(retval[1], cm["steps", "sensor", "distance"], default_m
 # %% [markdown]
 # ## From choicemaps to traces
 #
-# Managing the tuple `(choic map, score, return value)` given to us by `propose` can get unwieldy: just see how the call to `animate_path_and_sensors` above needed to pick and choose from its members.  `Gen` saves us a bunch of trouble by wrapping these data—and more—into a structure called a *trace*.  We pause our reasoning about the robot in order to familiarize ourselves with them.
+# Managing the tuple `(choice map, score, return value)` given to us by `propose` can get unwieldy: just see how the call to `animate_path_and_sensors` above needed to pick and choose from these data.  `Gen` saves us a bunch of trouble by wrapping these data—and more—into a structure called a *trace*.  We pause our reasoning about the robot in order to familiarize ourselves with them.
 #
 # ### Sampling traces with `simulate`
 #
@@ -1416,6 +1426,7 @@ trace = step_model.simulate(
     sub_key,
     (default_motion_settings, robot_inputs["start"], robot_inputs["controls"][0]),
 )
+trace
 
 
 # %% [markdown]
@@ -1442,7 +1453,12 @@ trace.get_args()
 
 # %%
 key, sub_key = jax.random.split(key)
-selections = [genjax.Selection.none(), S["p"], S["hd"], S["p"] | S["hd"]]
+selections = [
+    genjax.Selection.none(),
+    S["p"],
+    S["hd"],
+    S["p"] | S["hd"]
+]
 [trace.project(k, sel) for k, sel in zip(jax.random.split(sub_key, len(selections)), selections) ]
 
 # %% [markdown]
@@ -1512,29 +1528,19 @@ rotated_first_step, rotated_first_step_weight_diff, _, _ = trace.update(
     + Plot.color_map({"some path": "green", "with heading modified": "red"})
 ) | html("span.tc", f"score ratio: {rotated_first_step_weight_diff}")
 
+
 # %% [markdown]
 # ### Visualizing traces
 
-# %%
-pz.ts.display(trace)
-
-
 # %% [markdown]
-# In the math picture, `full_model` corresponds to a distribution $\text{full}$ over its traces.  Such a trace is identified with of a pair $(z_{0:T}, o_{0:T})$ where $z_{0:T} \sim \text{path}(\ldots)$ and $o_t \sim \text{sensor}(z_t, \ldots)$ for $t=0,\ldots,T$.  The density of this trace is then
-# $$\begin{align*}
-# P_\text{full}(z_{0:T}, o_{0:T})
-# &= P_\text{path}(z_{0:T}) \cdot \prod\nolimits_{t=0}^T P_\text{sensor}(o_t) \\
-# &= \big(P_\text{start}(z_0)\ P_\text{sensor}(o_0)\big)
-#   \cdot \prod\nolimits_{t=1}^T \big(P_\text{step}(z_t)\ P_\text{sensor}(o_t)\big).
-# \end{align*}$$
-#
+# In addition to the handy data structure inspection `pz.ts.display(trace)` shown above, it is important to develop, ongoing in one's work, visualization code *as a function of the trace*, since all the information is on one place here.
 
 # %%
 def get_path(trace):
     return trace.get_retval()[1]
 
 def get_sensors(trace):
-    return trace.get_choices()["steps", :, "sensor", :, "distance"]
+    return trace.get_choices()["steps", "sensor", "distance"]
 
 def animate_full_trace(trace, frame_key=None):
     path = get_path(trace)
@@ -1588,7 +1594,7 @@ observations_high_deviation = get_sensors(trace_high_deviation)
 
 
 def constraint_from_sensors(readings):
-    return C["steps", :, "sensor", :, "distance"].set(readings)
+    return C["steps", "sensor", "distance"].set(readings)
 
 
 constraints_low_deviation = constraint_from_sensors(observations_low_deviation)
@@ -2132,7 +2138,7 @@ def localization_sis(motion_settings, observations):
         observations,
         lambda key, pose, control, observation: full_model_kernel.importance(
             key,
-            C["sensor", :, "distance"].set(observation),
+            C["sensor", "distance"].set(observation),
             (motion_settings, pose, control),
         ),
     )
@@ -2255,7 +2261,7 @@ def localization_sis_plus_grid_rejuv(motion_settings, M_grid, N_grid, observatio
         observations,
         importance=lambda key, pose, control, observation: full_model_kernel.importance(
             key,
-            C["sensor", :, "distance"].set(observation),
+            C["sensor", "distance"].set(observation),
             (motion_settings, pose, control),
         ),
         rejuvenate=lambda key, sample, pose, control, observation: run_SMCP3_step(
