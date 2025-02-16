@@ -2038,7 +2038,7 @@ packages:
 - pypi: .
   name: localization-tutorial
   version: 0.1.0
-  sha256: b4dd1acecea6f4a37ced5a989a1249649e6a3038686747caca30223a6a056f51
+  sha256: 33e938ca55162ae9ce3a35f7ce2bb1cf5f91aabf0dad8d020256eb42b1fdcb28
   requires_dist:
   - genstudio>=2025.2.2,<2026
   - genjax==0.9.1
@@ -2354,7 +2354,7 @@ packages:
   - python >=3.9
   license: ISC
   purls:
-  - pkg:pypi/pexpect?source=hash-mapping
+  - pkg:pypi/pexpect?source=compressed-mapping
   size: 53561
   timestamp: 1733302019362
 - conda: https://conda.anaconda.org/conda-forge/noarch/pickleshare-0.7.5-pyhd8ed1ab_1004.conda

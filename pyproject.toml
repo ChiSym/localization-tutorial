@@ -48,3 +48,6 @@ cudnn = ">=9.7.1.26,<10"
 
 [tool.pixi.feature.cuda.target.linux-64.pypi-dependencies]
 jax = { version = ">=0.4.35", extras = ["cuda12-local"] }
+
+[tool.ruff]
+exclude = ["spring2025-course/localization-tutorial.py"]

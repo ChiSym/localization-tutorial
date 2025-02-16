@@ -25,10 +25,13 @@ repos:
     hooks:
       - id: ruff
         types_or: [ python, pyi, jupyter ]
-        args: [ --fix ]
+        args: [ --fix, --force-exclude ]
+        exclude: 'spring2025-course/localization-tutorial\.py'
 
       - id: ruff-format
         types_or: [ python, pyi, jupyter ]
+        args: [ --force-exclude ]
+        exclude: 'spring2025-course/localization-tutorial\.py'
 
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.369
