@@ -1,23 +1,50 @@
-[tool.poetry]
-name = "genjax-localization-tutorial"
+[project]
+authors = [
+    {name = "Aaron Steele", email = "aaron@chi-fro.org"},
+    {name = "Vikash Mansinghka", email = "vkm@chi-fro.org"},
+]
+name = "localization-tutorial"
+requires-python = ">= 3.11"
 version = "0.1.0"
-description = ""
-authors = ["Matthew Huebert <mhuebert@gmail.com>"]
-readme = "README.md"
-
-package-mode = false
-
-[tool.poetry.dependencies]
-python = ">=3.11,<3.13"
-jupytext = "^1.16.1"
-genjax = "0.9.1"
-genstudio = "2025.2.2"
-
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
-include = ["genjax-localization-tutorial"]
+dependencies = ["genstudio>=2025.2.2,<2026", "genjax==0.9.1"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64"]
+
+[tool.pixi.activation.env]
+XLA_PYTHON_CLIENT_PREALLOCATE = "false"
+XLA_PYTHON_CLIENT_ALLOCATOR = "platform"
+
+[tool.pixi.environments]
+cpu = { features = ["cpu"], solve-group = "default" }
+gpu = { features = ["cuda"], solve-group = "default" }
+
+[tool.pixi.pypi-dependencies]
+localization_tutorial = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+
+
+[tool.pixi.dependencies]
+jupytext = ">=1.16.7,<2"
+ipykernel = ">=6.29.5,<7"
+ipython = ">=8.32.0,<9"
+numpy = "<2.0.0"
+
+[tool.pixi.feature.cpu.pypi-dependencies]
+jax = ">=0.4.24,<0.5.0"
+
+[tool.pixi.feature.cuda]
+platforms = ["linux-64", "osx-arm64"]
+system-requirements = { cuda = "12.4" }
+
+[tool.pixi.feature.cuda.target.linux-64.dependencies]
+cudnn = ">=9.7.1.26,<10"
+
+[tool.pixi.feature.cuda.target.linux-64.pypi-dependencies]
+jax = { version = ">=0.4.35", extras = ["cuda12-local"] }
