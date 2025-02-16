@@ -24,13 +24,6 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Install and configure Poetry
-        uses: snok/install-poetry@v1
-
-      - run: poetry self update && poetry self add keyrings.google-artifactregistry-auth
-
-      - run: poetry install
-
       - uses: jakebailey/pyright-action@v1
         with:
           version: 1.1.358
