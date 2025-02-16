@@ -536,14 +536,16 @@ cm
 # With a little wrapping, one gets a function of the same type as `ideal_sensor`, ignoring the PRNG key.
 
 # %%
-def noisy_sensor(key, pose):
-    return sensor_model.propose(key, (pose, sensor_angles))[2]
+def noisy_sensor(key, pose, s_noise=None):
+    if s_noise is None:
+        s_noise = sensor_settings["s_noise"]
+    return sensor_model.propose(key, (pose, sensor_angles, s_noise))[2]
 
 
 # %%
 def update_noisy_sensors(widget, _, label="pose"):
     k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
-    readings = noisy_sensor(k1, pose_at(widget.state, label))
+    readings = noisy_sensor(k1, pose_at(widget.state, label), s_noise=widget.state.noise_slider)
     widget.state.update({
         "k": jax.random.key_data(k2),
         (label + "_readings"): readings
@@ -557,12 +559,20 @@ key, k1, k2 = jax.random.split(key, 3)
         + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
         + pose_widget("pose", some_pose, color="blue")
     )
+    | Plot.Slider(
+        key="noise_slider",
+        label="Sensor noise:",
+        showValue=True,
+        range=[0.01, 2.5],
+        step=0.01,
+        init=0.1,
+    )
     | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
     | Plot.initialState({
         "k": jax.random.key_data(k1),
         "pose_readings": noisy_sensor(k2, some_pose)
-    }, sync={"k"})
-    | Plot.onChange({"pose": update_noisy_sensors})
+    }, sync={"k", "noise_slider"})
+    | Plot.onChange({"pose": update_noisy_sensors, "noise_slider": update_noisy_sensors})
 )
 
 # %% [markdown]
