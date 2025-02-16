@@ -10,7 +10,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.11.2
 #   kernelspec:
-#     display_name: .venv
+#     display_name: default
 #     language: python
 #     name: python3
 # ---
@@ -484,11 +484,11 @@ Plot.Frames([
 
 # %%
 @genjax.gen
-def sensor_model_one(pose, angle):
+def sensor_model_one(pose, angle, s_noise):
     return (
         genjax.normal(
             sensor_distance(pose.rotate(angle), world["walls"], sensor_settings["box_size"]),
-            sensor_settings["s_noise"],
+            s_noise,
         )
         @ "distance"
     )
@@ -503,7 +503,7 @@ def sensor_model_one(pose, angle):
 sensor_settings["s_noise"] = 0.10
 
 key, sub_key = jax.random.split(key)
-cm, score, retval = sensor_model_one.propose(sub_key, (some_pose, sensor_angles[1]))
+cm, score, retval = sensor_model_one.propose(sub_key, (some_pose, sensor_angles[1], sensor_settings["s_noise"]))
 retval
 
 # %% [markdown]
@@ -516,11 +516,11 @@ cm
 # We are interested in the related model whose *single* draw consists of a *vector* of the sensor distances computed across the vector of sensor angles.  This is exactly what we get using the GenJAX `vmap` combinator on GFs.
 
 # %%
-sensor_model = sensor_model_one.vmap(in_axes=(None, 0))
+sensor_model = sensor_model_one.vmap(in_axes=(None, 0, None))
 
 # %%
 key, sub_key = jax.random.split(key)
-cm, score, retval = sensor_model.propose(sub_key, (some_pose, sensor_angles))
+cm, score, retval = sensor_model.propose(sub_key, (some_pose, sensor_angles, sensor_settings["s_noise"]))
 retval
 
 # %% [markdown]
@@ -585,7 +585,7 @@ jnp.exp(score)
 # The construction of a log density function is automated by the `assess` semantics for generative functions.  This method is passed a choice map and a tuple of arguments, and it returns the log score plus the return value.
 
 # %%
-score, retval = sensor_model.assess(cm, (some_pose, sensor_angles))
+score, retval = sensor_model.assess(cm, (some_pose, sensor_angles, sensor_settings["s_noise"]))
 jnp.exp(score)
 
 
@@ -610,8 +610,10 @@ key, k1, k2, k3 = jax.random.split(key, 4)
 guess_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
 
-def likelihood_function(cm, pose):
-    return sensor_model.assess(cm, (pose, sensor_angles))[0]
+def likelihood_function(cm, pose, s_noise=None):
+    if s_noise is None:
+        s_noise = sensor_settings["s_noise"]
+    return sensor_model.assess(cm, (pose, sensor_angles, s_noise))[0]
 
 def on_guess_pose_chage(widget, _):
     update_ideal_sensors(widget, None, label="guess")
@@ -1363,9 +1365,11 @@ Plot.html([
 
 # %%
 @genjax.gen
-def full_model_kernel(motion_settings, state, control):
+def full_model_kernel(motion_settings, state, control, s_noise=None):
+    if s_noise is None:
+        s_noise = sensor_settings["s_noise"]
     pose = step_model(motion_settings, state, control) @ "pose"
-    sensor_model(pose, sensor_angles) @ "sensor"
+    sensor_model(pose, sensor_angles, s_noise) @ "sensor"
     return pose
 
 @genjax.gen
