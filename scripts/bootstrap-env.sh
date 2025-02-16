@@ -95,14 +95,14 @@ authenticate-github() {
   fi
 }
 
-# Clone GenParse repo
+# Clone repo
 clone-repo() {
   info "Cloning repo..."
   read -p "Enter the branch name to activate [main]: " BRANCH_NAME
   BRANCH_NAME=${BRANCH_NAME:-main}
   echo "Activating branch: $BRANCH_NAME"
-  gh repo clone chisym/localization-tutorial || error_exit "Failed to clone genparse repository."
-  pushd localization-tutorial || error_exit "Failed to enter genparse directory."
+  gh repo clone chisym/localization-tutorial || error_exit "Failed to clone repository."
+  pushd localization-tutorial || error_exit "Failed to enter directory."
   git checkout "$BRANCH_NAME" || error_exit "Failed to checkout branch $BRANCH_NAME"
   popd
 }
@@ -137,7 +137,7 @@ prompt_reboot() {
     sudo reboot
   else
     info "Reboot canceled!"
-    info "GenParse environments installed (but you still need to reboot)."
+    info "All environments installed (but you still need to reboot)."
     info "Remember to: 'source ~/.bashrc'"
   fi
 }
@@ -145,7 +145,7 @@ prompt_reboot() {
 install() {
   local flag="$1"
 
-  info "Installing GenParse global environment..."
+  info "Installing global environment..."
   touch "$BASHRC" || error_exit "Failed to create or access .bashrc."
   deactivate-conda
   install-pixi
