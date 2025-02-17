@@ -410,7 +410,7 @@ def ideal_sensor(sensor_angles, pose):
 # %%
 # Plot sensor data.
 
-def plot_sensors(pose, readings, sensor_angles):
+def plot_sensors(pose, readings, sensor_angles, show_legend=False):
     return Plot.Import("""export const projections = (pose, readings, angles) => Array.from({length: readings.length}, (_, i) => {
                 const angle = angles[i] + pose.hd
                 const reading = readings[i]
@@ -419,14 +419,14 @@ def plot_sensors(pose, readings, sensor_angles):
             refer=["projections"]) | (
         Plot.line(
             js("projections(%1, %2, %3).flatMap((projection, i) => [%1.p, projection, i])", pose, readings, sensor_angles),
-            stroke=Plot.constantly("sensor rays"),
+            opacity=0.1,
         ) +
         Plot.dot(
             js("projections(%1, %2, %3)", pose, readings, sensor_angles),
             r=2.75,
-            fill=Plot.constantly("sensor readings"),
+            fill="#f80"
         ) +
-        Plot.colorMap({"sensor rays": "rgba(0,0,0,0.1)", "sensor readings": "#f80"})
+        Plot.cond(show_legend, Plot.colorMap({"sensor rays": "rgb(0,0,0,0.1)", "sensor readings": "#f80"}) | Plot.colorLegend())
     )
 
 
@@ -443,7 +443,7 @@ def update_ideal_sensors(widget, _, label="pose"):
 (
     (
         world_plot
-        + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
+        + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles, show_legend=True)
         + pose_widget("pose", some_pose, color="blue")
     )
     | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
@@ -462,7 +462,7 @@ some_readings = jax.vmap(ideal_sensor, in_axes=(None, 0))(sensor_angles, some_po
 Plot.Frames([
     (
         world_plot
-        + plot_sensors(pose, some_readings[i], sensor_angles)
+        + plot_sensors(pose, some_readings[i], sensor_angles, show_legend=True)
         + pose_plots(pose)
     )
     for i, pose in enumerate(some_poses)
@@ -1620,7 +1620,7 @@ def animate_bare_sensors(path, plot_base=[]):
         def plt(readings):
             return Plot.new(
                 plot_base or Plot.domain([0, 20]),
-                plot_sensors(pose, readings, sensor_angles),
+                plot_sensors(pose, readings, sensor_angles, show_legend=True),
                 {"width": 400, "height": 400},
             )
 
