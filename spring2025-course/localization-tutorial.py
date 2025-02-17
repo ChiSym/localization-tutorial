@@ -328,10 +328,10 @@ Plot.html("Click-drag on pose to change location.  Shift-click-drag on pose to c
 key = jax.random.key(0)
 
 def random_pose(k):
-    p_hd = jax.random.uniform(k, shape=(3,),
+    p_array = jax.random.uniform(k, shape=(3,),
         minval=world["bounding_box"][:, 0],
         maxval=world["bounding_box"][:, 1])
-    return Pose(p_hd[0:2], p_hd[2])
+    return Pose(p_array[0:2], p_array[2])
 
 some_poses = jax.vmap(random_pose)(jax.random.split(key, 20))
 
@@ -734,6 +734,94 @@ def on_target_pose_chage(widget, _):
             "target": on_target_pose_chage,
             "noise_slider": on_target_pose_chage,
     })
+)
+
+
+# %% [markdown]
+# ### Likelihood, prior, and posterior
+#
+# A common way to proceed is to consider the likelihood function—the probability density of the fixed observations, with varying pose parameter—as the basis of our reasoning.  Reasoning about the likelihood can be recovered as a special case of reasoning about the *posterior distribution* over the pose parameter, where the *prior* distribution was uniform with respect to some reference volume over poses.
+#
+# We introduce here three choices of prior, to illustrate how inference depends on it.
+
+# %%
+# Uniform prior over the whole map.
+# (This is just a recapitulation of `random_pose` from above.)
+@genjax.gen
+def uniform_pose_prior():
+    p_array = (
+        genjax.uniform(world["bounding_box"][:, 0], world["bounding_box"][:, 1])
+        @ "p_array"
+    )
+    return Pose(p_array[0:2], p_array[2])
+
+# Even mixture of uniform priors over two rooms.
+@genjax.gen
+def room1_pose_prior():
+    p_array = (
+        genjax.uniform([12.83, 11.19, -jnp.pi], [15.81, 15.26, +jnp.pi])
+        @ "p_array"
+    )
+    return Pose(p_array[0:2], p_array[2])
+@genjax.gen
+def room2_pose_prior():
+    p_array = (
+        genjax.uniform([15.73, 5.79, -jnp.pi], [18.9, 9.57, +jnp.pi])
+        @ "p_array"
+    )
+    return Pose(p_array[0:2], p_array[2])
+two_room_pose_prior = genjax.mix(room1_pose_prior, room2_pose_prior)(jnp.zeros(2), (), ())
+
+# Prior localized around a single pose
+pose_for_localized_prior = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
+spread_of_localized_prior = (1.0, 0.75)
+@genjax.gen
+def localized_pose_prior():
+    p_p = (
+        genjax.mv_normal_diag(
+            pose_for_localized_prior.p,
+            spread_of_localized_prior[0] * jnp.ones(2)
+        )
+        @ "p"
+    )
+    p_hd = (
+        genjax.normal(
+            pose_for_localized_prior.hd,
+            spread_of_localized_prior[1]
+        )
+        @ "hd"
+    )
+    return Pose(p_p, p_hd)
+
+
+# %%
+key, sub_key = jax.random.split(key)
+some_poses = jax.vmap(lambda k: uniform_pose_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
+
+(
+    world_plot
+    + pose_plots(some_poses, color="green")
+    + {"title": "Some poses"}
+)
+
+# %%
+key, sub_key = jax.random.split(key)
+some_poses = jax.vmap(lambda k: two_room_pose_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
+
+(
+    world_plot
+    + pose_plots(some_poses, color="green")
+    + {"title": "Some poses"}
+)
+
+# %%
+key, sub_key = jax.random.split(key)
+some_poses = jax.vmap(lambda k: localized_pose_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
+
+(
+    world_plot
+    + pose_plots(some_poses, color="green")
+    + {"title": "Some poses"}
 )
 
 
