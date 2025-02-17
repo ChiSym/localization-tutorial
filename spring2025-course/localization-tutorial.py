@@ -550,7 +550,7 @@ def noise_slider(key="noise_slider", label="Sensor noise =", init=None):
         key=key,
         label=label,
         showValue=True,
-        range=[0.01, 2.5],
+        range=[0.01, 5.0],
         step=0.01,
     ) | Plot.initialState({key: init}, sync={key})
 
@@ -1590,6 +1590,9 @@ animate_full_trace(tr)
 #
 # Let us generate some fixed synthetic motion data that, for pedagogical purposes, we will work with as if it were the actual path of the robot.  We will generate two versions, one each with low or high motion deviation.
 # %%
+# HERE is a great place to update `sensor_settings["s_noise"]` if you wish,
+# about to construct some "data" using it.
+
 motion_settings_low_deviation = {
     "p_noise": 0.05,
     "hd_noise": (1 / 10.0) * 2 * jnp.pi / 360,
@@ -2153,6 +2156,8 @@ def localization_sis(motion_settings, s_noise, observations):
 # %%
 # This cell is included for convenience:
 # Rerun it to try out the SMC examples on a fresh instance of the problem.
+
+# Set `sensor_settings["s_noise"]` here, if you wish.
 
 key, k_low, k_high = jax.random.split(key, 3)
 trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation, None))
