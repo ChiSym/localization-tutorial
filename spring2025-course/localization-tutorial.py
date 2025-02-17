@@ -543,28 +543,28 @@ cm
 def noisy_sensor(key, pose, s_noise):
     return sensor_model.propose(key, (pose, sensor_angles, s_noise))[2]
 
-def noise_slider(s_noise):
-    if s_noise is None:
-        s_noise = sensor_settings["s_noise"]
+def noise_slider(key="noise_slider", label="Sensor noise =", init=None):
+    if init is None:
+        init = sensor_settings["s_noise"]
     return Plot.Slider(
-        key="noise_slider",
-        label="Sensor noise:",
+        key=key,
+        label=label,
         showValue=True,
         range=[0.01, 2.5],
         step=0.01,
-    ) | Plot.initialState({"noise_slider": s_noise}, sync={"noise_slider"})
+    ) | Plot.initialState({key: init}, sync={key})
 
-
-# %%
-def update_noisy_sensors(widget, _, label="pose"):
+def update_noisy_sensors(widget, _, pose_key="pose", slider_key="noise_slider"):
     k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
-    readings = noisy_sensor(k1, pose_at(widget.state, label), float(widget.state.noise_slider))
+    readings = noisy_sensor(k1, pose_at(widget.state, pose_key), float(getattr(widget.state, slider_key)))
     widget.state.update({
         "k": jax.random.key_data(k2),
-        (label + "_readings"): readings
+        (pose_key + "_readings"): readings
     })
     return readings
 
+
+# %%
 key, k1, k2 = jax.random.split(key, 3)
 (
     (
@@ -572,7 +572,7 @@ key, k1, k2 = jax.random.split(key, 3)
         + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
         + pose_widget("pose", some_pose, color="blue")
     )
-    | noise_slider(None)
+    | noise_slider()
     | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
     | Plot.initialState({
         "k": jax.random.key_data(k1),
@@ -640,7 +640,7 @@ def on_guess_pose_chage(widget, _):
     })
 
 def on_target_pose_chage(widget, _):
-    update_noisy_sensors(widget, None, label="target")
+    update_noisy_sensors(widget, None, pose_key="target")
     widget.state.update({"likelihood":
         likelihood_function(
             C["distance"].set(widget.state.target_readings),
@@ -697,6 +697,7 @@ def on_target_pose_chage(widget, _):
         ),
         cols=2
     )
+    | noise_slider()
     | (
         Plot.html([
             "div",
@@ -728,7 +729,8 @@ def on_target_pose_chage(widget, _):
         }, sync={"k", "target_readings"})
     | Plot.onChange({
             "guess": on_guess_pose_chage,
-            "target": on_target_pose_chage
+            "target": on_target_pose_chage,
+            "noise_slider": on_target_pose_chage,
     })
 )
 
@@ -746,7 +748,7 @@ def on_camera_button(button_handler):
             "k": jax.random.key_data(k1),
             "target": widget.state.camera,
         })
-        readings = update_noisy_sensors(widget, None, label="target")
+        readings = update_noisy_sensors(widget, None, pose_key="target", slider_key="world_noise")
         button_handler(widget, k2, readings)
         widget.state.update({
             "target_exists": True,
@@ -770,6 +772,8 @@ def camera_widget(
             )
             + pose_widget("camera", camera_pose, color="blue")
         )
+        | noise_slider(key="world_noise", label="World/data noise = ")
+        | noise_slider(key="model_noise", label="Model/inference noise = ")
         | (
             Plot.html([
                 "div",
@@ -834,8 +838,9 @@ camera_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 def grid_search_handler(widget, k, readings):
+    model_noise = float(getattr(widget.state, "model_noise"))
     jitted_likelihood = jax.jit(
-        lambda pose: likelihood_function(C["distance"].set(readings), pose)
+        lambda pose: likelihood_function(C["distance"].set(readings), pose, model_noise)
     )
     likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
     best = jnp.argsort(likelihoods, descending=True)[0:N_keep]
@@ -891,8 +896,9 @@ camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 
 def grid_approximation_handler(widget, k, readings):
+    model_noise = float(getattr(widget.state, "model_noise"))
     jitted_likelihood = jax.jit(
-        lambda pose: likelihood_function(C["distance"].set(readings), pose)
+        lambda pose: likelihood_function(C["distance"].set(readings), pose, model_noise)
     )
     likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
 
@@ -932,8 +938,9 @@ key, sub_key = jax.random.split(key)
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
 def importance_resampling_handler(widget, k, readings):
+    model_noise = float(getattr(widget.state, "model_noise"))
     jitted_likelihood = jax.jit(
-        lambda pose: likelihood_function(C["distance"].set(readings), pose)
+        lambda pose: likelihood_function(C["distance"].set(readings), pose, model_noise)
     )
 
     def importance_resample_one(k):
@@ -970,8 +977,9 @@ key, sub_key = jax.random.split(key)
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
 def MCMC_handler(widget, k, readings):
+    model_noise = float(getattr(widget.state, "model_noise"))
     jitted_likelihood = jax.jit(
-        lambda pose: likelihood_function(C["distance"].set(readings), pose)
+        lambda pose: likelihood_function(C["distance"].set(readings), pose, model_noise)
     )
 
     def do_MH_step(pose_likelihood, k):
