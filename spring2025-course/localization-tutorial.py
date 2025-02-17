@@ -435,10 +435,13 @@ def pose_at(state, label):
     pose_dict = getattr(state, label)
     return Pose(jnp.array(pose_dict["p"]), jnp.array(pose_dict["hd"]))
 
-def update_ideal_sensors(widget, _, label="pose"):
+def update_ideal_sensors(widget, label):
     widget.state.update({
         (label + "_readings"): ideal_sensor(sensor_angles, pose_at(widget.state, label))
     })
+
+def on_pose_change(widget, _):
+    update_ideal_sensors(widget, "pose")
 
 (
     (
@@ -450,7 +453,7 @@ def update_ideal_sensors(widget, _, label="pose"):
     | Plot.initialState({
         "pose_readings": ideal_sensor(sensor_angles, some_pose)
     })
-    | Plot.onChange({"pose": update_ideal_sensors})
+    | Plot.onChange({"pose": on_pose_change})
 )
 
 # %% [markdown]
@@ -539,9 +542,9 @@ cm
 def noisy_sensor(key, pose, s_noise):
     return sensor_model.propose(key, (pose, sensor_angles, s_noise))[2]
 
-def noise_slider(key="noise_slider", label="Sensor noise =", init=None):
-    if init is None:
-        init = sensor_settings["s_noise"]
+
+# %%
+def noise_slider(key, label, init):
     return Plot.Slider(
         key=key,
         label=label,
@@ -550,7 +553,7 @@ def noise_slider(key="noise_slider", label="Sensor noise =", init=None):
         step=0.01,
     ) | Plot.initialState({key: init}, sync={key})
 
-def update_noisy_sensors(widget, _, pose_key="pose", slider_key="noise_slider"):
+def update_noisy_sensors(widget, pose_key, slider_key):
     k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
     readings = noisy_sensor(k1, pose_at(widget.state, pose_key), float(getattr(widget.state, slider_key)))
     widget.state.update({
@@ -561,6 +564,9 @@ def update_noisy_sensors(widget, _, pose_key="pose", slider_key="noise_slider"):
 
 
 # %%
+def on_slider_change(widget, _):
+    update_noisy_sensors(widget, "pose", "noise_slider")
+
 key, k1, k2 = jax.random.split(key, 3)
 (
     (
@@ -568,13 +574,13 @@ key, k1, k2 = jax.random.split(key, 3)
         + plot_sensors(js("$state.pose"), js("$state.pose_readings"), sensor_angles)
         + pose_widget("pose", some_pose, color="blue")
     )
-    | noise_slider()
+    | noise_slider("noise_slider", "Sensor noise =", sensor_settings["s_noise"])
     | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
     | Plot.initialState({
         "k": jax.random.key_data(k1),
         "pose_readings": noisy_sensor(k2, some_pose, sensor_settings["s_noise"])
     }, sync={"k"})
-    | Plot.onChange({"pose": update_noisy_sensors, "noise_slider": update_noisy_sensors})
+    | Plot.onChange({"pose": on_slider_change, "noise_slider": on_slider_change})
 )
 
 # %% [markdown]
@@ -626,7 +632,7 @@ def likelihood_function(cm, pose, s_noise):
     return sensor_model.assess(cm, (pose, sensor_angles, s_noise))[0]
 
 def on_guess_pose_chage(widget, _):
-    update_ideal_sensors(widget, None, label="guess")
+    update_ideal_sensors(widget, "guess")
     widget.state.update({"likelihood":
         likelihood_function(
             C["distance"].set(widget.state.target_readings),
@@ -636,7 +642,7 @@ def on_guess_pose_chage(widget, _):
     })
 
 def on_target_pose_chage(widget, _):
-    update_noisy_sensors(widget, None, pose_key="target")
+    update_noisy_sensors(widget, "target", "noise_slider")
     widget.state.update({"likelihood":
         likelihood_function(
             C["distance"].set(widget.state.target_readings),
@@ -693,7 +699,7 @@ def on_target_pose_chage(widget, _):
         ),
         cols=2
     )
-    | noise_slider()
+    | noise_slider("noise_slider", "Sensor noise =", sensor_settings["s_noise"])
     | (
         Plot.html([
             "div",
@@ -744,7 +750,7 @@ def on_camera_button(button_handler):
             "k": jax.random.key_data(k1),
             "target": widget.state.camera,
         })
-        readings = update_noisy_sensors(widget, None, pose_key="target", slider_key="world_noise")
+        readings = update_noisy_sensors(widget, "target", "world_noise")
         button_handler(widget, k2, readings)
         widget.state.update({
             "target_exists": True,
@@ -768,8 +774,8 @@ def camera_widget(
             )
             + pose_widget("camera", camera_pose, color="blue")
         )
-        | noise_slider(key="world_noise", label="World/data noise = ")
-        | noise_slider(key="model_noise", label="Model/inference noise = ")
+        | noise_slider("world_noise", "World/data noise = ", sensor_settings["s_noise"])
+        | noise_slider("model_noise", "Model/inference noise = ", sensor_settings["s_noise"])
         | (
             Plot.html([
                 "div",
