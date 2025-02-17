@@ -483,8 +483,14 @@ Plot.Frames([
 # Its declarative model in `Gen` starts with the case of just one sensor reading:
 
 # %%
+sensor_settings["s_noise"] = 0.10
+
 @genjax.gen
 def sensor_model_one(pose, angle, s_noise):
+    # Handle optional/default values in this admittedly hacky way,
+    # so as not to confuse JAX's JIT.
+    if s_noise is None:
+        s_noise = sensor_settings["s_noise"]
     return (
         genjax.normal(
             sensor_distance(pose.rotate(angle), world["walls"], sensor_settings["box_size"]),
@@ -500,10 +506,8 @@ def sensor_model_one(pose, angle, s_noise):
 # We draw samples from `sensor_model_one` with `propose` semantics.  Since this operation is stochastic, the method is called with a PRNG key in addition to a tuple of model arguments.  The code is then run, performing the required draws from the sampling operations.  The random draws get organized according to their addresses, forming a *choice map* data structure.  This choice map, a score (to be discussed below), and the return value are all returned by `propose`.
 
 # %%
-sensor_settings["s_noise"] = 0.10
-
 key, sub_key = jax.random.split(key)
-cm, score, retval = sensor_model_one.propose(sub_key, (some_pose, sensor_angles[1], sensor_settings["s_noise"]))
+cm, score, retval = sensor_model_one.propose(sub_key, (some_pose, sensor_angles[0], None))
 retval
 
 # %% [markdown]
@@ -520,7 +524,7 @@ sensor_model = sensor_model_one.vmap(in_axes=(None, 0, None))
 
 # %%
 key, sub_key = jax.random.split(key)
-cm, score, retval = sensor_model.propose(sub_key, (some_pose, sensor_angles, sensor_settings["s_noise"]))
+cm, score, retval = sensor_model.propose(sub_key, (some_pose, sensor_angles, None))
 retval
 
 # %% [markdown]
@@ -536,16 +540,14 @@ cm
 # With a little wrapping, one gets a function of the same type as `ideal_sensor`, ignoring the PRNG key.
 
 # %%
-def noisy_sensor(key, pose, s_noise=None):
-    if s_noise is None:
-        s_noise = sensor_settings["s_noise"]
+def noisy_sensor(key, pose, s_noise):
     return sensor_model.propose(key, (pose, sensor_angles, s_noise))[2]
 
 
 # %%
 def update_noisy_sensors(widget, _, label="pose"):
     k1, k2 = jax.random.split(jax.random.wrap_key_data(widget.state.k))
-    readings = noisy_sensor(k1, pose_at(widget.state, label), s_noise=widget.state.noise_slider)
+    readings = noisy_sensor(k1, pose_at(widget.state, label), widget.state.noise_slider)
     widget.state.update({
         "k": jax.random.key_data(k2),
         (label + "_readings"): readings
@@ -570,7 +572,7 @@ key, k1, k2 = jax.random.split(key, 3)
     | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
     | Plot.initialState({
         "k": jax.random.key_data(k1),
-        "pose_readings": noisy_sensor(k2, some_pose)
+        "pose_readings": noisy_sensor(k2, some_pose, None)
     }, sync={"k", "noise_slider"})
     | Plot.onChange({"pose": update_noisy_sensors, "noise_slider": update_noisy_sensors})
 )
@@ -595,7 +597,7 @@ jnp.exp(score)
 # The construction of a log density function is automated by the `assess` semantics for generative functions.  This method is passed a choice map and a tuple of arguments, and it returns the log score plus the return value.
 
 # %%
-score, retval = sensor_model.assess(cm, (some_pose, sensor_angles, sensor_settings["s_noise"]))
+score, retval = sensor_model.assess(cm, (some_pose, sensor_angles, None))
 jnp.exp(score)
 
 
@@ -620,9 +622,7 @@ key, k1, k2, k3 = jax.random.split(key, 4)
 guess_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 target_pose = Pose(jnp.array([15.0, 4.0]), jnp.array(-1.6))
 
-def likelihood_function(cm, pose, s_noise=None):
-    if s_noise is None:
-        s_noise = sensor_settings["s_noise"]
+def likelihood_function(cm, pose, s_noise):
     return sensor_model.assess(cm, (pose, sensor_angles, s_noise))[0]
 
 def on_guess_pose_chage(widget, _):
@@ -630,7 +630,8 @@ def on_guess_pose_chage(widget, _):
     widget.state.update({"likelihood":
         likelihood_function(
             C["distance"].set(widget.state.target_readings),
-            pose_at(widget.state, "guess")
+            pose_at(widget.state, "guess"),
+            None
         )
     })
 
@@ -639,7 +640,8 @@ def on_target_pose_chage(widget, _):
     widget.state.update({"likelihood":
         likelihood_function(
             C["distance"].set(widget.state.target_readings),
-            pose_at(widget.state, "guess")
+            pose_at(widget.state, "guess"),
+            None
         )
     })
 
@@ -716,8 +718,8 @@ def on_target_pose_chage(widget, _):
         {
             "k": jax.random.key_data(k1),
             "guess_readings": ideal_sensor(sensor_angles, guess_pose),
-            "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose)),
-            "likelihood": likelihood_function(C["distance"].set(initial_target_readings), guess_pose),
+            "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose, None)),
+            "likelihood": likelihood_function(C["distance"].set(initial_target_readings), guess_pose, None),
             "show_target_pose": False,
         }, sync={"k", "target_readings"})
     | Plot.onChange({
@@ -1375,17 +1377,18 @@ Plot.html([
 
 # %%
 @genjax.gen
-def full_model_kernel(motion_settings, state, control, s_noise=None):
-    if s_noise is None:
-        s_noise = sensor_settings["s_noise"]
+def full_model_kernel(motion_settings, s_noise, state, control):
     pose = step_model(motion_settings, state, control) @ "pose"
     sensor_model(pose, sensor_angles, s_noise) @ "sensor"
     return pose
 
+# Recall that supplying `None` for `s_noise` ultimately leads to the value `sensor_settings["s_niose"]` being used.
 @genjax.gen
-def full_model(motion_settings):
+def full_model(motion_settings, s_noise):
     return (
-        full_model_kernel.partial_apply(motion_settings)
+        full_model_kernel
+        .partial_apply(motion_settings)
+        .partial_apply(s_noise)
         .map(diag)
         .scan()(robot_inputs["start"], robot_inputs["controls"])
         @ "steps"
@@ -1404,7 +1407,7 @@ def full_model(motion_settings):
 
 # %%
 key, sub_key = jax.random.split(key)
-cm, score, retval = full_model.propose(sub_key, (default_motion_settings,))
+cm, score, retval = full_model.propose(sub_key, (default_motion_settings, None))
 cm
 
 
@@ -1566,7 +1569,7 @@ def animate_full_trace(trace, frame_key=None):
     )
 
 key, sub_key = jax.random.split(key)
-tr = full_model.simulate(sub_key, (default_motion_settings,))
+tr = full_model.simulate(sub_key, (default_motion_settings, None))
 
 animate_full_trace(tr)
 
@@ -1585,8 +1588,8 @@ motion_settings_high_deviation = {
 }
 
 key, k_low, k_high = jax.random.split(key, 3)
-trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
-trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation,))
+trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation, None))
+trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation, None))
 
 animate_full_trace(trace_low_deviation)
 # %%
@@ -1656,13 +1659,13 @@ model_importance = jax.jit(full_model.importance)
 
 key, sub_key = jax.random.split(key)
 sample, log_weight = model_importance(
-    sub_key, constraints_low_deviation, (motion_settings_low_deviation,)
+    sub_key, constraints_low_deviation, (motion_settings_low_deviation, None)
 )
 animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # %%
 key, sub_key = jax.random.split(key)
 sample, log_weight = model_importance(
-    sub_key, constraints_high_deviation, (motion_settings_high_deviation,)
+    sub_key, constraints_high_deviation, (motion_settings_high_deviation, None)
 )
 animate_full_trace(sample) | html("span.tc", f"log_weight: {log_weight}")
 # %% [markdown]
@@ -1726,13 +1729,13 @@ key, sub_key = jax.random.split(key)
 trace_path_integrated_observations_low_deviation, w_low = model_importance(
     sub_key,
     constraints_path_integrated_observations_low_deviation,
-    (motion_settings_low_deviation,),
+    (motion_settings_low_deviation, None),
 )
 key, sub_key = jax.random.split(key)
 trace_path_integrated_observations_high_deviation, w_high = model_importance(
     sub_key,
     constraints_path_integrated_observations_high_deviation,
-    (motion_settings_high_deviation,),
+    (motion_settings_high_deviation, None),
 )
 
 Plot.Row(*[
@@ -1770,7 +1773,7 @@ traces_generated_low_deviation, low_weights = jax.vmap(
 )(
     jax.random.split(sub_key, N_samples),
     constraints_low_deviation,
-    (motion_settings_low_deviation,),
+    (motion_settings_low_deviation, None),
 )
 
 traces_generated_high_deviation, high_weights = jax.vmap(
@@ -1778,7 +1781,7 @@ traces_generated_high_deviation, high_weights = jax.vmap(
 )(
     jax.random.split(sub_key, N_samples),
     constraints_high_deviation,
-    (motion_settings_high_deviation,),
+    (motion_settings_high_deviation, None),
 )
 
 low_deviation_paths = jax.vmap(get_path)(traces_generated_low_deviation)
@@ -1880,14 +1883,14 @@ N_presamples = 2000
 N_samples = 20
 
 def importance_sample(
-    key: PRNGKey, constraints: genjax.ChoiceMap, motion_settings, N: int, K: int
+    key: PRNGKey, constraints: genjax.ChoiceMap, motion_settings, s_noise, N: int, K: int
 ):
     """Produce K importance samples of depth N from the model. That is, K times, we
     generate N importance samples conditioned by the constraints, and categorically
     select one of them."""
     key1, key2 = jax.random.split(key)
     samples, log_weights = jax.vmap(model_importance, in_axes=(0, None, None))(
-        jax.random.split(key1, N * K), constraints, (motion_settings,)
+        jax.random.split(key1, N * K), constraints, (motion_settings, s_noise)
     )
     winners = jax.vmap(genjax.categorical.sampler)(
         jax.random.split(key2, K), jnp.reshape(log_weights, (K, N))
@@ -1899,15 +1902,15 @@ def importance_sample(
     return selected
 
 
-jit_resample = jax.jit(importance_sample, static_argnums=(3, 4))
+jit_resample = jax.jit(importance_sample, static_argnums=(4, 5))
 
 key, sub_key = jax.random.split(key)
 low_posterior = jit_resample(
-    sub_key, constraints_low_deviation, motion_settings_low_deviation, N_presamples, N_samples
+    sub_key, constraints_low_deviation, motion_settings_low_deviation, None, N_presamples, N_samples
 )
 key, sub_key = jax.random.split(key)
 high_posterior = jit_resample(
-    sub_key, constraints_high_deviation, motion_settings_high_deviation, N_presamples, N_samples
+    sub_key, constraints_high_deviation, motion_settings_high_deviation, None, N_presamples, N_samples
 )
 
 
@@ -2122,7 +2125,7 @@ class SISwithRejuvenation(Generic[StateT, ControlT]):
         return SISwithRejuvenation.Result(N, end, samples, indices)
 
 # %%
-def localization_sis(motion_settings, observations):
+def localization_sis(motion_settings, s_noise, observations):
     return SISwithRejuvenation(
         robot_inputs["start"],
         robot_inputs["controls"],
@@ -2130,7 +2133,7 @@ def localization_sis(motion_settings, observations):
         lambda key, pose, control, observation: full_model_kernel.importance(
             key,
             C["sensor", "distance"].set(observation),
-            (motion_settings, pose, control),
+            (motion_settings, s_noise, pose, control),
         ),
     )
 
@@ -2140,8 +2143,8 @@ def localization_sis(motion_settings, observations):
 # Rerun it to try out the SMC examples on a fresh instance of the problem.
 
 key, k_low, k_high = jax.random.split(key, 3)
-trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation,))
-trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation,))
+trace_low_deviation = full_model.simulate(k_low, (motion_settings_low_deviation, None))
+trace_high_deviation = full_model.simulate(k_high, (motion_settings_high_deviation, None))
 path_low_deviation = get_path(trace_low_deviation)
 path_high_deviation = get_path(trace_high_deviation)
 observations_low_deviation = get_sensors(trace_low_deviation)
@@ -2158,7 +2161,7 @@ def pose_list_to_plural_pose(pl: list[Pose]) -> Pose:
 
 key, sub_key = jax.random.split(key)
 smc_result = localization_sis(
-    motion_settings_high_deviation, observations_high_deviation
+    motion_settings_high_deviation, None, observations_high_deviation
 ).run(sub_key, N_particles)
 
 def plot_sis_result(ground_truth, smc_result):
@@ -2177,7 +2180,7 @@ N_particles = 20
 
 key, sub_key = jax.random.split(key)
 low_smc_result = localization_sis(
-    motion_settings_low_deviation, observations_low_deviation
+    motion_settings_low_deviation, None, observations_low_deviation
 ).run(sub_key, N_particles)
 
 plot_sis_result(path_low_deviation, low_smc_result)
@@ -2208,7 +2211,7 @@ def run_SMCP3_step(fwd_proposal, bwd_proposal, key, sample, proposal_args):
 # the unnormalized posterior density over steps.
 @genjax.gen
 def grid_fwd_proposal(sample, args):
-    base_grid, observation, model_args = args
+    base_grid, observation, full_model_args = args
     observation_cm = C["sensor", "distance"].set(observation)
 
     log_weights = jax.vmap(
@@ -2217,7 +2220,7 @@ def grid_fwd_proposal(sample, args):
                 observation_cm
                 | C["pose", "p"].set(p + sample.get_retval().p)
                 | C["pose", "hd"].set(hd + sample.get_retval().hd),
-                model_args
+                full_model_args
             )[0]
     )(*base_grid)
     fwd_index = genjax.categorical(log_weights) @ "fwd_index"
@@ -2233,14 +2236,15 @@ def grid_fwd_proposal(sample, args):
 # Backwards proposal simply guesses according to the prior over steps, nothing fancier.
 @genjax.gen
 def grid_bwd_proposal(new_sample, args):
-    base_grid, _, model_args = args
+    base_grid, _, full_model_args = args
+    step_model_args = (full_model_args[0], full_model_args[2], full_model_args[3])
 
     log_weights = jax.vmap(
         lambda p, hd:
             step_model.assess(
                 C["p"].set(p + new_sample.get_retval().p)
                 | C["hd"].set(hd + new_sample.get_retval().hd),
-                model_args
+                step_model_args
             )[0]
     )(*base_grid)
 
@@ -2250,7 +2254,7 @@ def grid_bwd_proposal(new_sample, args):
 
 
 # %%
-def localization_sis_plus_grid_rejuv(motion_settings, M_grid, N_grid, observations):
+def localization_sis_plus_grid_rejuv(motion_settings, s_noise, M_grid, N_grid, observations):
     base_grid = make_poses_grid_array(
         jnp.array([M_grid / 2.0, M_grid / 2.0]).T,
         N_grid
@@ -2262,14 +2266,14 @@ def localization_sis_plus_grid_rejuv(motion_settings, M_grid, N_grid, observatio
         importance=lambda key, pose, control, observation: full_model_kernel.importance(
             key,
             C["sensor", "distance"].set(observation),
-            (motion_settings, pose, control),
+            (motion_settings, s_noise, pose, control),
         ),
         rejuvenate=lambda key, sample, pose, control, observation: run_SMCP3_step(
             grid_fwd_proposal,
             grid_bwd_proposal,
             key,
             sample,
-            (base_grid, observation, (motion_settings, pose, control))
+            (base_grid, observation, (motion_settings, s_noise, pose, control))
         ),
     )
 
@@ -2284,10 +2288,10 @@ N_grid = jnp.array([15, 15, 15])
 
 key, sub_key = jax.random.split(key)
 smc_result = localization_sis_plus_grid_rejuv(
-    motion_settings_high_deviation, M_grid, N_grid, observations_high_deviation
+    motion_settings_high_deviation, None, M_grid, N_grid, observations_high_deviation
 ).run(sub_key, N_particles)
 imp_result = localization_sis(
-    motion_settings_high_deviation, observations_high_deviation
+    motion_settings_high_deviation, None, observations_high_deviation
 ).run(sub_key, N_particles)
 
 plot_sis_result(path_high_deviation, smc_result) | plot_sis_result(path_high_deviation, imp_result)
