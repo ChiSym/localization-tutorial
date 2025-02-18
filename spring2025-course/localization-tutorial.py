@@ -758,6 +758,10 @@ whole_map_prior = uniform_pose.partial_apply(
     world["bounding_box"][:, 1]
 )
 
+def whole_map_cm_builder(pose):
+    return C["p_array"].set(pose.as_array())
+
+
 # %%
 key, sub_key = jax.random.split(key)
 some_poses = jax.vmap(lambda k: whole_map_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
@@ -781,6 +785,11 @@ def two_room_prior():
     )
     return uniform_pose(mins, maxes) @ "uniform"
 
+# The two rooms are disjoint so the flip is deterministic.
+# The posterior density is incorrect by a *constant* factor of 1/2.
+def two_room_cm_builder(pose):
+    return C["flip"].set(jnp.array(pose.p[1] > 10.0)) | C["uniform", "p_array"].set(pose.as_array())
+
 
 # %%
 key, sub_key = jax.random.split(key)
@@ -795,7 +804,7 @@ some_poses = jax.vmap(lambda k: two_room_prior.simulate(k, ()))(jax.random.split
 # %%
 # Prior localized around a single pose
 pose_for_localized_prior = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
-spread_of_localized_prior = (1.0, 0.75)
+spread_of_localized_prior = (0.1, 0.75)
 @genjax.gen
 def localized_prior():
     p = (
@@ -814,6 +823,9 @@ def localized_prior():
     )
     return Pose(p, hd)
 
+def localized_cm_builder(pose):
+    return C["p"].set(pose.p) | C["hd"].set(pose.hd)
+
 
 # %%
 key, sub_key = jax.random.split(key)
@@ -829,15 +841,14 @@ some_poses = jax.vmap(lambda k: localized_prior.simulate(k, ()))(jax.random.spli
 # We also introduce joint models, whose densities serve as unnormalized posterior densities.
 
 # %%
-prior_dispatch = {
-    "whole_map": whole_map_prior,
-    "two_room": two_room_prior,
-    "localized": localized_prior,
+model_dispatch = {
+    "whole_map": (whole_map_prior, whole_map_cm_builder),
+    "two_room": (two_room_prior, two_room_cm_builder),
+    "localized": (localized_prior, localized_cm_builder),
 }
 
-def make_posterior_density_fn(widget, readings):
-    prior = prior_dispatch[widget.state.prior]
-    model_noise = float(getattr(widget.state, "model_noise"))
+def make_posterior_density_fn(prior_label, readings, model_noise):
+    prior, cm_builder = model_dispatch[prior_label]
     @genjax.gen
     def joint_model():
         pose = prior() @ "pose"
@@ -845,8 +856,7 @@ def make_posterior_density_fn(widget, readings):
     return jax.jit(
         lambda pose:
             joint_model.assess(
-                # !!! The hangup is right here.  I cannot `assess` at a `pose`, because this is an incomplete choice map for each model.
-                C["pose"].set(pose) | C["sensor", "distance"].set(readings),
+                C["pose"].set(cm_builder(pose)) | C["sensor", "distance"].set(readings),
                 ()
             )[0]
     )
@@ -969,9 +979,10 @@ camera_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 def grid_search_handler(widget, k, readings):
-    jitted_posterior = make_posterior_density_fn(widget, readings)
-    posterior_densities = jax.vmap(jitted_posterior)(grid_poses)
+    model_noise = float(getattr(widget.state, "model_noise"))
+    jitted_posterior = make_posterior_density_fn(widget.state.prior, readings, model_noise)
 
+    posterior_densities = jax.vmap(jitted_posterior)(grid_poses)
     best = jnp.argsort(posterior_densities, descending=True)[0:N_keep]
     widget.state.update({
         "grid_poses": grid_poses[best].as_dict(),
@@ -1025,9 +1036,10 @@ camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 
 def grid_approximation_handler(widget, k, readings):
-    jitted_posterior = make_posterior_density_fn(widget, readings)
-    posterior_densities = jax.vmap(jitted_posterior)(grid_poses)
+    model_noise = float(getattr(widget.state, "model_noise"))
+    jitted_posterior = make_posterior_density_fn(widget.state.prior, readings, model_noise)
 
+    posterior_densities = jax.vmap(jitted_posterior)(grid_poses)
     def grid_sample_one(k):
         return grid_poses[genjax.categorical.sample(k, posterior_densities)]
 
@@ -1064,7 +1076,8 @@ key, sub_key = jax.random.split(key)
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
 def importance_resampling_handler(widget, k, readings):
-    jitted_posterior = make_posterior_density_fn(widget, readings)
+    model_noise = float(getattr(widget.state, "model_noise"))
+    jitted_posterior = make_posterior_density_fn(widget.state.prior, readings, model_noise)
 
     def importance_resample_one(k):
         k1, k2 = jax.random.split(k)
@@ -1100,7 +1113,8 @@ key, sub_key = jax.random.split(key)
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
 def MCMC_handler(widget, k, readings):
-    jitted_posterior = make_posterior_density_fn(widget, readings)
+    model_noise = float(getattr(widget.state, "model_noise"))
+    jitted_posterior = make_posterior_density_fn(widget.state.prior, readings, model_noise)
 
     def do_MH_step(pose_likelihood, k):
         pose, likelihood = pose_likelihood
