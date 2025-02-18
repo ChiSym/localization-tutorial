@@ -401,7 +401,7 @@ def make_sensor_angles(sensor_settings):
 
 sensor_angles = make_sensor_angles(sensor_settings)
 
-def ideal_sensor(sensor_angles, pose):
+def ideal_sensor(pose):
     return jax.vmap(
         lambda angle: sensor_distance(pose.rotate(angle), world["walls"], sensor_settings["box_size"])
     )(sensor_angles)
@@ -437,7 +437,7 @@ def pose_at(state, label):
 
 def update_ideal_sensors(widget, label):
     widget.state.update({
-        (label + "_readings"): ideal_sensor(sensor_angles, pose_at(widget.state, label))
+        (label + "_readings"): ideal_sensor(pose_at(widget.state, label))
     })
 
 def on_pose_change(widget, _):
@@ -451,7 +451,7 @@ def on_pose_change(widget, _):
     )
     | Plot.html(js("`pose = Pose([${$state.pose.p.map((x) => x.toFixed(2))}], ${$state.pose.hd.toFixed(2)})`"))
     | Plot.initialState({
-        "pose_readings": ideal_sensor(sensor_angles, some_pose)
+        "pose_readings": ideal_sensor(some_pose)
     })
     | Plot.onChange({"pose": on_pose_change})
 )
@@ -460,7 +460,7 @@ def on_pose_change(widget, _):
 # Some pictures in case of limited interactivity:
 
 # %%
-some_readings = jax.vmap(ideal_sensor, in_axes=(None, 0))(sensor_angles, some_poses)
+some_readings = jax.vmap(ideal_sensor)(some_poses)
 
 Plot.Frames([
     (
@@ -724,7 +724,7 @@ def on_target_pose_chage(widget, _):
     | Plot.initialState(
         {
             "k": jax.random.key_data(k1),
-            "guess_readings": ideal_sensor(sensor_angles, guess_pose),
+            "guess_readings": ideal_sensor(guess_pose),
             "target_readings": (initial_target_readings := noisy_sensor(k3, target_pose, sensor_settings["s_noise"])),
             "likelihood": likelihood_function(C["distance"].set(initial_target_readings), guess_pose, sensor_settings["s_noise"]),
             "show_target_pose": False,
@@ -747,56 +747,77 @@ def on_target_pose_chage(widget, _):
 # %%
 # Uniform prior over the whole map.
 # (This is just a recapitulation of `random_pose` from above.)
+
 @genjax.gen
-def uniform_pose_prior():
-    p_array = (
-        genjax.uniform(world["bounding_box"][:, 0], world["bounding_box"][:, 1])
-        @ "p_array"
-    )
+def uniform_pose(mins, maxes):
+    p_array = genjax.uniform(mins, maxes) @ "p_array"
     return Pose(p_array[0:2], p_array[2])
 
+whole_map_prior = uniform_pose.partial_apply(
+    world["bounding_box"][:, 0],
+    world["bounding_box"][:, 1]
+)
+
+# %%
+key, sub_key = jax.random.split(key)
+some_poses = jax.vmap(lambda k: whole_map_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
+
+(
+    world_plot
+    + pose_plots(some_poses, color="green")
+    + {"title": "Some poses"}
+)
+
+
+# %%
 # Even mixture of uniform priors over two rooms.
 @genjax.gen
-def room1_pose_prior():
-    p_array = (
-        genjax.uniform([12.83, 11.19, -jnp.pi], [15.81, 15.26, +jnp.pi])
-        @ "p_array"
+def two_room_prior():
+    flip = genjax.flip(0.5) @ "flip"
+    mins, maxes = jnp.where(
+        flip,
+        jnp.array([[12.83, 11.19, -jnp.pi], [15.81, 15.26, +jnp.pi]]),
+        jnp.array([[15.73, 5.79, -jnp.pi], [18.9, 9.57, +jnp.pi]])
     )
-    return Pose(p_array[0:2], p_array[2])
-@genjax.gen
-def room2_pose_prior():
-    p_array = (
-        genjax.uniform([15.73, 5.79, -jnp.pi], [18.9, 9.57, +jnp.pi])
-        @ "p_array"
-    )
-    return Pose(p_array[0:2], p_array[2])
-two_room_pose_prior = genjax.mix(room1_pose_prior, room2_pose_prior)(jnp.zeros(2), (), ())
+    return uniform_pose(mins, maxes) @ "uniform"
 
+
+# %%
+key, sub_key = jax.random.split(key)
+some_poses = jax.vmap(lambda k: two_room_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
+
+(
+    world_plot
+    + pose_plots(some_poses, color="green")
+    + {"title": "Some poses"}
+)
+
+# %%
 # Prior localized around a single pose
 pose_for_localized_prior = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 spread_of_localized_prior = (1.0, 0.75)
 @genjax.gen
-def localized_pose_prior():
-    p_p = (
+def localized_prior():
+    p = (
         genjax.mv_normal_diag(
             pose_for_localized_prior.p,
             spread_of_localized_prior[0] * jnp.ones(2)
         )
         @ "p"
     )
-    p_hd = (
+    hd = (
         genjax.normal(
             pose_for_localized_prior.hd,
             spread_of_localized_prior[1]
         )
         @ "hd"
     )
-    return Pose(p_p, p_hd)
+    return Pose(p, hd)
 
 
 # %%
 key, sub_key = jax.random.split(key)
-some_poses = jax.vmap(lambda k: uniform_pose_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
+some_poses = jax.vmap(lambda k: localized_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
 
 (
     world_plot
@@ -804,31 +825,39 @@ some_poses = jax.vmap(lambda k: uniform_pose_prior.simulate(k, ()))(jax.random.s
     + {"title": "Some poses"}
 )
 
-# %%
-key, sub_key = jax.random.split(key)
-some_poses = jax.vmap(lambda k: two_room_pose_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
-
-(
-    world_plot
-    + pose_plots(some_poses, color="green")
-    + {"title": "Some poses"}
-)
+# %% [markdown]
+# We also introduce joint models, whose densities serve as unnormalized posterior densities.
 
 # %%
-key, sub_key = jax.random.split(key)
-some_poses = jax.vmap(lambda k: localized_pose_prior.simulate(k, ()))(jax.random.split(sub_key, 100)).get_retval()
+prior_dispatch = {
+    "whole_map": whole_map_prior,
+    "two_room": two_room_prior,
+    "localized": localized_prior,
+}
 
-(
-    world_plot
-    + pose_plots(some_poses, color="green")
-    + {"title": "Some poses"}
-)
+def make_posterior_density_fn(widget, readings):
+    prior = prior_dispatch[widget.state.prior]
+    model_noise = float(getattr(widget.state, "model_noise"))
+    @genjax.gen
+    def joint_model():
+        pose = prior() @ "pose"
+        sensor = sensor_model(pose, sensor_angles, model_noise) @ "sensor"
+    return jax.jit(
+        lambda pose:
+            joint_model.assess(
+                # !!! The hangup is right here.  I cannot `assess` at a `pose`, because this is an incomplete choice map for each model.
+                C["pose"].set(pose) | C["sensor", "distance"].set(readings),
+                ()
+            )[0]
+    )
 
 
 # %% [markdown]
 # ### Visualization setup
 #
-# The next few widgets all operate on the same principle.  A manipulable "camera" pose is shown.  Hitting the button at bottom fixes the "target" pose to the camera pose and samples a batch of sensor readings at the target.  It then performs some computation (optimization or inference) on those sensor readings and displays everything: the target, its sensor readings, and the computation results.
+# The next few widgets all operate on the same principle.  A manipulable "camera" pose is shown.  Hitting the button makes the following happen:
+# * The "target" pose gets fixed to the camera pose and a batch of sensor readings is sampled at the target.  (The first slider controls the noise in the taking of these readings.)
+# * Then some computation (optimization or inference) is performed on these sensor readings and everything gets displayed: the target, its sensor readings, and the computation results.  (The second slider controls the sensor noise assumed by the model in this computation.)
 
 # %%
 def on_camera_button(button_handler):
@@ -863,6 +892,17 @@ def camera_widget(
             + pose_widget("camera", camera_pose, color="blue")
         )
         | noise_slider("world_noise", "World/data noise = ", sensor_settings["s_noise"])
+        | Plot.html([
+            "p",
+            "Prior:",
+            [
+                "select",
+                {"onChange": js("(e) => $state.prior = e.target.value")},
+                ["option", {"value": "whole_map", "selected": "True"}, "whole map"],
+                ["option", {"value": "two_room"}, "two room"],
+                ["option", {"value": "localized"}, "localized"],
+            ]
+        ])
         | noise_slider("model_noise", "Model/inference noise = ", sensor_settings["s_noise"])
         | (
             Plot.html([
@@ -894,8 +934,9 @@ def camera_widget(
                 "target_exists": False,
                 "target": {"p": None, "hd": None},
                 "target_readings": [],
+                "prior": "whole_map"
             } | initial_state,
-            sync=({"k", "target", "camera_readings"} | sync))
+            sync=({"k", "target", "camera_readings", "prior"} | sync))
     )
 
 
@@ -928,12 +969,10 @@ camera_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 def grid_search_handler(widget, k, readings):
-    model_noise = float(getattr(widget.state, "model_noise"))
-    jitted_likelihood = jax.jit(
-        lambda pose: likelihood_function(C["distance"].set(readings), pose, model_noise)
-    )
-    likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
-    best = jnp.argsort(likelihoods, descending=True)[0:N_keep]
+    jitted_posterior = make_posterior_density_fn(widget, readings)
+    posterior_densities = jax.vmap(jitted_posterior)(grid_poses)
+
+    best = jnp.argsort(posterior_densities, descending=True)[0:N_keep]
     widget.state.update({
         "grid_poses": grid_poses[best].as_dict(),
         "best": grid_poses[best[0]].as_dict()
@@ -966,7 +1005,7 @@ camera_widget(
 # Note how the purple pose is a long way from summarizing the ambiguity in the solution set.
 
 # %% [markdown]
-# ### Doing inference
+# ### Doing probabilistic inference
 #
 # We show some ways one might approach this problem probabilistically: our answers to "Where might the robot be?" will all be given in the form of probability distributions.  Moreover, these distributions will be embodied as generative samplers.
 
@@ -986,14 +1025,11 @@ camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 
 def grid_approximation_handler(widget, k, readings):
-    model_noise = float(getattr(widget.state, "model_noise"))
-    jitted_likelihood = jax.jit(
-        lambda pose: likelihood_function(C["distance"].set(readings), pose, model_noise)
-    )
-    likelihoods = jax.vmap(jitted_likelihood)(grid_poses)
+    jitted_posterior = make_posterior_density_fn(widget, readings)
+    posterior_densities = jax.vmap(jitted_posterior)(grid_poses)
 
     def grid_sample_one(k):
-        return grid_poses[genjax.categorical.sample(k, likelihoods)]
+        return grid_poses[genjax.categorical.sample(k, posterior_densities)]
 
     grid_samples = jax.vmap(grid_sample_one)(jax.random.split(k, N_samples))
     widget.state.update({
@@ -1028,16 +1064,13 @@ key, sub_key = jax.random.split(key)
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
 def importance_resampling_handler(widget, k, readings):
-    model_noise = float(getattr(widget.state, "model_noise"))
-    jitted_likelihood = jax.jit(
-        lambda pose: likelihood_function(C["distance"].set(readings), pose, model_noise)
-    )
+    jitted_posterior = make_posterior_density_fn(widget, readings)
 
     def importance_resample_one(k):
         k1, k2 = jax.random.split(k)
         presamples = jax.vmap(random_pose)(jax.random.split(k1, N_presamples))
-        likelihoods = jax.vmap(jitted_likelihood)(presamples)
-        return presamples[genjax.categorical.sample(k2, likelihoods)]
+        posterior_densities = jax.vmap(jitted_posterior)(presamples)
+        return presamples[genjax.categorical.sample(k2, posterior_densities)]
 
     grid_samples = jax.vmap(importance_resample_one)(jax.random.split(k, N_samples))
     widget.state.update({
@@ -1067,10 +1100,7 @@ key, sub_key = jax.random.split(key)
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
 def MCMC_handler(widget, k, readings):
-    model_noise = float(getattr(widget.state, "model_noise"))
-    jitted_likelihood = jax.jit(
-        lambda pose: likelihood_function(C["distance"].set(readings), pose, model_noise)
-    )
+    jitted_posterior = make_posterior_density_fn(widget, readings)
 
     def do_MH_step(pose_likelihood, k):
         pose, likelihood = pose_likelihood
@@ -1081,12 +1111,12 @@ def MCMC_handler(widget, k, readings):
         maxs = jnp.minimum(p_hd + delta, world["bounding_box"][:, 1])
         new_p_hd = jax.random.uniform(k1, shape=(3,), minval=mins, maxval=maxs)
         new_pose = Pose(new_p_hd[0:2], new_p_hd[2])
-        new_likelihood = jitted_likelihood(new_pose)
-        accept = (jnp.log(genjax.uniform.sample(k2)) <= new_likelihood - likelihood)
+        new_posterior = jitted_posterior(new_pose)
+        accept = (jnp.log(genjax.uniform.sample(k2)) <= new_posterior - likelihood)
         return (
             jax.tree.map(
                 lambda x, y: jnp.where(accept, x, y),
-                (new_pose, new_likelihood),
+                (new_pose, posterior),
                 (pose, likelihood)
             ),
             None
@@ -1094,8 +1124,8 @@ def MCMC_handler(widget, k, readings):
     def sample_MH_one(k):
         k1, k2 = jax.random.split(k)
         start_pose = random_pose(k1)
-        start_likelihood = jitted_likelihood(start_pose)
-        return jax.lax.scan(do_MH_step, (start_pose, start_likelihood), jax.random.split(k2, N_MH_steps))[0][0]
+        start_posterior = jitted_posterior(start_pose)
+        return jax.lax.scan(do_MH_step, (start_pose, start_posterior), jax.random.split(k2, N_MH_steps))[0][0]
 
     grid_samples = jax.vmap(sample_MH_one)(jax.random.split(k, N_samples))
     widget.state.update({
@@ -1823,10 +1853,10 @@ def constraint_from_path(path):
 
 constraints_path_integrated = constraint_from_path(path_integrated)
 constraints_path_integrated_observations_low_deviation = (
-    constraints_path_integrated ^ constraints_low_deviation
+    constraints_path_integrated | constraints_low_deviation
 )
 constraints_path_integrated_observations_high_deviation = (
-    constraints_path_integrated ^ constraints_high_deviation
+    constraints_path_integrated | constraints_high_deviation
 )
 
 key, sub_key = jax.random.split(key)
@@ -2081,8 +2111,8 @@ def path_to_polyline(path, **options):
 # readings at once. The results were better than guesses, but not accurate, in the
 # high deviation setting.
 #
-# The technique we will use here discards steps with low likelihood at each step, and
-# reinforces steps with high likelihood, allowing better particles to proportionately
+# The technique we will use here discards steps with low posterior density at each step, and
+# reinforces steps with high posterior density, allowing better particles to proportionately
 # search more of the probability space while discarding unpromising particles.
 #
 # The following class attempts to generatlize this idea:
