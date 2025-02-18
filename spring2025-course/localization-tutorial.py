@@ -919,12 +919,12 @@ def camera_widget(
                 "div",
                 {"class": "flex flex-col gap-4"},
                 [
-                    "button",  # Changed from 'input' to 'button'
+                    "button",
                     {
                         "class": "w-24 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 active:bg-blue-700",
                         "onClick": on_camera_button(button_handler)
                     },
-                    button_label  # Text as child element, not label
+                    button_label
                 ]
             ])
             & Plot.html([
@@ -977,11 +977,11 @@ key, sub_key = jax.random.split(key)
 
 camera_pose = Pose(jnp.array([2.0, 16]), jnp.array(0.0))
 
-grid_poses = make_poses_grid(world["bounding_box"], N_grid)
 def grid_search_handler(widget, k, readings):
     model_noise = float(getattr(widget.state, "model_noise"))
     jitted_posterior = make_posterior_density_fn(widget.state.prior, readings, model_noise)
 
+    grid_poses = make_poses_grid(world["bounding_box"], N_grid)
     posterior_densities = jax.vmap(jitted_posterior)(grid_poses)
     best = jnp.argsort(posterior_densities, descending=True)[0:N_keep]
     widget.state.update({
@@ -1033,12 +1033,11 @@ key, sub_key = jax.random.split(key)
 
 camera_pose = Pose(jnp.array([15.13, 14.16]), jnp.array(1.5))
 
-grid_poses = make_poses_grid(world["bounding_box"], N_grid)
-
 def grid_approximation_handler(widget, k, readings):
     model_noise = float(getattr(widget.state, "model_noise"))
     jitted_posterior = make_posterior_density_fn(widget.state.prior, readings, model_noise)
 
+    grid_poses = make_poses_grid(world["bounding_box"], N_grid)
     posterior_densities = jax.vmap(jitted_posterior)(grid_poses)
     def grid_sample_one(k):
         return grid_poses[genjax.categorical.sample(k, posterior_densities)]
