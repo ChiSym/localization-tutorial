@@ -953,9 +953,9 @@ def camera_widget(
 # %% [markdown]
 # ### Doing optimization
 #
-# A common response is to optimize the likelihood.  The field of optimization is vast, but it is not the path for us here, so we just take a quick look.
+# A common response is to optimize the posterior density.  The field of optimization is vast, but it is not the path for us here, so we just take a quick look.
 #
-# The idea here is just to search for the good poses by brute force, ranging over a suitable discretization grid of the map.  So in this widget, the button fires a sweep over a grid of possible poses, computing the likelihood of each.  The top `N_keep` are kept, and shown with opacity proportional to their position in that sublist.  Moreover, the best fit is shown in purple.
+# The idea here is just to search for the good poses by brute force, ranging over a suitable discretization grid of the map.  So in this widget, the button fires a sweep over a grid of possible poses, computing the posterior density of each.  The top `N_keep` are kept, and shown with opacity proportional to their position in that sublist.  Moreover, the best fit is shown in purple.
 
 # %%
 def make_grid(bounds, ns):
@@ -1023,7 +1023,7 @@ camera_widget(
 # %% [markdown]
 # #### Grid approximation sampler
 #
-# Although computing the grid takes work, afterwards accessing its members is cheap.  Instead of only taking the best fit, we can draw members from the grid with probability in proportion to their likelihood.  The result is the following sampler.
+# Although computing the grid takes work, afterwards accessing its members is cheap.  Instead of only taking the best fit, we can draw members from the grid with probability in proportion to their posterior density.  The result is the following sampler.
 
 # %%
 N_grid = jnp.array([50, 50, 20])
@@ -1065,7 +1065,7 @@ camera_widget(
 #
 # What if we need not be systematic—and instead we just try a bunch of points, uniformly over all poses, instead of constrained to a grid?
 #
-# Here we first draw `N` pre-samples, assess them, and pick a single representative one in probability proportional to its likelihood, to obtain one sample.  The samples obtained this way are then more closely distributed to the posterior.
+# Here we first draw `N` pre-samples, assess them, and pick a single representative one in probability proportional to its posterior density, to obtain one sample.  The samples obtained this way are then more closely distributed to the posterior.
 
 # %%
 N_presamples = 1000
@@ -1116,8 +1116,8 @@ def MCMC_handler(widget, k, readings):
     model_noise = float(getattr(widget.state, "model_noise"))
     jitted_posterior = make_posterior_density_fn(widget.state.prior, readings, model_noise)
 
-    def do_MH_step(pose_likelihood, k):
-        pose, likelihood = pose_likelihood
+    def do_MH_step(pose_posterior_density, k):
+        pose, posterior_density = pose_posterior_density
         k1, k2 = jax.random.split(k)
         p_hd = pose.as_array()
         delta = jnp.array([0.5, 0.5, 0.1])
@@ -1126,12 +1126,12 @@ def MCMC_handler(widget, k, readings):
         new_p_hd = jax.random.uniform(k1, shape=(3,), minval=mins, maxval=maxs)
         new_pose = Pose(new_p_hd[0:2], new_p_hd[2])
         new_posterior = jitted_posterior(new_pose)
-        accept = (jnp.log(genjax.uniform.sample(k2)) <= new_posterior - likelihood)
+        accept = (jnp.log(genjax.uniform.sample(k2)) <= new_posterior - posterior_density)
         return (
             jax.tree.map(
                 lambda x, y: jnp.where(accept, x, y),
                 (new_pose, posterior),
-                (pose, likelihood)
+                (pose, posterior_density)
             ),
             None
         )
