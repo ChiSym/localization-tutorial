@@ -181,6 +181,28 @@ click = [0,0]
     )
 ).display_as("widget")
 
+
+# %%
+def on_click(widget, event):
+    global walls
+    x, y = round(event["x"]), round(event["y"])
+    walls = walls.at[x, y].set(1)
+    widget.state.update({"walls": walls})
+    print(widget.state.walls)
+
+walls = jnp.zeros((GRID_SIZE, GRID_SIZE))
+
+(Plot.initial_state({"walls": walls}, sync=True)
+    + Plot.ellipse([[0,0]], r=0.1, fill="red")
+    + plot_walls(walls)
+    + Plot.domain([0, GRID_SIZE], [0, GRID_SIZE])
+    + Plot.aspectRatio(1)
+    + Plot.width(500)
+    + Plot.events(
+        onClick=on_click, onDraw=on_click
+    )
+).display_as("widget")
+
 # %% [markdown]
 # ## Prior
 #
@@ -188,7 +210,7 @@ click = [0,0]
 # We will keep it very simple here and assume that each pixel is a wall with probability 0.5.
 
 # %%
-PRIOR_WALL_PROB = 0.5
+PRIOR_WALL_PROB = 0.1
 
 walls_prior = genjax.flip.repeat(n=GRID_SIZE).repeat(n=GRID_SIZE)(PRIOR_WALL_PROB)
 
@@ -285,7 +307,7 @@ def unit_dir(angle):
 # It makes use of the JAX functions `jax.lax.cond` (instead of `if`) and `jax.vmap` (instead of a for-loop) because we want JAX to JIT-compile and vectorize these operations.
 
 # %%
-NUM_DIRECTIONS = 50
+NUM_DIRECTIONS = 100
 ANGLES = jnp.arange(0, 1, 1 / NUM_DIRECTIONS) * 2 * jnp.pi
 MAX_DISTANCE = GRID_SIZE * 2
 
@@ -478,6 +500,13 @@ walls = jnp.mean(posterior_samples["walls"], axis=0)
 make_plot(world_and_sensors_plot(CENTER, walls, observed_readings))
 
 
+# %%
+display(posterior_samples)
+Plot.Frames([
+    make_plot(world_and_sensors_plot(CENTER, posterior_samples["walls", i], observed_readings))
+    for i in range(num_samples)
+])
+
 # %% [markdown]
 # ## Simple Gibbs sampling
 #
@@ -626,7 +655,8 @@ animation = Plot.Frames([
     for sample in gibbs_chain
 ])
 display(animation)
-plot = make_plot(plot_walls(jnp.mean(gibbs_chain, axis=0)) + ground_truth_plot + sensors_plot)
+gibbs_mean = jnp.mean(gibbs_chain, axis=0)
+plot = make_plot(plot_walls(gibbs_mean) + ground_truth_plot + sensors_plot)
 display(plot)
 
 
@@ -634,12 +664,75 @@ display(plot)
 # Here it only takes 2 iterations before all the walls at the bottom are (correctly) removed.
 
 # %% [markdown]
-# ## Block Gibbs sampling (NOT READY FOR REVIEW)
+# ## Block Gibbs sampling
+
+# %%
+def generate_all_possible_blocks(block_size):
+    values = jnp.meshgrid(*(jnp.arange(2) for _ in range(block_size * block_size)))
+    values = [value.flatten() for value in values]
+    values = jnp.stack(values, axis=1)
+    return values.reshape(-1, block_size, block_size)
+
+generate_all_possible_blocks(3)
+
+
+# %%
+BLOCK_SIZE = 2
+
+def gibbs_update_block(key, pos, readings, walls, i, j):
+    blocks = generate_all_possible_blocks(BLOCK_SIZE) # shape = (2^(BLOCK_SIZE^2), BLOCK_SIZE, BLOCK_SIZE)
+    chm = C["readings"].set(readings) ^ C["walls"].set(walls)
+    (weights, (walls_changed, _)) = jax.vmap(
+        lambda block: full_model_assess(
+            chm.at["walls"].set(jax.lax.dynamic_update_slice(walls, block.astype(jnp.float32), (i, j))),
+            (pos,)
+        )
+    )(blocks)
+    # categorical automatically normalizes the weights
+    idx = genjax.categorical.sample(key, weights)
+    return walls_changed[idx]
+
+def block_gibbs_sweep(key, pos, readings, walls):
+    subkeys = jax.random.split(key, walls.shape)
+    walls = jax.lax.fori_loop(
+        0,
+        walls.shape[0] - BLOCK_SIZE + 1,
+        lambda i, walls: jax.lax.fori_loop(
+            0,
+            walls.shape[1] - BLOCK_SIZE + 1,
+            lambda j, walls: gibbs_update_block(subkeys[i, j], pos, readings, walls, i, j),
+            walls
+        ),
+        walls
+    )
+    return walls
+
+
+
+# %%
+
+gibbs_chain = run_gibbs_chain(jax.random.key(0), block_gibbs_sweep, CENTER, observed_readings)
+
+# %%
+ground_truth_plot = plot_ground_truth_walls(true_walls)
+sensors_plot = plot_sensors(CENTER, observed_readings)
+animation = Plot.Frames([
+    make_plot(plot_walls(sample) + ground_truth_plot + sensors_plot)
+    for sample in gibbs_chain
+])
+display(animation)
+gibbs_mean = jnp.mean(gibbs_chain, axis=0)
+plot = make_plot(plot_walls(gibbs_mean) + ground_truth_plot + sensors_plot)
+display(plot)
+
+
+# %% [markdown]
+# ## Parallel Gibbs sampling (NOT READY FOR REVIEW)
 #
 # TODO: discuss other optimization: block Gibbs for pixels with the same L_infinity distance to the origin.
 
 # %%
-def block_gibbs_update_distance(key, pos, readings, walls, distance):
+def parallel_gibbs_update_distance(key, pos, readings, walls, distance):
     subkeys = jax.random.split(key, walls.shape)
     pixel_is_wall = jax.vmap(
         lambda subkeys, i: jax.vmap(
@@ -652,13 +745,15 @@ def block_gibbs_update_distance(key, pos, readings, walls, distance):
     )(subkeys, jnp.arange(walls.shape[0]))
     return pixel_is_wall
 
-def block_gibbs_update(key, pos, readings, walls):
-    walls = jax.lax.fori_loop(0, 2 * GRID_SIZE, lambda distance, walls: block_gibbs_update_distance(key, pos, readings, walls, distance), walls)
+def parallel_gibbs_update(key, pos, readings, walls):
+    walls = jax.lax.fori_loop(0, 2 * GRID_SIZE, lambda distance, walls: parallel_gibbs_update_distance(key, pos, readings, walls, distance), walls)
     return walls
 
 
 # %%
-gibbs_chain = run_gibbs_chain(jax.random.key(0), block_gibbs_update, CENTER, observed_readings)
+gibbs_chain = run_gibbs_chain(jax.random.key(0), parallel_gibbs_update, CENTER, observed_readings, num_samples=5)
+mean_chain = jnp.mean(gibbs_chain, axis=0)
+mean_chain
 
 # %%
 ground_truth_plot = plot_ground_truth_walls(true_walls)
@@ -668,6 +763,12 @@ animation = Plot.Frames([
     for sample in gibbs_chain
 ])
 display(animation)
+gibbs_mean = jnp.mean(gibbs_chain, axis=0)
+plot = make_plot(plot_walls(gibbs_mean) + ground_truth_plot + sensors_plot)
+display(plot)
+
+# %%
+# TODO: why is this slower?
 plot = make_plot(plot_walls(jnp.mean(gibbs_chain, axis=0)) + ground_truth_plot + sensors_plot)
 display(plot)
 
