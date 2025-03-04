@@ -47,8 +47,7 @@ import genjax
 from genjax import ChoiceMapBuilder as C
 from genjax import pretty, Target
 from genjax.typing import IntArray
-
-import os
+from penzai import pz
 
 pretty()
 
@@ -135,7 +134,9 @@ export const wallsToCenters = (walls) => {
    const centers = [];
    for (let i = 0; i < walls.length; i++) {
       for (let j = 0; j < walls[i].length; j++) {
+        if (walls[i][j] > 0) {
             centers.push([i, j, walls[i][j]]);
+        }
       }
    }
    return centers;
@@ -146,12 +147,12 @@ export const wallsToCenters = (walls) => {
 
 plot_walls = (
     Plot.rect(
-        Plot.js("wallsToCenters($state.walls)"),
+        Plot.js("wallsToCenters($state.true_walls)"),
         x1=Plot.js("([x, y, value]) => x - 0.5"), 
         x2=Plot.js("([x, y, value]) => x + 0.5"),
         y1=Plot.js("([x, y, value]) => y - 0.5"),
         y2=Plot.js("([x, y, value]) => y + 0.5"),
-        fill="black",
+        stroke=Plot.constantly("ground truth"),
         fillOpacity=Plot.js("([x, y, value]) => value"),
     )
     + Plot.domain([0, GRID_SIZE], [0, GRID_SIZE])
@@ -165,8 +166,8 @@ def line_segments_of_pixel(pixel: IntArray):
 
 line_segments = jax.vmap(line_segments_of_pixel, in_axes=0)
 
-def make_plot(walls):
-    return js_code & Plot.initial_state({"walls": walls}, sync=True) & plot_walls
+def make_plot(true_walls):
+    return js_code & Plot.initial_state({"true_walls": true_walls}, sync=True) & Plot.new(plot_walls, Plot.color_legend())
 
 
 # %%
@@ -179,10 +180,9 @@ make_plot(true_walls)
 # %%
 def on_click(widget, event):
     x, y = round(event["x"]), round(event["y"])
-    walls = jnp.array(widget.state.walls)
-    walls = walls.at[x, y].set(1)
-    widget.state.update({"walls": walls})
-    widget.state.update({"inferred": jnp.zeros((GRID_SIZE, GRID_SIZE))})
+    true_walls = jnp.array(widget.state.true_walls)
+    true_walls = true_walls.at[x, y].set(1)
+    widget.state.update({"true_walls": true_walls})
 
 walls = jnp.zeros((GRID_SIZE, GRID_SIZE))
 
@@ -190,17 +190,18 @@ interactive_walls = Plot.events(
     onClick=on_click, onDraw=on_click
 )
 
-def make_plot(walls, interactive=False):
-    map_plot = plot_walls
+def make_plot(true_walls, extra_plot=None, interactive=False):
+    true_walls = true_walls.astype(jnp.float32)
+    map_plot = plot_walls + extra_plot
     if interactive:
         map_plot = map_plot + interactive_walls
-    plot = js_code & Plot.initial_state({"walls": walls}, sync=True) & map_plot
+    plot = js_code & Plot.initial_state({"true_walls": true_walls}, sync=True) & map_plot
     if interactive:
         plot = plot | [
             "div.bg-blue-500.text-white.p-3.rounded-sm",
             {
                 "onClick": lambda widget, _event: widget.state.update(
-                    {"walls": jnp.zeros((GRID_SIZE, GRID_SIZE))}
+                    {"true_walls": jnp.zeros((GRID_SIZE, GRID_SIZE))}
                 )
             },
             "Clear walls",
@@ -210,6 +211,7 @@ def make_plot(walls, interactive=False):
 
 make_plot(true_walls, interactive=True)
 
+
 # %% [markdown]
 # ## Prior
 #
@@ -217,9 +219,9 @@ make_plot(true_walls, interactive=True)
 # We will keep it very simple here and assume that each pixel is a wall with probability 0.5.
 
 # %%
-PRIOR_WALL_PROB = 0.1
+def walls_prior(prior_wall_prob):
+    return genjax.flip.repeat(n=GRID_SIZE).repeat(n=GRID_SIZE)(prior_wall_prob)
 
-walls_prior = genjax.flip.repeat(n=GRID_SIZE).repeat(n=GRID_SIZE)(PRIOR_WALL_PROB)
 
 # %% [markdown]
 # In order to get a better understanding, let us sample from the prior.
@@ -229,7 +231,7 @@ walls_prior = genjax.flip.repeat(n=GRID_SIZE).repeat(n=GRID_SIZE)(PRIOR_WALL_PRO
 
 # %%
 key = jax.random.key(0)
-sample_prior_jitted = jax.jit(walls_prior.simulate)
+sample_prior_jitted = jax.jit(walls_prior(prior_wall_prob=0.1).simulate)
 tr = sample_prior_jitted(key, ())
 display(tr.get_score())
 display(tr.get_choices())
@@ -240,7 +242,7 @@ display(tr.get_retval())
 
 # %%
 walls = tr.get_retval()
-make_plot(plot_walls(walls))
+make_plot(walls)
 
 
 # %% [markdown]
@@ -314,8 +316,10 @@ def unit_dir(angle):
 # It makes use of the JAX functions `jax.lax.cond` (instead of `if`) and `jax.vmap` (instead of a for-loop) because we want JAX to JIT-compile and vectorize these operations.
 
 # %%
+def angles(num_angles):
+    return jnp.arange(0, 1, 1 / num_angles) * 2 * jnp.pi
+
 NUM_DIRECTIONS = 100
-ANGLES = jnp.arange(0, 1, 1 / NUM_DIRECTIONS) * 2 * jnp.pi
 MAX_DISTANCE = GRID_SIZE * 2
 
 def distance_to_pixel(pos, dir, coord, wall):
@@ -347,18 +351,18 @@ def distance_to_pixels(pos, dir, walls):
         MAX_DISTANCE
     )
 
-def sensor_distances(pos, pixels):
-    """Sensor distances in all directions (as specified by `ANGLES`) for the map given by `pixels`."""
-    return jax.vmap(lambda angle: distance_to_pixels(pos, unit_dir(angle), pixels))(ANGLES)
+def sensor_distances(pos, pixels, angles):
+    """Sensor distances in all directions (as specified by `angles`) for the map given by `pixels`."""
+    return jax.vmap(lambda angle: distance_to_pixels(pos, unit_dir(angle), pixels))(angles)
 
 
 # %% [markdown]
 # As before, it is useful to have visualizations.
 
 # %%
-def plot_sensors(pos, readings):
+def plot_sensors(pos, readings, angles):
     """Plot the sensor readings."""
-    unit_vecs = jax.vmap(unit_dir, in_axes=0)(ANGLES)
+    unit_vecs = jax.vmap(unit_dir, in_axes=0)(angles)
     ray_endpoints = unit_vecs * readings[:, None]
     return [
         Plot.line([pos, pos + endpoint], stroke=Plot.constantly("sensor rays"))
@@ -368,12 +372,10 @@ def plot_sensors(pos, readings):
         for endpoint in ray_endpoints
     ] + Plot.ellipse([pos], r=0.2, fill="red")
 
-def world_and_sensors_plot(pos, walls, readings):
-    return plot_walls(walls) + plot_sensors(pos, readings)
+true_readings = sensor_distances(CENTER, true_walls, angles(NUM_DIRECTIONS))
 
-true_readings = sensor_distances(CENTER, true_walls)
+make_plot(true_walls, plot_sensors(CENTER, true_readings, angles(NUM_DIRECTIONS)))
 
-make_plot(world_and_sensors_plot(CENTER, true_walls, true_readings))
 
 # %% [markdown]
 # ## Noisy sensor model
@@ -382,14 +384,13 @@ make_plot(world_and_sensors_plot(CENTER, true_walls, true_readings))
 # As before, we specify the model for a single direction/angle first, and then map it over all directions.
 
 # %%
-NOISE = 0.2
-
 @genjax.gen
-def sensor_model_single(pos, pixels, angle):
+def sensor_model_single(pos, pixels, sensor_noise, angle):
     exact_distance = distance_to_pixels(pos, unit_dir(angle), pixels)
-    return genjax.normal(exact_distance, NOISE) @ ()
+    return genjax.normal(exact_distance, sensor_noise) @ ()
 
-sensor_model = sensor_model_single.vmap(in_axes=(None, None, 0))
+sensor_model = sensor_model_single.vmap(in_axes=(None, None, None, 0))
+
 
 # %% [markdown]
 # Let's sample from the sensor model to see what data the robot receives.
@@ -397,16 +398,25 @@ sensor_model = sensor_model_single.vmap(in_axes=(None, None, 0))
 # The noise level can be controlled by changing the `NOISE` variable above.
 
 # %%
+@pz.pytree_dataclass
+class ModelParams(genjax.Pytree):
+    prior_wall_prob: float = genjax.Pytree.static()
+    sensor_noise: float = genjax.Pytree.static()
+    num_angles: int = genjax.Pytree.static()
+
+DEFAULT_PARAMS = ModelParams(prior_wall_prob=0.5, sensor_noise=0.2, num_angles=NUM_DIRECTIONS)
+
+# %%
 key = jax.random.key(0)
-trace = sensor_model.simulate(key, (CENTER, true_walls, ANGLES,))
+trace = sensor_model.simulate(key, (CENTER, true_walls, DEFAULT_PARAMS.sensor_noise, angles(NUM_DIRECTIONS)))
 observed_readings = trace.get_retval()
-make_plot(world_and_sensors_plot(CENTER, true_walls, observed_readings))
+make_plot(true_walls, plot_sensors(CENTER, observed_readings, angles(NUM_DIRECTIONS)))
 
 # %% [markdown]
 # To get an idea of what the robot sees, let's remove the walls. How can we infer the walls?
 
 # %%
-make_plot(plot_sensors(CENTER, observed_readings))
+make_plot(true_walls, plot_sensors(CENTER, observed_readings, angles(NUM_DIRECTIONS)))
 
 
 # %% [markdown]
@@ -416,9 +426,9 @@ make_plot(plot_sensors(CENTER, observed_readings))
 
 # %%
 @genjax.gen
-def full_model(pos):
-    walls = walls_prior @ "walls"
-    readings = sensor_model(pos, walls, ANGLES) @ "readings"
+def full_model(pos, model_params):
+    walls = walls_prior(model_params.prior_wall_prob) @ "walls"
+    readings = sensor_model(pos, walls, model_params.sensor_noise, angles(model_params.num_angles)) @ "readings"
     return (walls, readings)
 
 
@@ -429,9 +439,9 @@ def full_model(pos):
 
 # %%
 key = jax.random.key(1)
-trace = full_model.simulate(key, (CENTER,))
+trace = full_model.simulate(key, (CENTER, DEFAULT_PARAMS))
 walls, readings = trace.get_retval()
-make_plot(world_and_sensors_plot(CENTER, walls, readings))
+make_plot(walls, plot_sensors(CENTER, readings, angles(NUM_DIRECTIONS)))
 trace.get_choices()
 
 
@@ -454,17 +464,17 @@ trace.get_choices()
 # Let's try this.
 
 # %%
-def importance_sampling(key, pos, observed_readings, N = 100):
+def importance_sampling(key, args, observed_readings, N = 100):
     """Very naive MAP estimation. Just try N random samples and take the one with the highest weight."""
     model_importance = jax.jit(full_model.importance)
     keys = jax.random.split(key, N)
     constraints = C["readings"].set(observed_readings)
-    traces, log_weights = jax.vmap(lambda key: model_importance(key, constraints, (pos,)))(keys)
+    traces, log_weights = jax.vmap(lambda key: model_importance(key, constraints, args))(keys)
     log_weights = log_weights - jax.scipy.special.logsumexp(log_weights)
     return traces, log_weights
 
 key, subkey = jax.random.split(jax.random.key(0))
-traces, log_weights = importance_sampling(subkey, CENTER, observed_readings, N=100000)
+traces, log_weights = importance_sampling(subkey, (CENTER, DEFAULT_PARAMS), observed_readings, N=100000)
 subkeys = jax.random.split(subkey, 100)
 resampled_indices = jax.vmap(lambda i: jax.random.categorical(subkeys[i], log_weights))(jnp.arange(100))
 resampled_indices
@@ -488,33 +498,6 @@ plt.show()
 # This is clearly bad. We need better inference methods.
 
 # %% [markdown]
-# ## Automated importance sampling with prior proposal
-#
-# GenJAX has automation for importance sampling.
-#
-# TODO: `ImportanceK` gives weird results. I'm not sure what's going wrong here.
-
-# %%
-from genjax.inference.smc import ImportanceK
-num_samples = 100
-constraints = C["readings"].set(observed_readings)
-target = Target(full_model, (CENTER,), constraints)
-alg = ImportanceK(target, k_particles=num_samples)
-key, *subkeys = jax.random.split(key, num_samples + 1)
-subkeys = jnp.array(subkeys)
-posterior_samples = jax.jit(jax.vmap(alg(target)))(subkeys)
-walls = jnp.mean(posterior_samples["walls"], axis=0)
-make_plot(world_and_sensors_plot(CENTER, walls, observed_readings))
-
-
-# %%
-display(posterior_samples)
-Plot.Frames([
-    make_plot(world_and_sensors_plot(CENTER, posterior_samples["walls", i], observed_readings))
-    for i in range(num_samples)
-])
-
-# %% [markdown]
 # ## Simple Gibbs sampling
 #
 # As a better inference algorithm, we turn to Gibbs sampling.
@@ -532,18 +515,18 @@ Plot.Frames([
 # %%
 full_model_assess = jax.jit(full_model.assess)
 
-def gibbs_update_pixel(key, pos, readings, walls, i, j):
+def gibbs_update_pixel(key, args, readings, walls, i, j):
     is_wall_false = walls.at[i, j].set(0)
     is_wall_true = walls.at[i, j].set(1)
     chm_false = C["readings"].set(readings) ^ C["walls"].set(is_wall_false)
-    (false_weight, _) = full_model_assess(chm_false, (pos,))
+    (false_weight, _) = full_model_assess(chm_false, args)
     chm_true = C["readings"].set(readings) ^ C["walls"].set(is_wall_true)
-    (true_weight, _) = full_model_assess(chm_true, (pos,))
+    (true_weight, _) = full_model_assess(chm_true, args)
     # categorical automatically normalizes the weights
     pixel_is_wall = genjax.categorical.sample(key, jnp.array([false_weight, true_weight])).astype(jnp.float32)
     return pixel_is_wall
 
-def simple_gibbs_sweep(key, pos, readings, walls):
+def simple_gibbs_sweep(key, args, readings, walls):
     subkeys = jax.random.split(key, walls.shape)
     walls = jax.lax.fori_loop(
         0,
@@ -551,7 +534,7 @@ def simple_gibbs_sweep(key, pos, readings, walls):
         lambda i, walls: jax.lax.fori_loop(
             0,
             walls.shape[1],
-            lambda j, walls: walls.at[i, j].set(gibbs_update_pixel(subkeys[i, j], pos, readings, walls, i, j)),
+            lambda j, walls: walls.at[i, j].set(gibbs_update_pixel(subkeys[i, j], args, readings, walls, i, j)),
             walls
         ),
         walls
@@ -564,28 +547,55 @@ def simple_gibbs_sweep(key, pos, readings, walls):
 # Let's try this out.
 
 # %%
-def run_gibbs_chain(key, gibbs_update, pos, readings, num_samples=100):
+def run_gibbs_chain(key, gibbs_update, args, readings, num_samples=100):
     walls = jnp.zeros((GRID_SIZE, GRID_SIZE))
     key = jax.random.key(1)
     key, *subkeys = jax.random.split(key, num_samples + 1)
     subkeys = jnp.array(subkeys)
     gibbs_update_jitted = jax.jit(gibbs_update)
-    _, gibbs_chain = jax.lax.scan(lambda walls, key: (gibbs_update_jitted(key, pos, readings, walls), walls), walls, subkeys)
+    _, gibbs_chain = jax.lax.scan(lambda walls, key: (gibbs_update_jitted(key, args, readings, walls), walls), walls, subkeys)
     return gibbs_chain
-gibbs_chain = run_gibbs_chain(jax.random.key(0), simple_gibbs_sweep, CENTER, observed_readings)
+gibbs_chain = run_gibbs_chain(jax.random.key(0), simple_gibbs_sweep, (CENTER, DEFAULT_PARAMS), observed_readings)
 
 
 # %%
-def plot_ground_truth_walls(walls):
-    return [
-        Plot.line(jnp.array([[i, j]]) + OFFSETS_CLOSED, stroke="green", strokeWidth=3)
-        for i, row in enumerate(walls)
-        for j, is_wall in enumerate(row)
-        if is_wall > 0
-    ]
+def plot_inferred_walls(walls):
+    return Plot.rect(
+        Plot.js("wallsToCenters(%1)", walls),
+        x1=Plot.js("([x, y, value]) => x - 0.5"), 
+        x2=Plot.js("([x, y, value]) => x + 0.5"),
+        y1=Plot.js("([x, y, value]) => y - 0.5"),
+        y2=Plot.js("([x, y, value]) => y + 0.5"),
+        fill=Plot.constantly("inferred walls"),
+        fillOpacity=Plot.js("([x, y, value]) => value"),
+    )
 
-ground_truth_plot = plot_ground_truth_walls(true_walls)
-sensors_plot = plot_sensors(CENTER, observed_readings)
+def make_plot(true_walls, pos=None, sensor_readings=None, angles=None, inferred_walls=None, interactive=False):
+    true_walls = true_walls.astype(jnp.float32)
+    map_plot = Plot.new()
+    if inferred_walls is not None:
+        inferred_walls = inferred_walls.astype(jnp.float32)
+        map_plot += plot_inferred_walls(inferred_walls)
+    map_plot += plot_walls
+    if sensor_readings is not None and angles is not None:
+        map_plot += plot_sensors(pos, sensor_readings, angles)
+    if interactive:
+        map_plot += interactive_walls
+    plot = js_code & Plot.initial_state({"true_walls": true_walls}, sync=True) & Plot.new(map_plot, Plot.color_legend())
+    if interactive:
+        plot = plot | [
+            "div.bg-blue-500.text-white.p-3.rounded-sm",
+            {
+                "onClick": lambda widget, _event: widget.state.update(
+                    {"true_walls": jnp.zeros((GRID_SIZE, GRID_SIZE))}
+                )
+            },
+            "Clear walls",
+        ]
+        plot = plot.display_as("widget")
+    return plot
+
+make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=true_walls)
 
 # %% [markdown]
 # Use the slider at the bottom of the first plot to visualize the iterations of the Gibbs sampler.
@@ -595,11 +605,12 @@ sensors_plot = plot_sensors(CENTER, observed_readings)
 num_frames = 100
 thinning = gibbs_chain.shape[0] // num_frames
 animation = Plot.Frames([
-    make_plot(plot_walls(sample) + sensors_plot + ground_truth_plot)
+    make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=sample)
     for sample in gibbs_chain[::thinning]
 ])
 display(animation)
-plot = make_plot(plot_walls(jnp.mean(gibbs_chain, axis=0)) + sensors_plot + ground_truth_plot)
+gibbs_mean = jnp.mean(gibbs_chain, axis=0)
+plot = make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=gibbs_mean)
 display(plot)
 
 
@@ -619,7 +630,8 @@ display(plot)
 # First, the origin itself, then the "diamond" around it, then the next layer etc.
 
 # %%
-def smarter_gibbs_update_distance(key, pos, readings, walls, distance):
+def smarter_gibbs_update_distance(key, args, readings, walls, distance):
+    pos, _params = args
     subkeys = jax.random.split(key, (GRID_SIZE, GRID_SIZE))
     updated_walls = jax.lax.fori_loop(
         0,
@@ -630,7 +642,7 @@ def smarter_gibbs_update_distance(key, pos, readings, walls, distance):
             lambda j, walls: walls.at[i, j].set(
                 jax.lax.cond(
                     jnp.sum(jnp.abs(jnp.array([i, j]) - pos)) == distance,
-                    lambda: gibbs_update_pixel(subkeys[i, j], pos, readings, walls, i, j),
+                    lambda: gibbs_update_pixel(subkeys[i, j], args, readings, walls, i, j),
                     lambda: walls[i, j]
                 )
             ),
@@ -640,30 +652,28 @@ def smarter_gibbs_update_distance(key, pos, readings, walls, distance):
     )
     return updated_walls
 
-def smarter_gibbs_update(key, pos, readings, walls):
+def smarter_gibbs_update(key, args, readings, walls):
     subkeys = jax.random.split(key, 2 * GRID_SIZE)
     walls = jax.lax.fori_loop(
         0,
         2 * GRID_SIZE,
-        lambda distance, walls: smarter_gibbs_update_distance(subkeys[distance], pos, readings, walls, distance),
+        lambda distance, walls: smarter_gibbs_update_distance(subkeys[distance], args, readings, walls, distance),
         walls
     )
     return walls
 
 
 # %%
-gibbs_chain = run_gibbs_chain(jax.random.key(0), smarter_gibbs_update, CENTER, observed_readings)
+gibbs_chain = run_gibbs_chain(jax.random.key(0), smarter_gibbs_update, (CENTER, DEFAULT_PARAMS), observed_readings)
 
 # %%
-ground_truth_plot = plot_ground_truth_walls(true_walls)
-sensors_plot = plot_sensors(CENTER, observed_readings)
 animation = Plot.Frames([
-    make_plot(plot_walls(sample) + ground_truth_plot + sensors_plot)
+    make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=sample)
     for sample in gibbs_chain
 ])
 display(animation)
 gibbs_mean = jnp.mean(gibbs_chain, axis=0)
-plot = make_plot(plot_walls(gibbs_mean) + ground_truth_plot + sensors_plot)
+plot = make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=gibbs_mean)
 display(plot)
 
 
@@ -680,26 +690,26 @@ def generate_all_possible_blocks(block_size):
     values = jnp.stack(values, axis=1)
     return values.reshape(-1, block_size, block_size)
 
-generate_all_possible_blocks(3)
+generate_all_possible_blocks(2)
 
 
 # %%
-BLOCK_SIZE = 3
+BLOCK_SIZE = 2
 
-def gibbs_update_block(key, pos, readings, walls, i, j):
+def gibbs_update_block(key, args, readings, walls, i, j):
     blocks = generate_all_possible_blocks(BLOCK_SIZE) # shape = (2^(BLOCK_SIZE^2), BLOCK_SIZE, BLOCK_SIZE)
     chm = C["readings"].set(readings) ^ C["walls"].set(walls)
     (weights, (walls_changed, _)) = jax.vmap(
         lambda block: full_model_assess(
             chm.at["walls"].set(jax.lax.dynamic_update_slice(walls, block.astype(jnp.float32), (i, j))),
-            (pos,)
+            args
         )
     )(blocks)
     # categorical automatically normalizes the weights
     idx = genjax.categorical.sample(key, weights)
     return walls_changed[idx]
 
-def block_gibbs_sweep(key, pos, readings, walls):
+def block_gibbs_sweep(key, args, readings, walls):
     subkeys = jax.random.split(key, walls.shape)
     walls = jax.lax.fori_loop(
         0,
@@ -707,7 +717,7 @@ def block_gibbs_sweep(key, pos, readings, walls):
         lambda i, walls: jax.lax.fori_loop(
             0,
             walls.shape[1] - BLOCK_SIZE + 1,
-            lambda j, walls: gibbs_update_block(subkeys[i, j], pos, readings, walls, i, j),
+            lambda j, walls: gibbs_update_block(subkeys[i, j], args, readings, walls, i, j),
             walls
         ),
         walls
@@ -717,70 +727,17 @@ def block_gibbs_sweep(key, pos, readings, walls):
 
 
 # %%
-
-gibbs_chain = run_gibbs_chain(jax.random.key(0), block_gibbs_sweep, CENTER, observed_readings)
+gibbs_chain = run_gibbs_chain(jax.random.key(0), block_gibbs_sweep, (CENTER, DEFAULT_PARAMS), observed_readings)
 gibbs_chain
 
 # %%
-ground_truth_plot = plot_ground_truth_walls(true_walls)
-sensors_plot = plot_sensors(CENTER, observed_readings)
 animation = Plot.Frames([
-    make_plot(plot_walls(sample) + ground_truth_plot + sensors_plot)
+    make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=sample)
     for sample in gibbs_chain
 ])
 display(animation)
 gibbs_mean = jnp.mean(gibbs_chain, axis=0)
-plot = make_plot(plot_walls(gibbs_mean) + ground_truth_plot + sensors_plot)
-display(plot)
-
-
-# %% [markdown]
-# ## Parallel Gibbs sampling (NOT READY FOR REVIEW)
-#
-# TODO: discuss other optimization: block Gibbs for pixels with the same L_infinity distance to the origin.
-
-# %%
-def parallel_gibbs_update_distance(key, pos, readings, walls, distance):
-    subkeys = jax.random.split(key, walls.shape)
-    pixel_is_wall = jax.vmap(
-        lambda subkeys, i: jax.vmap(
-            lambda key, j:jax.lax.cond(
-                jnp.sum(jnp.abs(jnp.array([i, j]) - pos)) == distance,
-                lambda: gibbs_update_pixel(key, pos, readings, walls, i, j),
-                lambda: walls[i, j]
-            )
-        )(subkeys, jnp.arange(walls.shape[1]))
-    )(subkeys, jnp.arange(walls.shape[0]))
-    return pixel_is_wall
-
-def parallel_gibbs_update(key, pos, readings, walls):
-    walls = jax.lax.fori_loop(0, 2 * GRID_SIZE, lambda distance, walls: parallel_gibbs_update_distance(key, pos, readings, walls, distance), walls)
-    return walls
-
-
-# %%
-gibbs_chain = run_gibbs_chain(jax.random.key(0), parallel_gibbs_update, CENTER, observed_readings, num_samples=5)
-mean_chain = jnp.mean(gibbs_chain, axis=0)
-mean_chain
-
-# %%
-ground_truth_plot = plot_ground_truth_walls(true_walls)
-sensors_plot = plot_sensors(CENTER, observed_readings)
-animation = Plot.Frames([
-    make_plot(plot_walls(sample) + ground_truth_plot + sensors_plot)
-    for sample in gibbs_chain
-])
-display(animation)
-gibbs_mean = jnp.mean(gibbs_chain, axis=0)
-plot = make_plot(plot_walls(gibbs_mean) + ground_truth_plot + sensors_plot)
+plot = make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=gibbs_mean)
 display(plot)
 
 # %%
-# TODO: why is this slower?
-plot = make_plot(plot_walls(jnp.mean(gibbs_chain, axis=0)) + ground_truth_plot + sensors_plot)
-display(plot)
-
-# %% [markdown]
-# Here it only takes 3 iterations before all the walls at the bottom are (correctly) removed.
-#
-# TODO: is it OK to parallelize Gibbs in this way?
