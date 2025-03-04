@@ -41,27 +41,20 @@
 # Global setup code
 
 import genstudio.plot as Plot
-import itertools
 import jax
 import jax.numpy as jnp
 import genjax
-from urllib.request import urlopen
-from genjax import SelectionBuilder as S
 from genjax import ChoiceMapBuilder as C
 from genjax import pretty, Target
-from genjax.typing import IntArray, FloatArray, PRNGKey
-from penzai import pz
-from typing import Any, Iterable
+from genjax.typing import IntArray
 
 import os
 
 pretty()
 
 html = Plot.Hiccup
-Plot.configure({"display_as": "html", "dev": False})
+Plot.configure({"display_as": "html", "dev": True})
 
-# Ensure a location for image generation.
-os.makedirs("imgs", exist_ok=True)
 
 # %% [markdown]
 # ## Loading the map
@@ -110,6 +103,7 @@ def extract_points_from_grid_string(grid_string):
     return walls
 
 true_walls = extract_points_from_grid_string(GRID)
+true_walls
 
 # %% [markdown]
 # Now, `true_walls` is a 21 x 21 array of 0s and 1s, where 1s indicate the presence of a wall.
@@ -131,13 +125,39 @@ OFFSETS = jnp.array([
 
 OFFSETS_CLOSED = jnp.concat([OFFSETS, OFFSETS[:1]], axis=0)
 
-def plot_walls(walls):
-    return [
-        Plot.line(jnp.array([[i, j]], dtype=float) + OFFSETS_CLOSED, fill="black", fillOpacity=is_wall)
-        for i, row in enumerate(walls)
-        for j, is_wall in enumerate(row)
-        if is_wall > 0
-    ]
+js_code = Plot.Import(
+    source="""
+export const wallsToCenters = (walls) => {
+   // walls is a 2d array of 0s and 1s 
+   // we want to return a list of [x1, y1, x2, y2] for each 1 in the array
+   // we can do this by iterating over the array and collecting the coordinates
+   // of each 1
+   const centers = [];
+   for (let i = 0; i < walls.length; i++) {
+      for (let j = 0; j < walls[i].length; j++) {
+            centers.push([i, j, walls[i][j]]);
+      }
+   }
+   return centers;
+}
+""",
+    refer=["wallsToCenters"],
+)
+
+plot_walls = (
+    Plot.rect(
+        Plot.js("wallsToCenters($state.walls)"),
+        x1=Plot.js("([x, y, value]) => x - 0.5"), 
+        x2=Plot.js("([x, y, value]) => x + 0.5"),
+        y1=Plot.js("([x, y, value]) => y - 0.5"),
+        y2=Plot.js("([x, y, value]) => y + 0.5"),
+        fill="black",
+        fillOpacity=Plot.js("([x, y, value]) => value"),
+    )
+    + Plot.domain([0, GRID_SIZE], [0, GRID_SIZE])
+    + Plot.aspectRatio(1)
+    + Plot.width(500)
+)
 
 def line_segments_of_pixel(pixel: IntArray):
     vertices = pixel[None, :] + OFFSETS
@@ -145,63 +165,50 @@ def line_segments_of_pixel(pixel: IntArray):
 
 line_segments = jax.vmap(line_segments_of_pixel, in_axes=0)
 
-def make_plot(p):
-    return Plot.new(
-        p,
-        {"width": 500, "aspectRatio": 1},
-        Plot.domain([0, GRID_SIZE], [0, GRID_SIZE])
-    )
+def make_plot(walls):
+    return js_code & Plot.initial_state({"walls": walls}, sync=True) & plot_walls
 
 
 # %%
-make_plot(plot_walls(true_walls))
+make_plot(true_walls)
+
 
 # %% [markdown]
 # ## Interactive map
 
 # %%
-import genstudio.plot as Plot
-
 def on_click(widget, event):
-    global click
     x, y = round(event["x"]), round(event["y"])
-    click = [x, y]
-    widget.state.update({"click": click})
-    print(widget.state.click)
-
-click = [0,0]
-
-(Plot.initial_state({"click": [0, 0]}, sync=True)
-    + Plot.ellipse([Plot.js("$state.click")], r=1, fill="red")
-    + Plot.domain([-10, 10], [-10, 10])
-    + Plot.aspectRatio(1)
-    + Plot.width(500)
-    + Plot.events(
-        onClick=on_click, onDraw=on_click
-    )
-).display_as("widget")
-
-
-# %%
-def on_click(widget, event):
-    global walls
-    x, y = round(event["x"]), round(event["y"])
+    walls = jnp.array(widget.state.walls)
     walls = walls.at[x, y].set(1)
     widget.state.update({"walls": walls})
-    print(widget.state.walls)
+    widget.state.update({"inferred": jnp.zeros((GRID_SIZE, GRID_SIZE))})
 
 walls = jnp.zeros((GRID_SIZE, GRID_SIZE))
 
-(Plot.initial_state({"walls": walls}, sync=True)
-    + Plot.ellipse([[0,0]], r=0.1, fill="red")
-    + plot_walls(walls)
-    + Plot.domain([0, GRID_SIZE], [0, GRID_SIZE])
-    + Plot.aspectRatio(1)
-    + Plot.width(500)
-    + Plot.events(
-        onClick=on_click, onDraw=on_click
-    )
-).display_as("widget")
+interactive_walls = Plot.events(
+    onClick=on_click, onDraw=on_click
+)
+
+def make_plot(walls, interactive=False):
+    map_plot = plot_walls
+    if interactive:
+        map_plot = map_plot + interactive_walls
+    plot = js_code & Plot.initial_state({"walls": walls}, sync=True) & map_plot
+    if interactive:
+        plot = plot | [
+            "div.bg-blue-500.text-white.p-3.rounded-sm",
+            {
+                "onClick": lambda widget, _event: widget.state.update(
+                    {"walls": jnp.zeros((GRID_SIZE, GRID_SIZE))}
+                )
+            },
+            "Clear walls",
+        ]
+        plot = plot.display_as("widget")
+    return plot
+
+make_plot(true_walls, interactive=True)
 
 # %% [markdown]
 # ## Prior
@@ -375,7 +382,7 @@ make_plot(world_and_sensors_plot(CENTER, true_walls, true_readings))
 # As before, we specify the model for a single direction/angle first, and then map it over all directions.
 
 # %%
-NOISE = 0.5
+NOISE = 0.2
 
 @genjax.gen
 def sensor_model_single(pos, pixels, angle):
@@ -677,7 +684,7 @@ generate_all_possible_blocks(3)
 
 
 # %%
-BLOCK_SIZE = 2
+BLOCK_SIZE = 3
 
 def gibbs_update_block(key, pos, readings, walls, i, j):
     blocks = generate_all_possible_blocks(BLOCK_SIZE) # shape = (2^(BLOCK_SIZE^2), BLOCK_SIZE, BLOCK_SIZE)
@@ -712,6 +719,7 @@ def block_gibbs_sweep(key, pos, readings, walls):
 # %%
 
 gibbs_chain = run_gibbs_chain(jax.random.key(0), block_gibbs_sweep, CENTER, observed_readings)
+gibbs_chain
 
 # %%
 ground_truth_plot = plot_ground_truth_walls(true_walls)
