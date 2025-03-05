@@ -740,4 +740,180 @@ gibbs_mean = jnp.mean(gibbs_chain, axis=0)
 plot = make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=gibbs_mean)
 display(plot)
 
+
 # %%
+def on_click(widget, event):
+    x, y = round(event["x"]), round(event["y"])
+    true_walls = jnp.array(widget.state.true_walls)
+    true_walls = true_walls.at[x, y].set(1)
+    widget.state.update({"true_walls": true_walls})
+
+interactive_walls = Plot.events(
+    onClick=on_click, onDraw=on_click
+)
+
+plot_inferred_walls = Plot.rect(
+    Plot.js("wallsToCenters($state.inferred_walls)", walls),
+    x1=Plot.js("([x, y, value]) => x - 0.5"), 
+    x2=Plot.js("([x, y, value]) => x + 0.5"),
+    y1=Plot.js("([x, y, value]) => y - 0.5"),
+    y2=Plot.js("([x, y, value]) => y + 0.5"),
+    fill=Plot.constantly("inferred walls"),
+    fillOpacity=Plot.js("([x, y, value]) => value"),
+)
+
+sensor_js_code = Plot.Import("""
+export function rayEndpoints(pos, sensor_readings, num_angles) {
+    let endpoints = [];
+    let angleStep = (2 * Math.PI) / num_angles; // Divide full circle into equal parts
+
+    for (let i = 0; i < num_angles; i++) {
+        let angle = i * angleStep;
+        let distance = sensor_readings[i];
+        let x = pos[0] + distance * Math.cos(angle);
+        let y = pos[1] + distance * Math.sin(angle);
+        endpoints.push([x, y]);
+    }
+    return endpoints;
+}
+""", refer=["rayEndpoints"])
+
+plot_sensors = sensor_js_code & (Plot.line(Plot.js("rayEndpoints($state.position, $state.sensor_readings, $state.num_angles).flatMap(p => [p, $state.position])"), stroke=Plot.constantly("sensor rays"))
+    + Plot.ellipse(Plot.js("rayEndpoints($state.position, $state.sensor_readings, $state.num_angles)"), r=0.1, fill=Plot.constantly("sensor readings"))
+    + Plot.ellipse([Plot.js("$state.position")], r=0.2, fill=Plot.constantly("sensor position"))
+)
+
+def on_change(widget, _event):
+    update_state(widget.state)
+
+def update_state(state):
+    true_walls = state.true_walls
+    params = ModelParams(
+        prior_wall_prob=float(state.prior_wall_prob),
+        sensor_noise=float(state.sensor_noise),
+        num_angles=int(state.num_angles),
+    )
+    pos = state.position
+    key = jax.random.key(0)
+    readings = sensor_model.simulate(key, (pos, true_walls, params.sensor_noise, angles(params.num_angles))).get_retval()
+    state.sensor_readings = readings
+    update_inferred_walls(state)
+
+def update_inferred_walls(state):
+    if state.show_mean:
+        state.inferred_walls = state.mean_chain if state.mean_chain is not None else jnp.zeros(true_walls.shape)
+    else:
+        state.inferred_walls = state.chain[state.chain_idx] if state.chain is not None else jnp.zeros(true_walls.shape)
+
+def do_inference(state):
+    update_state(state)
+    pos = state.position
+    readings = state.sensor_readings
+    params = ModelParams(
+        prior_wall_prob=float(state.prior_wall_prob),
+        sensor_noise=float(state.sensor_noise),
+        num_angles=int(state.num_angles),
+    )
+    key = jax.random.key(0)
+    state.chain = run_gibbs_chain(key, block_gibbs_sweep, (pos, params), readings)
+    state.mean_chain = jnp.mean(state.chain, axis=0)
+    update_inferred_walls(state)
+
+def make_interactive_plot(true_walls):
+    true_walls = true_walls.astype(jnp.float32)
+    map_plot = Plot.new()
+    map_plot += plot_walls + interactive_walls
+    map_plot += plot_sensors
+    map_plot += plot_inferred_walls
+    buttons = (Plot.html([
+        "div.bg-blue-500.text-white.p-3.rounded-sm",
+        {
+            "onClick": lambda widget, _event: do_inference(widget.state)
+        },
+        "Run inference",
+    ]) & Plot.html([
+        "div.bg-blue-500.text-white.p-3.rounded-sm",
+        {
+            "onClick": lambda widget, _event: widget.state.update(
+                {"true_walls": jnp.zeros((GRID_SIZE, GRID_SIZE))}
+            )
+        },
+        "Clear walls",
+    ]) & Plot.html([
+        "div.bg-blue-500.text-white.p-3.rounded-sm",
+        {
+            "onClick": lambda widget, _event: widget.state.update(
+                {"inferred_walls": jnp.zeros((GRID_SIZE, GRID_SIZE)), "chain": None, "mean_chain": None}
+            )
+        },
+        "Clear inferred walls",
+    ]))
+    sliders = (
+        (Plot.html([
+            "label",
+            {"class": "flex items-center gap-2 cursor-pointer"},
+            [
+                "input",
+                {
+                    "type": "checkbox",
+                    "checked": Plot.js("$state.show_mean"),
+                    "onChange": Plot.js("(e) => $state.show_mean = e.target.checked")
+                }
+            ],
+            "show average over chain"
+        ]) & Plot.Slider(
+            key="chain_idx",
+            range=(0, 100),
+            step=1,
+            label=Plot.js("$state.show_mean ? `Deselect 'show average' to view individual samples` : `Sample no.: ${$state.chain_idx}`"),
+        ))
+        | (Plot.Slider(
+            key="prior_wall_prob",
+            range=(0, 1),
+            step=0.05,
+            label=Plot.js("`Prior wall probability: ${$state.prior_wall_prob}`"),
+        ))
+        & (Plot.Slider(
+            key="sensor_noise",
+            range=(0, 5),
+            step=0.05,
+            label=Plot.js("`Sensor noise: ${$state.sensor_noise}`"),
+        ))
+        & (Plot.Slider(
+            key="num_angles",
+            range=(10, 1000),
+            step=10,
+            label=Plot.js("`Number of angles: ${$state.num_angles}`"),
+
+        ))
+    )
+    plot = (
+        js_code & sensor_js_code
+        & Plot.initial_state({
+                "true_walls": true_walls,
+                "position": CENTER,
+                "sensor_noise": 0.2,
+                "prior_wall_prob": 0.5,
+                "num_angles": NUM_DIRECTIONS,
+                "sensor_readings": jnp.repeat(jnp.zeros(2), NUM_DIRECTIONS),
+                "inferred_walls": jnp.zeros(true_walls.shape),
+                "show_mean": True,
+                "chain_idx": 0,
+                "chain": None,
+                "mean_chain": None,
+            },
+            sync=True)
+        & Plot.new(map_plot, Plot.color_legend())
+    ) | buttons | sliders | Plot.onChange({
+        "prior_wall_prob": on_change,
+        "sensor_noise": on_change,
+        "num_angles": on_change,
+        "true_walls": on_change,
+        "position": on_change,
+        "chain_idx": on_change,
+        "show_mean": on_change,
+    })
+    plot = plot.display_as("widget")
+    return plot
+
+make_interactive_plot(true_walls)
