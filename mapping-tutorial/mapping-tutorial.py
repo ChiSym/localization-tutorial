@@ -7,7 +7,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.16.7
 #   kernelspec:
-#     display_name: .venv
+#     display_name: Python (Poetry)
 #     language: python
 #     name: python3
 # ---
@@ -153,6 +153,7 @@ plot_walls = (
         y1=Plot.js("([x, y, value]) => y - 0.5"),
         y2=Plot.js("([x, y, value]) => y + 0.5"),
         stroke=Plot.constantly("ground truth"),
+        strokeWidth=2,
         fillOpacity=Plot.js("([x, y, value]) => value"),
     )
     + Plot.domain([0, GRID_SIZE], [0, GRID_SIZE])
@@ -744,12 +745,28 @@ display(plot)
 # %%
 def on_click(widget, event):
     x, y = round(event["x"]), round(event["y"])
-    true_walls = jnp.array(widget.state.true_walls)
-    true_walls = true_walls.at[x, y].set(1)
-    widget.state.update({"true_walls": true_walls})
+    pos = widget.state.position
+    if (event["x"] - pos[0])**2 + (event["y"] - pos[1])**2 < 0.25:
+        # don't draw a wall on the sensor
+        widget.state.update({"wall_mode": False})
+    else:
+        widget.state.update({"wall_mode": True})
+        x, y = round(event["x"]), round(event["y"])
+        pos = widget.state.position
+        true_walls = jnp.array(widget.state.true_walls)
+        true_walls = true_walls.at[x, y].set(1 - true_walls[x, y])
+        widget.state.update({"true_walls": true_walls})
+
+def on_drag(widget, event):
+    if widget.state.wall_mode:
+        x, y = round(event["x"]), round(event["y"])
+        pos = widget.state.position
+        true_walls = jnp.array(widget.state.true_walls)
+        true_walls = true_walls.at[x, y].set(1)
+        widget.state.update({"true_walls": true_walls})
 
 interactive_walls = Plot.events(
-    onClick=on_click, onDraw=on_click
+    onClick=on_click, onDraw=on_drag
 )
 
 plot_inferred_walls = Plot.rect(
@@ -778,9 +795,18 @@ export function rayEndpoints(pos, sensor_readings, num_angles) {
 }
 """, refer=["rayEndpoints"])
 
-plot_sensors = sensor_js_code & (Plot.line(Plot.js("rayEndpoints($state.position, $state.sensor_readings, $state.num_angles).flatMap(p => [p, $state.position])"), stroke=Plot.constantly("sensor rays"))
+def on_position_drag(widget, event):
+    widget.state.update({"wall_mode": False, "position": jnp.array([event["x"], event["y"]])})
+
+plot_interactive_sensors = sensor_js_code & (
+    Plot.line(Plot.js("rayEndpoints($state.position, $state.sensor_readings, $state.num_angles).flatMap(p => [p, $state.position])"), stroke=Plot.constantly("sensor rays"))
     + Plot.ellipse(Plot.js("rayEndpoints($state.position, $state.sensor_readings, $state.num_angles)"), r=0.1, fill=Plot.constantly("sensor readings"))
-    + Plot.ellipse([Plot.js("$state.position")], r=0.2, fill=Plot.constantly("sensor position"))
+    + Plot.ellipse(
+        [Plot.js("$state.position")],
+        r=0.3,
+        fill=Plot.constantly("sensor position"),
+        render=Plot.renderChildEvents(onDrag=on_position_drag)
+    )
 )
 
 def on_change(widget, _event):
@@ -822,9 +848,10 @@ def do_inference(state):
 def make_interactive_plot(true_walls):
     true_walls = true_walls.astype(jnp.float32)
     map_plot = Plot.new()
-    map_plot += plot_walls + interactive_walls
-    map_plot += plot_sensors
     map_plot += plot_inferred_walls
+    map_plot += plot_walls
+    map_plot += plot_interactive_sensors
+    map_plot += interactive_walls
     buttons = (Plot.html([
         "div.bg-blue-500.text-white.p-3.rounded-sm",
         {
@@ -870,7 +897,7 @@ def make_interactive_plot(true_walls):
         | (Plot.Slider(
             key="prior_wall_prob",
             range=(0, 1),
-            step=0.05,
+            step=0.005,
             label=Plot.js("`Prior wall probability: ${$state.prior_wall_prob}`"),
         ))
         & (Plot.Slider(
@@ -887,20 +914,23 @@ def make_interactive_plot(true_walls):
 
         ))
     )
+    initial_pos = CENTER
+    initial_noise = 0.2
     plot = (
         js_code & sensor_js_code
         & Plot.initial_state({
                 "true_walls": true_walls,
-                "position": CENTER,
-                "sensor_noise": 0.2,
+                "position": initial_pos,
+                "sensor_noise": initial_noise,
                 "prior_wall_prob": 0.5,
                 "num_angles": NUM_DIRECTIONS,
-                "sensor_readings": jnp.repeat(jnp.zeros(2), NUM_DIRECTIONS),
+                "sensor_readings": sensor_model.simulate(key, (initial_pos, true_walls, initial_noise, angles(NUM_DIRECTIONS))).get_retval(),
                 "inferred_walls": jnp.zeros(true_walls.shape),
                 "show_mean": True,
                 "chain_idx": 0,
                 "chain": None,
                 "mean_chain": None,
+                "wall_mode": False,
             },
             sync=True)
         & Plot.new(map_plot, Plot.color_legend())
@@ -917,3 +947,7 @@ def make_interactive_plot(true_walls):
     return plot
 
 make_interactive_plot(true_walls)
+
+# %%
+
+# %%
