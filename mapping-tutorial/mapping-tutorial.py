@@ -519,9 +519,9 @@ full_model_assess = jax.jit(full_model.assess)
 def gibbs_update_pixel(key, args, readings, walls, i, j):
     is_wall_false = walls.at[i, j].set(0)
     is_wall_true = walls.at[i, j].set(1)
-    chm_false = C["readings"].set(readings) ^ C["walls"].set(is_wall_false)
+    chm_false = C["readings"].set(readings) | C["walls"].set(is_wall_false)
     (false_weight, _) = full_model_assess(chm_false, args)
-    chm_true = C["readings"].set(readings) ^ C["walls"].set(is_wall_true)
+    chm_true = C["readings"].set(readings) | C["walls"].set(is_wall_true)
     (true_weight, _) = full_model_assess(chm_true, args)
     # categorical automatically normalizes the weights
     pixel_is_wall = genjax.categorical.sample(key, jnp.array([false_weight, true_weight])).astype(jnp.float32)
@@ -550,14 +550,70 @@ def simple_gibbs_sweep(key, args, readings, walls):
 # %%
 def run_gibbs_chain(key, gibbs_update, args, readings, num_samples=100):
     walls = jnp.zeros((GRID_SIZE, GRID_SIZE))
-    key = jax.random.key(1)
     key, *subkeys = jax.random.split(key, num_samples + 1)
     subkeys = jnp.array(subkeys)
     gibbs_update_jitted = jax.jit(gibbs_update)
     _, gibbs_chain = jax.lax.scan(lambda walls, key: (gibbs_update_jitted(key, args, readings, walls), walls), walls, subkeys)
     return gibbs_chain
 gibbs_chain = run_gibbs_chain(jax.random.key(0), simple_gibbs_sweep, (CENTER, DEFAULT_PARAMS), observed_readings)
+gibbs_chain
 
+
+# %% [markdown]
+# ## Incremental trace updates
+#
+# We can also write this more concisely by incrementally updating the current trace. Usually this should be faster, but it turns out to be slower in our case. This may be due to the overhead of the trace infrastructure involved.
+
+# %%
+def gibbs_update_pixel_incremental(key, trace: genjax.Trace, i, j):
+    walls = trace.get_choices()["walls"]
+    # IndexRequest should be faster but isn't. Too much overhead?
+    # request = genjax.StaticRequest({"walls": genjax.IndexRequest(jnp.array(i), genjax.IndexRequest(jnp.array(j), genjax.Update(C.v(1.0 - walls[i, j]))))})
+    request = genjax.StaticRequest({"walls": genjax.Update(C.v(walls.at[i, j].set(1.0 - walls[i, j])))})
+    new_tr, inc_weight, _retdiff, _bwd_request = trace.edit(key, request, None)
+    return jax.lax.cond(
+        genjax.bernoulli.sample(key, inc_weight), # i.e. with probability e^inc_weight / (1 + e^inc_weight)
+        lambda: new_tr, # use the updated trace
+        lambda: trace, # otherwise keep the old trace
+    )
+
+def simple_gibbs_sweep_incremental(key, trace):
+    shape = trace.get_choices()["walls"].shape
+    subkeys = jax.random.split(key, shape)
+    trace = jax.lax.fori_loop(
+        0,
+        shape[0],
+        lambda i, trace: jax.lax.fori_loop(
+            0,
+            shape[1],
+            lambda j, trace: gibbs_update_pixel_incremental(subkeys[i][j], trace, i, j),
+            trace
+        ),
+        trace
+    )
+    return trace
+
+def run_gibbs_chain_incremental(key, gibbs_update, args, readings, num_samples=100):
+    walls = jnp.zeros((GRID_SIZE, GRID_SIZE))
+    constraints = C["walls"].set(walls) | C["readings"].set(readings)
+    trace, _ = full_model.importance(key, constraints, args)
+    key, *subkeys = jax.random.split(key, num_samples + 1)
+    subkeys = jnp.array(subkeys)
+    _, gibbs_chain = jax.lax.scan(
+        lambda trace, key: (gibbs_update(key, trace), trace.get_choices()["walls"]),
+        trace,
+        subkeys
+    )
+    return gibbs_chain
+gibbs_chain_incremental = jax.jit(lambda: run_gibbs_chain_incremental(jax.random.key(0), simple_gibbs_sweep_incremental, (CENTER, DEFAULT_PARAMS), observed_readings))()
+gibbs_chain_incremental
+
+
+# %% [markdown]
+# Due to the performance decrease, we will stick with the first version.
+
+# %% [markdown]
+# ## Plotting the inferred walls
 
 # %%
 def plot_inferred_walls(walls):
@@ -699,7 +755,7 @@ BLOCK_SIZE = 2
 
 def gibbs_update_block(key, args, readings, walls, i, j):
     blocks = generate_all_possible_blocks(BLOCK_SIZE) # shape = (2^(BLOCK_SIZE^2), BLOCK_SIZE, BLOCK_SIZE)
-    chm = C["readings"].set(readings) ^ C["walls"].set(walls)
+    chm = C["readings"].set(readings) | C["walls"].set(walls)
     (weights, (walls_changed, _)) = jax.vmap(
         lambda block: full_model_assess(
             chm.at["walls"].set(jax.lax.dynamic_update_slice(walls, block.astype(jnp.float32), (i, j))),
@@ -947,7 +1003,3 @@ def make_interactive_plot(true_walls):
     return plot
 
 make_interactive_plot(true_walls)
-
-# %%
-
-# %%
