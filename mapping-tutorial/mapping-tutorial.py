@@ -17,20 +17,25 @@
 
 # %% [markdown]
 # The goal of this tutorial is – in a sense – the opposite of the localization tutorial. We consider the following scenario:
-# * we have a two-dimensional map consisting of walls and free space
-# * a robot is located at the center of the map (so it knows its position)
-# * the robot is equipped with a sensor that can (noisily) measure the distance to the nearest wall in several directions
-# * we want to infer the locations of the walls in the map
+# * We have a two-dimensional map consisting of walls and free space.
+# * A robot is located at the center of the map (so it knows its position).
+# * The robot is equipped with a sensor that can (noisily) measure the distance to the nearest wall in several directions.
+# * We want to infer the locations of the walls in the map.
 #
 # As a simplifying assumption, we assume that
-# * the map is a $21 \times 21$ grid of unit blocks ("pixels")
-# * each pixel is either a wall or a free space
+# * the map is a $21 \times 21$ grid of unit blocks ("pixels") and
+# * each pixel is either a wall or a free space.
 #
 # This tutorial will teach you how to:
-# * model this scenario in GenJAX
+# * model this scenario in GenJAX,
 # * perform Bayesian inference to infer the walls on the map from noisy sensor measurements:
 #   * first, via importance sampling (which turns out to perform poorly)
-#   * then, via Gibbs sampling (which turns out to perform well)
+#   * then, via **Gibbs sampling** (which turns out to perform well),
+# * using visualizations and interactivity in GenStudio.
+#
+# We will explore various variants of Gibbs sampling, so this can also be seen as a tutorial for Gibbs sampling.
+#
+# A **fully interactive version** of this tutorial can be found at the very end of this notebook.
 #
 # Potential future extensions:
 # * include observations from several points of view
@@ -43,22 +48,22 @@
 import genstudio.plot as Plot
 import jax
 import jax.numpy as jnp
+import jax.random as jrand
 import genjax
 from genjax import ChoiceMapBuilder as C
-from genjax import pretty, Target
+from genjax import pretty
 from genjax.typing import IntArray
 from penzai import pz
 
 pretty()
 
-html = Plot.Hiccup
-Plot.configure({"display_as": "html", "dev": True})
+Plot.configure({"display_as": "html", "dev": False})
 
 
 # %% [markdown]
 # ## Loading the map
 #
-# The following functions are useful to load the map from a string (which makes editing the walls by hand easier than the array representation).
+# The following function is useful to load the ground truth map from a string (which makes editing the walls by hand easier than the array representation).
 
 # %%
 
@@ -106,7 +111,6 @@ true_walls
 
 # %% [markdown]
 # Now, `true_walls` is a 21 x 21 array of 0s and 1s, where 1s indicate the presence of a wall.
-# Similarly, `true_pixels` contains the coordinates of all `21 * 21 = 441` pixels and the presence of a wall.
 
 # %% [markdown]
 # ## Plotting
@@ -115,15 +119,6 @@ true_walls
 # Hence we define the following functions to plot the map.
 
 # %%
-OFFSETS = jnp.array([
-    [-0.5, -0.5],
-    [0.5, -0.5],
-    [0.5, 0.5],
-    [-0.5, 0.5],
-])
-
-OFFSETS_CLOSED = jnp.concat([OFFSETS, OFFSETS[:1]], axis=0)
-
 js_code = Plot.Import(
     source="""
 export const wallsToCenters = (walls) => {
@@ -160,12 +155,6 @@ plot_walls = (
     + Plot.aspectRatio(1)
     + Plot.width(500)
 )
-
-def line_segments_of_pixel(pixel: IntArray):
-    vertices = pixel[None, :] + OFFSETS
-    return jnp.stack([vertices, jnp.roll(vertices, 1, axis=0)], axis=1)
-
-line_segments = jax.vmap(line_segments_of_pixel, in_axes=0)
 
 def make_plot(true_walls):
     return js_code & Plot.initial_state({"true_walls": true_walls}, sync=True) & Plot.new(plot_walls, Plot.color_legend())
@@ -231,7 +220,7 @@ def walls_prior(prior_wall_prob):
 # The score is the log probability of the choices.
 
 # %%
-key = jax.random.key(0)
+key = jrand.key(0)
 sample_prior_jitted = jax.jit(walls_prior(prior_wall_prob=0.1).simulate)
 tr = sample_prior_jitted(key, ())
 display(tr.get_score())
@@ -244,7 +233,6 @@ display(tr.get_retval())
 # %%
 walls = tr.get_retval()
 make_plot(walls)
-
 
 # %% [markdown]
 # We can see that, in fact, about half the pixels are walls. So the prior seems to work as intended.
@@ -261,6 +249,19 @@ make_plot(walls)
 # The math in the next cell is standard geometry, but not relevant for the overall understanding of modeling and inference in GenJAX, so feel free to skip the details.
 
 # %%
+OFFSETS = jnp.array([
+    [-0.5, -0.5],
+    [0.5, -0.5],
+    [0.5, 0.5],
+    [-0.5, 0.5],
+])
+
+def line_segments_of_pixel(pixel: IntArray):
+    vertices = pixel[None, :] + OFFSETS
+    return jnp.stack([vertices, jnp.roll(vertices, 1, axis=0)], axis=1)
+
+line_segments = jax.vmap(line_segments_of_pixel, in_axes=0)
+
 def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
     """
     Solves for the intersection of two lines defined by points and direction vectors.
@@ -289,9 +290,10 @@ def solve_lines(p, u, q, v, PARALLEL_TOL=1.0e-10):
 
 def distance(pos, dir, seg):
     """
-    Computes the distance from the origin to a segment, in a given direction.
+    Computes the distance from `pos` to a segment `seg`, in a given direction `dir`.
 
     Args:
+    - pos: The position: `[pos_x, pos_y]`.
     - dir: The direction: `[dir_x, dir_y]`.
     - seg: The Segment object: `[[start_x, start_y], [end_x, end_y]]`.
 
@@ -321,19 +323,15 @@ def angles(num_angles):
     return jnp.arange(0, 1, 1 / num_angles) * 2 * jnp.pi
 
 NUM_DIRECTIONS = 100
-MAX_DISTANCE = GRID_SIZE * 2
+MAX_DISTANCE = GRID_SIZE * 2 # cap on distances to avoid infinities
 
 def distance_to_pixel(pos, dir, coord, wall):
     """Distance from the origin to the pixel at `coord` if the ray in direction `dir` hits the pixel and it is a wall."""
     segs = line_segments_of_pixel(coord)
     dists = jax.vmap(lambda seg: distance(pos, dir, seg))(segs)
     return jax.lax.cond(
-        wall > 0,
-        lambda: jax.lax.cond(
-            jnp.array_equal(coord, jnp.array([0, 0])),
-            lambda: 0.0, # we are inside the wall
-            lambda: jnp.min(dists, axis=0),
-        ),
+        wall > 0, # is there a wall?
+        lambda: jnp.min(dists, axis=0),
         lambda: jnp.inf
     )
 
@@ -382,7 +380,7 @@ make_plot(true_walls, plot_sensors(CENTER, true_readings, angles(NUM_DIRECTIONS)
 # ## Noisy sensor model
 #
 # A real sensor is going to be noisy, which we model with a normal distribution.
-# As before, we specify the model for a single direction/angle first, and then map it over all directions.
+# As before, we specify the model for a single direction/angle first, and then `vmap` it over all directions.
 
 # %%
 @genjax.gen
@@ -408,7 +406,7 @@ class ModelParams(genjax.Pytree):
 DEFAULT_PARAMS = ModelParams(prior_wall_prob=0.5, sensor_noise=0.2, num_angles=NUM_DIRECTIONS)
 
 # %%
-key = jax.random.key(0)
+key = jrand.key(0)
 trace = sensor_model.simulate(key, (CENTER, true_walls, DEFAULT_PARAMS.sensor_noise, angles(NUM_DIRECTIONS)))
 observed_readings = trace.get_retval()
 make_plot(true_walls, plot_sensors(CENTER, observed_readings, angles(NUM_DIRECTIONS)))
@@ -417,7 +415,7 @@ make_plot(true_walls, plot_sensors(CENTER, observed_readings, angles(NUM_DIRECTI
 # To get an idea of what the robot sees, let's remove the walls. How can we infer the walls?
 
 # %%
-make_plot(true_walls, plot_sensors(CENTER, observed_readings, angles(NUM_DIRECTIONS)))
+make_plot(jnp.zeros((GRID_SIZE, GRID_SIZE)), plot_sensors(CENTER, observed_readings, angles(NUM_DIRECTIONS)))
 
 
 # %% [markdown]
@@ -439,7 +437,7 @@ def full_model(pos, model_params):
 # When inspecting the trace, we can see that the sampled values are stored under these addresses.
 
 # %%
-key = jax.random.key(1)
+key = jrand.key(1)
 trace = full_model.simulate(key, (CENTER, DEFAULT_PARAMS))
 walls, readings = trace.get_retval()
 make_plot(walls, plot_sensors(CENTER, readings, angles(NUM_DIRECTIONS)))
@@ -447,20 +445,23 @@ trace.get_choices()
 
 
 # %% [markdown]
+# How can we infer the walls given some observed readings?
+
+# %% [markdown]
 # ## Importance sampling (self-normalized importance sampling)
 #
 # One of the simplest inference methods is importance sampling.
 # To do this, we constrain our model to the observed data.
 # For samples corresponding to observations (i.e. the sensor readings), we don't actually sample, but instead use the observed value and record the likelihood of seeing that observation.
-# GenJAX provides a method for this: `model.importance(key, constraints, args)` runs the model with the random seed `key` and arguments `args`, but constrains the sampled values to `constraints` (the observations).
-# It returns a trace with the sampled values and a log weight $\log p(observations \mid pixels)$.
+# GenJAX provides a method for this: `model.importance(key, constraints, args)` runs the model with the random seed `key` and arguments `args`, but constrains some sampled values according to the `constraints` (the observations, i.e. the readings).
+# It returns a trace with the sampled values ($walls$) and a log weight $\log p(observations \mid walls)$.
 #
 # If we run `.importance` several times, some traces (with a better prior sample) will have a higher weight and others (with a worse prior choice) will have lower weight.
-# Suppose these weighted samples are $(pixels_i, \log(w_i))$ for $i = 1 \ldots N$.
+# Suppose these weighted samples are $(walls_i, \log(w_i))$ for $i = 1 \ldots N$.
 # We can **normalize** them as follows: $w'_i := \frac{w_i}{\sum_{i} w_i}$.
-# Then posterior expected values can be approximated using the weighted samples: $\mathbb{E}_{pixels \sim p(pixels \mid readings)} [f(pixels)] \approx \sum_{i=1}^N w'_i f(pixels_i)$.
+# Then posterior expected values can be approximated using the weighted samples: $\mathbb{E}_{walls \sim p(walls \mid observations)} [f(walls)] \approx \sum_{i=1}^N w'_i f(walls_i)$.
 #
-# We can also obtain unweighted samples approximating the posterior by **resampling**: sampling from a categorical distribution where each category $pixels_i$ has $w'_i$.
+# We can also obtain unweighted samples approximating the posterior by **resampling**: sampling from a categorical distribution where each category $walls_i$ has $w'_i$.
 #
 # Let's try this.
 
@@ -468,16 +469,16 @@ trace.get_choices()
 def importance_sampling(key, args, observed_readings, N = 100):
     """Very naive MAP estimation. Just try N random samples and take the one with the highest weight."""
     model_importance = jax.jit(full_model.importance)
-    keys = jax.random.split(key, N)
+    keys = jrand.split(key, N)
     constraints = C["readings"].set(observed_readings)
     traces, log_weights = jax.vmap(lambda key: model_importance(key, constraints, args))(keys)
     log_weights = log_weights - jax.scipy.special.logsumexp(log_weights)
     return traces, log_weights
 
-key, subkey = jax.random.split(jax.random.key(0))
+key, subkey = jrand.split(jrand.key(0))
 traces, log_weights = importance_sampling(subkey, (CENTER, DEFAULT_PARAMS), observed_readings, N=100000)
-subkeys = jax.random.split(subkey, 100)
-resampled_indices = jax.vmap(lambda i: jax.random.categorical(subkeys[i], log_weights))(jnp.arange(100))
+subkeys = jrand.split(subkey, 100)
+resampled_indices = jax.vmap(lambda i: jrand.categorical(subkeys[i], log_weights))(jnp.arange(100))
 resampled_indices
 
 # %% [markdown]
@@ -489,17 +490,17 @@ resampled_indices
 
 # %%
 import matplotlib.pyplot as plt
-plt.hist(log_weights, bins=100, range=(-500, 0))
+plt.hist(log_weights, bins=100, range=(-10000, 0))
 plt.show()
 
 
 # %% [markdown]
-# As we can see, the next best trace has a **log** weight of less than -20, orders of magnitude worse than the best sample.
+# As we can see, the next best trace has a **log** weight that is orders of magnitude worse than the best sample.
 #
 # This is clearly bad. We need better inference methods.
 
 # %% [markdown]
-# ## Simple Gibbs sampling
+# ## Basic Gibbs sampling
 #
 # As a better inference algorithm, we turn to Gibbs sampling.
 # Gibbs sampling is a simple algorithm to sample from a joint distribution $p(x_1, \dots, x_n)$, assuming one can sample from the conditional distributions $p(x_i \mid x_1, \dots, x_{i-1}, x_{i+1}, \dots, x_n)$.
@@ -508,10 +509,6 @@ plt.show()
 # In our case, the $x_i$'s are the pixels.
 # We can sample from $p(x_i \mid x_1, \dots, x_{i-1}, x_{i+1}, \dots, x_n) = \frac{p(x_1, \dots, x_n)}{p(x_1, \dots, x_{i-1}, 0, x_{i+1}, \dots, x_n) + p(x_1, \dots, x_{i-1}, 1, x_{i+1}, \dots, x_n)}$ by enumeration: evaluating the joint density at $x_i = 0$ and $x_i = 1$ (free space or wall).
 # To evaluate the density, GenJAX provides the method `model.assess(choice_map, args)`, which runs the model with all samples constrained to `choice_map` and returns the likelihood.
-#
-# TODO: it would probably be better to use `update` or `edit` here? Not sure how exactly yet.
-#
-# TODO: is there a more idiomatic way to write Gibbs? Should the proposal be a @genjax.gen model?
 
 # %%
 full_model_assess = jax.jit(full_model.assess)
@@ -528,7 +525,7 @@ def gibbs_update_pixel(key, args, readings, walls, i, j):
     return pixel_is_wall
 
 def simple_gibbs_sweep(key, args, readings, walls):
-    subkeys = jax.random.split(key, walls.shape)
+    subkeys = jrand.split(key, walls.shape)
     walls = jax.lax.fori_loop(
         0,
         walls.shape[0],
@@ -544,25 +541,29 @@ def simple_gibbs_sweep(key, args, readings, walls):
 
 
 # %% [markdown]
-# Starting from any map, applying Gibbs sweeps will (under certain conditions) yield approximate samples from the posterior distribution.
+# Starting from any initial sample, applying Gibbs sweeps will (under certain conditions) yield approximate samples from the posterior distribution.
 # Let's try this out.
 
 # %%
 def run_gibbs_chain(key, gibbs_update, args, readings, num_samples=100):
     walls = jnp.zeros((GRID_SIZE, GRID_SIZE))
-    key, *subkeys = jax.random.split(key, num_samples + 1)
+    key, *subkeys = jrand.split(key, num_samples + 1)
     subkeys = jnp.array(subkeys)
-    gibbs_update_jitted = jax.jit(gibbs_update)
-    _, gibbs_chain = jax.lax.scan(lambda walls, key: (gibbs_update_jitted(key, args, readings, walls), walls), walls, subkeys)
-    return gibbs_chain
-gibbs_chain = run_gibbs_chain(jax.random.key(0), simple_gibbs_sweep, (CENTER, DEFAULT_PARAMS), observed_readings)
-gibbs_chain
+
+    def inner():
+        _, gibbs_chain = jax.lax.scan(lambda walls, key: (gibbs_update(key, args, readings, walls), walls), walls, subkeys)
+        return gibbs_chain
+
+    return jax.jit(inner)()
+
+gibbs_chain = run_gibbs_chain(jrand.key(0), simple_gibbs_sweep, (CENTER, DEFAULT_PARAMS), observed_readings)
+gibbs_chain[:10]
 
 
 # %% [markdown]
 # ## Incremental trace updates
 #
-# We can also write this more concisely by incrementally updating the current trace. Usually this should be faster, but it turns out to be slower in our case. This may be due to the overhead of the trace infrastructure involved.
+# We can also write this more concisely in GenJAX by incrementally updating the current trace. Usually this should be faster, but it turns out to be slower in our case. This may be due to the overhead of the trace infrastructure involved.
 
 # %%
 def gibbs_update_pixel_incremental(key, trace: genjax.Trace, i, j):
@@ -579,7 +580,7 @@ def gibbs_update_pixel_incremental(key, trace: genjax.Trace, i, j):
 
 def simple_gibbs_sweep_incremental(key, trace):
     shape = trace.get_choices()["walls"].shape
-    subkeys = jax.random.split(key, shape)
+    subkeys = jrand.split(key, shape)
     trace = jax.lax.fori_loop(
         0,
         shape[0],
@@ -597,16 +598,21 @@ def run_gibbs_chain_incremental(key, gibbs_update, args, readings, num_samples=1
     walls = jnp.zeros((GRID_SIZE, GRID_SIZE))
     constraints = C["walls"].set(walls) | C["readings"].set(readings)
     trace, _ = full_model.importance(key, constraints, args)
-    key, *subkeys = jax.random.split(key, num_samples + 1)
+    key, *subkeys = jrand.split(key, num_samples + 1)
     subkeys = jnp.array(subkeys)
-    _, gibbs_chain = jax.lax.scan(
-        lambda trace, key: (gibbs_update(key, trace), trace.get_choices()["walls"]),
-        trace,
-        subkeys
-    )
-    return gibbs_chain
-gibbs_chain_incremental = jax.jit(lambda: run_gibbs_chain_incremental(jax.random.key(0), simple_gibbs_sweep_incremental, (CENTER, DEFAULT_PARAMS), observed_readings))()
-gibbs_chain_incremental
+
+    def inner():
+        _, gibbs_chain = jax.lax.scan(
+            lambda trace, key: (gibbs_update(key, trace), trace.get_choices()["walls"]),
+            trace,
+            subkeys
+        )
+        return gibbs_chain
+    
+    return jax.jit(inner)()
+
+gibbs_chain_incremental = jax.jit(lambda: run_gibbs_chain_incremental(jrand.key(0), simple_gibbs_sweep_incremental, (CENTER, DEFAULT_PARAMS), observed_readings))()
+gibbs_chain_incremental[:10]
 
 
 # %% [markdown]
@@ -670,26 +676,31 @@ gibbs_mean = jnp.mean(gibbs_chain, axis=0)
 plot = make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=gibbs_mean)
 display(plot)
 
-
 # %% [markdown]
 # We can see that it takes about 10 iterations before all the walls at the bottom are removed.
 
 # %% [markdown]
-# ## Better variable order for Gibbs sampling
+# ## Gibbs sampling, part 2: better variable ordering
+#
+# Gibbs sampling does not require the variables to be updated in a specific order. They order can even be random (and that sometimes improves convergence).
 #
 # We can make Gibbs sampling converge faster by updating pixels in a different order.
 # Note that if a pixel near the origin is a wall, it casts a "shadow" and all the pixels in its shadow are irrelevant (and thus sampled from the prior as fair coin flips).
-# If the pixel near the origin flips and becomes free space, all the pixels in its shadow are suddenly "visible", but will be randomly initialized.
+# If the pixel near the origin flips and becomes free space, all the pixels in its shadow are suddenly "visible", but will have been randomly initialized before.
 #
-# For this reason it is better to update the pixels from the center outwards.
-# This way, the pixels in the center are updated **before** the pixels in their shadow, so the pixels in the shadow can be updated in the same sweep.
-# Specifically, we first update the pixels according to their distance to the origin.
-# First, the origin itself, then the "diamond" around it, then the next layer etc.
+# For this reason it is better to update the pixels from the sensor position outwards.
+# This way, the pixels near the sensor are updated **before** the pixels in their shadow, so the pixels in the shadow can be updated in the same sweep.
+# Specifically, we first update the pixels according to their distance to the sensor position.
+# First, the pixel at which the sensor is placed itself, then the "diamond" around it, then the next layer etc., like this:
+
+# %%
+jax.vmap(lambda dist: jax.vmap(lambda i: jax.vmap(lambda j: jnp.abs(i - 5) + jnp.abs(j - 5) == dist)(jnp.arange(11)))(jnp.arange(11)))(jnp.arange(10))
+
 
 # %%
 def smarter_gibbs_update_distance(key, args, readings, walls, distance):
     pos, _params = args
-    subkeys = jax.random.split(key, (GRID_SIZE, GRID_SIZE))
+    subkeys = jrand.split(key, (GRID_SIZE, GRID_SIZE))
     updated_walls = jax.lax.fori_loop(
         0,
         GRID_SIZE,
@@ -698,7 +709,7 @@ def smarter_gibbs_update_distance(key, args, readings, walls, distance):
             GRID_SIZE,
             lambda j, walls: walls.at[i, j].set(
                 jax.lax.cond(
-                    jnp.sum(jnp.abs(jnp.array([i, j]) - pos)) == distance,
+                    jnp.sum(jnp.floor(jnp.abs(jnp.array([i, j]) - pos))) == distance,
                     lambda: gibbs_update_pixel(subkeys[i, j], args, readings, walls, i, j),
                     lambda: walls[i, j]
                 )
@@ -710,7 +721,7 @@ def smarter_gibbs_update_distance(key, args, readings, walls, distance):
     return updated_walls
 
 def smarter_gibbs_update(key, args, readings, walls):
-    subkeys = jax.random.split(key, 2 * GRID_SIZE)
+    subkeys = jrand.split(key, 2 * GRID_SIZE)
     walls = jax.lax.fori_loop(
         0,
         2 * GRID_SIZE,
@@ -721,7 +732,28 @@ def smarter_gibbs_update(key, args, readings, walls):
 
 
 # %%
-gibbs_chain = run_gibbs_chain(jax.random.key(0), smarter_gibbs_update, (CENTER, DEFAULT_PARAMS), observed_readings)
+gibbs_chain = run_gibbs_chain(jrand.key(0), smarter_gibbs_update, (CENTER, DEFAULT_PARAMS), observed_readings)
+gibbs_chain[:10]
+
+# %%
+animation = Plot.Frames([
+    make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=sample)
+    for sample in gibbs_chain
+])
+display(animation)
+gibbs_mean = jnp.mean(gibbs_chain, axis=0)
+plot = make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=gibbs_mean)
+display(plot)
+
+# %% [markdown]
+# Here it only takes 3 iterations before all the walls at the bottom are (correctly) removed.
+#
+# **Problem**: This approach only works well if the prior wall probability is near 0.5. Let's see what happens for 0.1.
+
+# %%
+modified_params = ModelParams(prior_wall_prob=0.05, sensor_noise=DEFAULT_PARAMS.sensor_noise, num_angles=DEFAULT_PARAMS.num_angles)
+gibbs_chain = run_gibbs_chain(jrand.key(0), smarter_gibbs_update, (CENTER, modified_params), observed_readings)
+gibbs_chain[:10]
 
 # %%
 animation = Plot.Frames([
@@ -735,13 +767,22 @@ display(plot)
 
 
 # %% [markdown]
-# Here it only takes 2 iterations before all the walls at the bottom are (correctly) removed.
+# We see that Gibbs does not seem to converge at all. Why is that?
+#
+# Due to the low prior probability, there are very few walls on the map. Let's say we do a Gibbs update on a pixel that's currently a wall. If we remove the wall, that means the affected sensor rays will often not hit anything else and the sensor reading will change drastically. This means a sudden drop in likelihood, so the Gibbs update will leave the pixel unchanged. In other words, the pixel and its neighborhood are **highly correlated**, and Gibbs struggles in such situation.
 
 # %% [markdown]
-# ## Block Gibbs sampling
+# ## Gibbs sampling, part 3: block Gibbs
+#
+# One way of dealing with correlated variables in Gibbs sampling is to update not a single variable at once, but a set of variables. In particular, we will update 2x2 blocks of pixels at once. For the Gibbs update of each 2x2 block, we will consider all 16 possible options for the placement of walls in that block. Intuitively, this helps because often we want to do something like move a wall "back" by one pixel, which is less likely to happen in independent Gibbs updates.
+#
+# Let's first generate all possible values for an `n x n` block
 
 # %%
 def generate_all_possible_blocks(block_size):
+    """Returns all possible squares of size `block_size` x `block_size`, filled with 0s and 1s.
+    
+    Returned shape: 2^(block_size^2) x block_size x block_size"""
     values = jnp.meshgrid(*(jnp.arange(2) for _ in range(block_size * block_size)))
     values = [value.flatten() for value in values]
     values = jnp.stack(values, axis=1)
@@ -749,6 +790,10 @@ def generate_all_possible_blocks(block_size):
 
 generate_all_possible_blocks(2)
 
+# %% [markdown]
+# The Gibbs update now works similar to the first version, but updates 2x2 blocks at once. Note that we don't use the clever ordering of the updates in Gibbs sweep. Instead, we go back to the first version of Gibbs that updates the pixels in the order of their indices. This still works well enough.
+#
+# Note that we consider all 2x2 blocks on the map, which may overlap (e.g. the one at (0, 0) and the one at (1, 1)). This does not a problem – the Gibbs update is still valid.
 
 # %%
 BLOCK_SIZE = 2
@@ -767,7 +812,7 @@ def gibbs_update_block(key, args, readings, walls, i, j):
     return walls_changed[idx]
 
 def block_gibbs_sweep(key, args, readings, walls):
-    subkeys = jax.random.split(key, walls.shape)
+    subkeys = jrand.split(key, walls.shape)
     walls = jax.lax.fori_loop(
         0,
         walls.shape[0] - BLOCK_SIZE + 1,
@@ -784,7 +829,7 @@ def block_gibbs_sweep(key, args, readings, walls):
 
 
 # %%
-gibbs_chain = run_gibbs_chain(jax.random.key(0), block_gibbs_sweep, (CENTER, DEFAULT_PARAMS), observed_readings)
+gibbs_chain = run_gibbs_chain(jrand.key(0), block_gibbs_sweep, (CENTER, modified_params), observed_readings)
 gibbs_chain
 
 # %%
@@ -797,6 +842,14 @@ gibbs_mean = jnp.mean(gibbs_chain, axis=0)
 plot = make_plot(true_walls, pos=CENTER, sensor_readings=observed_readings, angles=angles(NUM_DIRECTIONS), inferred_walls=gibbs_mean)
 display(plot)
 
+
+# %% [markdown]
+# One can see that each Gibbs sweep "pushes" the walls that are too close to the center outwards, until they match the observations better.
+
+# %% [markdown]
+# ## Fully interactive version
+#
+# You can play around with the setup and the block Gibbs sampler using the interactive widget below. Usage instructions are at the bottom. 
 
 # %%
 def on_click(widget, event):
@@ -825,7 +878,7 @@ interactive_walls = Plot.events(
     onClick=on_click, onDraw=on_drag
 )
 
-plot_inferred_walls = Plot.rect(
+plot_inferred_walls_interactive = Plot.rect(
     Plot.js("wallsToCenters($state.inferred_walls)", walls),
     x1=Plot.js("([x, y, value]) => x - 0.5"), 
     x2=Plot.js("([x, y, value]) => x + 0.5"),
@@ -876,7 +929,7 @@ def update_state(state):
         num_angles=int(state.num_angles),
     )
     pos = state.position
-    key = jax.random.key(0)
+    key = jrand.key(0)
     readings = sensor_model.simulate(key, (pos, true_walls, params.sensor_noise, angles(params.num_angles))).get_retval()
     state.sensor_readings = readings
     update_inferred_walls(state)
@@ -896,7 +949,7 @@ def do_inference(state):
         sensor_noise=float(state.sensor_noise),
         num_angles=int(state.num_angles),
     )
-    key = jax.random.key(0)
+    key = jrand.key(0)
     state.chain = run_gibbs_chain(key, block_gibbs_sweep, (pos, params), readings)
     state.mean_chain = jnp.mean(state.chain, axis=0)
     update_inferred_walls(state)
@@ -904,7 +957,7 @@ def do_inference(state):
 def make_interactive_plot(true_walls):
     true_walls = true_walls.astype(jnp.float32)
     map_plot = Plot.new()
-    map_plot += plot_inferred_walls
+    map_plot += plot_inferred_walls_interactive
     map_plot += plot_walls
     map_plot += plot_interactive_sensors
     map_plot += interactive_walls
@@ -1003,3 +1056,19 @@ def make_interactive_plot(true_walls):
     return plot
 
 make_interactive_plot(true_walls)
+
+# %% [markdown]
+# ## Usage instructions
+#
+# * draw walls (ground truth) by clicking pixels or clicking and dragging
+# * remove individual walls by clicking the pixel again
+# * remove all walls by clicking "Clear walls"
+# * clear the inference result by clicking "Clear inferred walls"
+# * use the sliders to update the parameters of the model
+# * click and drag the little circle to change the position of the sensor
+# * run block Gibbs with the current parameter settings by clicking "Run inference" (This may take a few seconds, please be patient.)
+# * inspect the estimated posterior probability of a pixel being a wall by selecting "show average over chain"
+# * inspect individual Gibbs samples by deselecting "show average over chain" and using the slider to its right
+#
+# Note: inference does not update automatically due to the time it takes. You have to click "Run inference" to update the inference results.
+#
